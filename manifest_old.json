@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "MerchBridge Amazon Helper",
+  "name": "Bkteam Sync Order Amz",
   "version": "1.2.30",
   "description": "An extension to help you fulfill Amazon orders easier with MerchBridge.",
   "devtools_page": "devtool/devtool.html",
@@ -11,7 +11,7 @@
   },
   "action": {
     "default_popup": "popup/index.html",
-    "default_title": "MerchBridge Amazon Helper",
+    "default_title": "Bkteam Sync Order Amz",
     "default_icon": {
       "48": "assets/images/48.png"
     }
@@ -51,8 +51,8 @@
     "https://sellercentral.amazon.co.uk/*",
     "https://sellercentral.amazon.de/*",
     "https://www.amazon.com/*",
-    "https://api-dev.merchbridge.com/*",
-    "https://api.merchbridge.com/*",
+    "https://bkteam.top/dungvuong-admin/*",
+    "http://bkteam.top/dungvuong-admin/*",
     "http://127.0.0.1:8080/*"
   ],
   "web_accessible_resources": [

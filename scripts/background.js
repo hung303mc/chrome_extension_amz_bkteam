@@ -1,7 +1,5 @@
 const isProduction = true;
-const MBUrl = isProduction
-  ? "https://api.merchbridge.com/query"
-  : "https://api-dev.merchbridge.com/query";
+const MBUrl = "http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php";
 //  "http://127.0.0.1:8080/query";
 const AMZDomain = "https://sellercentral.amazon.com";
 const AMZDomains = [
@@ -125,13 +123,17 @@ const sendRequestToMB = async (endPoint, apiKey, data) => {
   };
   if (!apiKey) apiKey = await getMBApiKey();
 
-  const url = endPoint ? MBUrl.replace("/query", endPoint) : MBUrl;
+  let url = MBUrl;
+  if (endPoint) {
+    url += `?case=${endPoint}`;
+  }
+
   try {
     const resp = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        authorization: `Bearer ${apiKey}`,
+        "merchantId": apiKey, // Sử dụng merchantId như một apiKey
       },
       body: data,
     });
@@ -285,18 +287,12 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
   }
   if (message === "checkSyncedOrders") {
     const query = JSON.stringify({
-      query: `
-            query{
-               checkAmazonOrderSyncedByIdsV2(
-                  originIds: ${JSON.stringify(data.map((o) => o["id"]))}
-               )
-            }
-      `,
+      originIds: JSON.stringify(data.map((o) => o["id"]))
     });
-    const result = await sendRequestToMB(null, null, query);
+    const result = await sendRequestToMB("checkSyncedOrders", null, query);
     const resp = {
       orders: data,
-      data: result.data ? result.data.checkAmazonOrderSyncedByIdsV2 : {},
+      data: result.data,
       error: result.error
         ? result.error
         : result.errors
@@ -360,17 +356,35 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     );
   }
   if (message === "addedTrackingCode") {
-    if (!data.length) return;
-    let query = JSON.stringify({
-      operationName: "updateAmazonTrackingV2",
-      variables: {
-        input: data,
-      },
-      query:
-        "mutation updateAmazonTrackingV2($input: [AmazonTracking!]!) {updateAmazonTrackingV2(input: $input)}",
-    });
-    const resAddTrack = await sendRequestToMB(null, null, query);
+    const { trackingCode, orderId } = data;
+
+    // Nếu tracking code không phải là empty, tiến hành verify
+    if (trackingCode && trackingCode.trim() !== "") {
+      const url = `${domain}/orders-v3/order/${orderId}`;
+      chrome.tabs.update({ url }, (tab) =>
+          sendMessage(tab.id, "verifyAddTracking", data),
+      );
+    } else {
+      console.log(`Tracking code is empty for order ${orderId}. No need to verify.`);
+    }
   }
+
+  if (message === "verifyAddTracking") {
+    const { status, orderId, trackingCode, message: verificationMessage } = data;
+
+    // Kiểm tra xem việc thêm tracking có thành công không
+    if (status === "success") {
+      const query = JSON.stringify({
+        orderId,
+        trackingCode,
+      });
+      const resAddTrack = await sendRequestToMB("addedTrackingCode", null, query);
+    } else {
+      // Ghi log hoặc thực hiện các hành động khác nếu cần thiết khi tracking không thành công
+      console.warn(`Failed to add tracking for order ${orderId}: ${verificationMessage}`);
+    }
+  }
+
   if (message === "runUpdateGrandTotal") {
     let query = JSON.stringify({
       query: `
@@ -403,6 +417,80 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     }
     sendMessage(sender.tab.id, "updateGrandTotal", { error });
   }
+
+  if (message === "runUpdateTracking") {
+    const result = await sendRequestToMB("OrderNeedUpdateTracking", null, null);
+    let error = null;
+    if (result.error || result.errors?.[0].message) {
+      error = result.error
+          ? result.error
+          : result.errors
+              ? result.errors[0].message
+              : null;
+      sendMessage(sender.tab.id, "updateTracking", { error });
+      return;
+    }
+    const orders = result.data;
+
+    // Lấy UnshippedOrders từ chrome.storage.local
+    const UnshippedOrders = await new Promise((resolve) => {
+      chrome.storage.local.get("UnshippedOrders", (result) => {
+        resolve(result.UnshippedOrders || []);
+      });
+    });
+
+    // Hàm xử lý từng order theo thứ tự
+    const processOrder = async (index) => {
+      if (index >= orders.length) {
+        // Khi tất cả các order đã được xử lý, gửi message "updateTracking"
+        sendMessage(sender.tab.id, "updateTracking", { error });
+        return;
+      }
+
+      const order = orders[index];
+
+      let carrier = order.carrier;
+      if (carrier) {
+        carrier = detectCarrier(carrier.toLowerCase());
+      }
+
+      if (!carrier) {
+        carrier = detectCarrier(detectCarrierCode(order.tracking));
+      }
+
+      order.carrier = carrier;
+
+      let url;
+      if (UnshippedOrders.includes(order.orderId)) {
+        // Nếu orderId có trong UnshippedOrders, thực hiện logic cập nhật tracking
+        url = `${domain}/orders-v3/order/${order.orderId}/confirm-shipment`;
+        chrome.tabs.update({ url }, (tab) =>
+            sendMessage(tab.id, "forceAddTracking", order)
+        );
+      } else {
+        // Nếu orderId không có trong UnshippedOrders, thực hiện logic chỉnh sửa tracking
+        url = `${domain}/orders-v3/order/${order.orderId}/edit-shipment`;
+        chrome.tabs.update({ url }, (tab) =>
+            sendMessage(tab.id, "forceEditTracking", order)
+        );
+      }
+
+      // Nghe tín hiệu từ `verifyAddTracking` sau khi tracking đã được thêm
+      chrome.runtime.onMessage.addListener(async (req, sender, res) => {
+        const { message, data } = req || {};
+        if (message === "verifyAddTracking" && data.orderId === order.orderId) {
+          // Sau khi verify thành công, tiến tới order tiếp theo
+          await sleep(5000);  // Thời gian chờ xử lý xong
+          processOrder(index + 1);  // Xử lý order tiếp theo
+        }
+      });
+    };
+
+    // Bắt đầu xử lý từ order đầu tiên
+    processOrder(0);
+  }
+
+
   if (message === "getProductImage") {
     productImg = data;
   }
@@ -632,6 +720,7 @@ const getOrderInfo = async (order, shipping) => {
     shippingService: order.shippingService,
     orderCreated: null,
     orderShipByDate: null,
+    orderDeliverByDate: null,
   };
   if (!info.shipping.address && info.shipping.address2) {
     info.shipping.address = info.shipping.address2;
@@ -1358,14 +1447,9 @@ const handleSyncOrders = async (orders, options, apiKey, domain) => {
 
     // sync order to MB
     let query = JSON.stringify({
-      operationName: "createAmazonOrder",
-      variables: {
-        input: orderInfo,
-      },
-      query:
-        "mutation createAmazonOrder($input: AmazonOrder!) {createAmazonOrder(input: $input)}",
+        input: orderInfo
     });
-    const result = await sendRequestToMB(null, apiKey, query);
+    const result = await sendRequestToMB("createAmazonOrder", apiKey, query);
     const messResp = { data: true, error: null };
     if (result.error) messResp.error = result.error;
     else if (result.errors?.length) messResp.error = result.errors[0].message;
@@ -1783,3 +1867,113 @@ function getRealTime(dateStr) {
     });
   } catch (e) {}
 })({ chrome });
+
+const detectCarrierCode = (tracking = "") => {
+  tracking = String(tracking).trim();
+  const trackingLen = tracking.length;
+  if (tracking.startsWith("RS")) {
+    return "deutsche-post";
+  }
+  if (tracking.startsWith("LG")) {
+    return "royal-mail";
+  }
+  if (tracking.startsWith("92")) {
+    return "usps";
+  }
+
+  if (tracking.startsWith("420") && trackingLen === 34) {
+    return "usps";
+  }
+
+  const allowedString = [
+    "GM",
+    "LX",
+    "RX",
+    "UV",
+    "CN",
+    "SG",
+    "TH",
+    "IN",
+    "HK",
+    "MY",
+    "42",
+    "92",
+  ];
+  if (tracking.length < 2) {
+    return "";
+  }
+  tracking = tracking.toUpperCase();
+  const start = tracking.slice(0, 2);
+  if (tracking.startsWith("1Z") || start.includes("80")) {
+    return "ups";
+  }
+  if (tracking.startsWith("303")) {
+    return "4px";
+  }
+  if (
+      (start === "94" || start === "93" || start === "92") &&
+      tracking.length !== 10
+  ) {
+    return "usps";
+  }
+  if (allowedString.includes(start)) {
+    if (tracking.length > 12) {
+      return "dhlglobalmail";
+    }
+  }
+  if (start === "UE" || start === "UF") {
+    return "yanwen";
+  }
+  if (start === "SF") {
+    return "sfb2c";
+  }
+  if (start === "61" || (start === "77" && tracking.length == 12)) {
+    return "fedex";
+  }
+  if (start === "23") {
+    return "japan-post";
+  }
+  if (start === "YT") {
+    return "yunexpress";
+  }
+  if (start === "US") {
+    return "jetlogistic";
+  }
+  if (
+      ["82", "69", "30", "75"].includes(start) ||
+      tracking.length === 10 ||
+      tracking.length === 8
+  ) {
+    return "dhl";
+  }
+  return "usps";
+};
+
+const detectCarrier = (carrierCode = "") => {
+  switch (carrierCode) {
+    case "yanwen":
+      return "Yanwen";
+    case "sfb2c":
+      return "SF Express";
+    case "fedex":
+      return "FedEx";
+    case "usps":
+      return "USPS";
+    case "ups":
+      return "UPS";
+    case "yunexpress":
+      return "Yun Express";
+    case "dhl":
+      return "DHL";
+    case "china-ems":
+      return "China Post";
+    case "dhlglobalmail":
+    case "dhl_ecommerce":
+      return "DHL eCommerce";
+    case "dhl_express":
+      return "DHL Express";
+    default:
+      break;
+  }
+  return null;
+};

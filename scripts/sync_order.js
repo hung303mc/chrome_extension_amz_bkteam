@@ -381,6 +381,8 @@ const setTextBtnRevert = () => {
 
 $(document).ready(async () => {
   if (!window.location.href.includes("/orders-v3")) return;
+  if (window.location.href.includes("/orders-v3/order/")) return;
+
   if (!(await getStorage(mbApi))) {
     return;
   }
@@ -392,6 +394,13 @@ $(document).ready(async () => {
     appendOrdersIntoTable(orders, {});
     return;
   }
+
+  // Chỉ lưu trữ id của các đơn hàng
+  const orderIds = orders.map(order => order.id);
+
+  // Lưu trữ orderIds vào chrome.storage.local
+  await chrome.storage.local.set({ UnshippedOrders: orderIds });
+
   // check synced orders
   chrome.runtime.sendMessage({
     message: "checkSyncedOrders",

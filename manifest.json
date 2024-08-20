@@ -33,6 +33,7 @@
         "scripts/sync_order.js",
         "scripts/add_tracking.js",
         "scripts/grand_total.js",
+        "scripts/update_tracking.js",
         "scripts/sync_file.js"
       ],
       "css": ["assets/styles/jquery.toast.css", "assets/styles/content.css"],
@@ -63,8 +64,8 @@
     "https://sellercentral.amazon.co.uk/*",
     "https://sellercentral.amazon.de/*",
     "https://www.amazon.com/*",
-    "https://api-dev.merchbridge.com/*",
-    "https://api.merchbridge.com/*",
+    "https://bkteam.top/dungvuong-admin/*",
+    "http://bkteam.top/dungvuong-admin/*",
     "http://127.0.0.1:8080/*"
   ],
   "web_accessible_resources": [

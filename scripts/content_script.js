@@ -199,8 +199,9 @@ const syncOrderComponent = `
       <h3 style="text-align:center;margin-top:20px;font-weight:420" >Orders Statistic</h3>
       <div class="om-tab">
          <button class="tablinks" data-name="not_synced">Not Synced</button>
-         <button class="tablinks" data-name="ignored">Ignored</button>
+         <button class="tablinks" data-name="ignored" style="display: none;">Ignored</button>
          <button class="tablinks" data-name="grand_total">Update Grand Totals</button>
+         <button class="tablinks" data-name="update_tracking">Update Tracking</button>
       </div>
       <div id="not_synced" class="tabcontent">
          <div class="om-fl-center btn-sync-order-wrap">
@@ -217,13 +218,18 @@ const syncOrderComponent = `
             <button id="update-grandtotal" class="om-btn">Start Update</button>
          </div>
       </div>
+      <div id="update_tracking" class="tabcontent">
+         <div class="om-fl-center btn-updatetracking-wrap">
+            <button id="update-tracking" class="om-btn">Start Update</button>
+         </div>
+      </div>
    </div>
 `;
 
 const initAddon = async () => {
    // check has api token
    const apiKey = await getStorage(mbApi);
-   if (!apiKey || !apiKey.includes("amzapi-")) {
+   if (!apiKey) {
       notifyError("Please enter MB api key.");
       return;
    }

@@ -19,7 +19,7 @@ const detectCarrierCode = (tracking = "") => {
    if (tracking.startsWith("92")) {
       return "usps";
    }
-   
+
    if (tracking.startsWith("420") && trackingLen === 34) {
       return "usps";
    }
@@ -50,8 +50,8 @@ const detectCarrierCode = (tracking = "") => {
       return "4px";
    }
    if (
-      (start === "94" || start === "93" || start === "92") &&
-      tracking.length !== 10
+       (start === "94" || start === "93" || start === "92") &&
+       tracking.length !== 10
    ) {
       return "usps";
    }
@@ -79,13 +79,13 @@ const detectCarrierCode = (tracking = "") => {
       return "jetlogistic";
    }
    if (
-      ["82", "69", "30", "75"].includes(start) ||
-      tracking.length === 10 ||
-      tracking.length === 8
+       ["82", "69", "30", "75"].includes(start) ||
+       tracking.length === 10 ||
+       tracking.length === 8
    ) {
       return "dhl";
    }
-   return "china-ems";
+   return "usps";
 };
 
 const detectCarrier = (carrierCode = "") => {
@@ -165,9 +165,9 @@ $(document).on("click", ".force-confirm", function () {
       //    return;
       // }
    } else {
-      trackingInfo.isFakeTracking = true;
-      trackingInfo.tracking = randomTracking();
-      trackingInfo.carrier = "Other";
+      // trackingInfo.isFakeTracking = true;
+      // trackingInfo.tracking = randomTracking();
+      // trackingInfo.carrier = "Other";
    }
    chrome.runtime.sendMessage({
       message: "forceAddTracking",
@@ -203,16 +203,95 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
          }
          notifySuccess("Add tracking code successfully.");
          break;
+
+      case "forceEditTracking":
+         res({ message: "received" });
+         if (!data) return;
+
+         // wait for jQuery to load
+         while (true) {
+            if (jQuery.isReady) {
+               break;
+            }
+            await sleep(500);
+         }
+
+         // wait for the reconfirm button to load
+         while (true) {
+            const confirmBtnXpath = 'input.a-button-input[value="Re-confirm Shipment"]';
+            if ($(confirmBtnXpath).length) break;
+            await sleep(500);
+         }
+
+         const editError = await handEditTracking(data);
+         if (editError) {
+            notifyError(editError);
+            return;
+         }
+         notifySuccess("Edit tracking code successfully.");
+         break;
+
+      case "verifyAddTracking":
+         res({ message: "received" });
+         if (!data) return;
+
+         // wait for jQuery to load
+         while (true) {
+            if (jQuery.isReady) {
+               break;
+            }
+            await sleep(500);
+         }
+
+         // TODO
+         const { orderId, trackingCode } = data;
+
+         // wait for the tracking span to be ready
+         const trackingSpanXpath = 'span[data-test-id="tracking-id-value"]';
+         while (true) {
+            if ($(trackingSpanXpath).length) break;
+            await sleep(500);
+         }
+
+         // Verify if the tracking code is already in the span
+         const currentTrackingCode = $(trackingSpanXpath).text().trim();
+
+         let status = "error";
+         let message = `Tracking code for order ${orderId} does not match! Expected: ${trackingCode}, Found: ${currentTrackingCode}`;
+
+         if (currentTrackingCode === trackingCode) {
+            status = "success";
+            message = `Tracking code for order ${orderId} is correctly set to ${trackingCode}`;
+            // notifySuccess(message);
+         } else {
+            // notifyError(message);
+         }
+
+         // Send message back to background script
+         chrome.runtime.sendMessage({
+            message: "verifyAddTracking",
+            data: {
+               orderId,
+               status,
+               trackingCode,
+               message
+            },
+            domain: window.location.origin,
+         });
+
+         break;
+
+
       default:
          break;
    }
 });
 
-const handAddTracking = async (trackingInfo) => {
+const handleTracking = async (trackingInfo, confirmType) => {
    let err = "";
    try {
       if (!trackingInfo) throw Error("Invalid tracking info");
-      const { isFakeTracking, tracking, carrier, shippingService } = trackingInfo;
+      const {orderId, isFakeTracking, tracking, carrier, shippingService } = trackingInfo;
       // select carrier
       const carrierXpath = '[data-test-id="tvs-carrier-dropdown"]>select';
       while (true) {
@@ -240,8 +319,8 @@ const handAddTracking = async (trackingInfo) => {
             }
             carrierElem.value = matchVal;
          } else {
-            // set `Other`
-            carrierElem.value = "Other"
+            // set `USPS`
+            carrierElem.value = "USPS"
          }
       }
 
@@ -293,6 +372,7 @@ const handAddTracking = async (trackingInfo) => {
          }
       }
 
+
       const shippingEvent = document.createEvent("HTMLEvents");
       shippingEvent.initEvent("change", true, true);
       shippingElem.dispatchEvent(shippingEvent);
@@ -323,11 +403,16 @@ const handAddTracking = async (trackingInfo) => {
       const trackingElem = $(`input[data-test-id="text-input-tracking-id"]`);
       trackingElem.focus();
       trackingElem.val("");
-      document.execCommand("insertText", false, tracking);
+
+      // Nếu tracking là null, thay thế bằng chuỗi rỗng
+      const trackingCode = tracking !== null ? tracking : "";
+
+      document.execCommand("insertText", false, trackingCode);
       trackingElem.blur();
       await sleep(2000);
 
       // get all item add tracking
+      /*
       const dataAddedTracking = [];
       const itemXpath =
          "table.a-keyvalue tbody tr td:nth-child(4)>div:last-child";
@@ -342,10 +427,47 @@ const handAddTracking = async (trackingInfo) => {
             });
          }
       }
-      // trigger click confirm shipment
-      const confirmBtn =
-         '[data-test-id="confirm-shipment-button-action"] [value="Confirm shipment"]';
-      $(confirmBtn).trigger("click");
+      */
+
+      // get order_id and tracking only
+      const dataAddedTracking = {
+         isFakeTracking,
+         orderId: orderId,
+         trackingCode: tracking,
+      };
+
+      // Xử lý click nút xác nhận dựa trên loại (confirmType)
+      let confirmBtnXpath = '';
+      if (confirmType === 'add') {
+         confirmBtnXpath = '[data-test-id="confirm-shipment-button-action"] input[value="Confirm shipment"]';
+         $(confirmBtnXpath).trigger("click");
+
+         // Nếu tracking code là empty, đợi 1 giây và click thêm lần nữa
+         if (trackingCode === "") {
+            await sleep(1000);
+            $(confirmBtnXpath).trigger("click");
+         }
+      } else if (confirmType === 'edit') {
+         confirmBtnXpath = 'input.a-button-input[value="Re-confirm Shipment"]';
+         $(confirmBtnXpath).trigger("click");
+
+         // Đợi cho đến khi xuất hiện thông báo "Shipment Updated" trong toàn bộ trang
+         let maxRetries = 10; // Giới hạn số lần kiểm tra (10 lần * 500ms = 5 giây)
+         while (maxRetries > 0) {
+            if ($('body').text().includes("Shipment Updated")) break;
+            await sleep(500);
+            maxRetries--;
+
+            // Kiểm tra và click nút "YES, continue with this shipping service name" nếu có
+            const continueBtnXpath = 'input[value="YES, continue with this shipping service name"]';
+            if ($(continueBtnXpath).length) {
+               $(continueBtnXpath).trigger("click");
+               maxRetries = 10; // Reset số lần kiểm tra sau khi click nút này
+            }
+         }
+      }
+
+
       chrome.runtime.sendMessage({
          message: "addedTrackingCode",
          data: dataAddedTracking,
@@ -359,6 +481,15 @@ const handAddTracking = async (trackingInfo) => {
       err = error.message;
    }
    return err;
+};
+
+// Sử dụng hàm handleTracking cho từng trường hợp
+const handAddTracking = async (trackingInfo) => {
+   return await handleTracking(trackingInfo, 'add');
+};
+
+const handEditTracking = async (trackingInfo) => {
+   return await handleTracking(trackingInfo, 'edit');
 };
 
 const compareValues = (val1, val2) => {

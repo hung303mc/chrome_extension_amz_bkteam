@@ -20,10 +20,7 @@ const removeMbApi = () =>
 
 $(document).on("click", "#save", async function () {
    const value = $("#api_key").val();
-   if (!value.includes("amzapi")) {
-      alert("Invalid api key");
-      return;
-   }
+
    $(this).addClass("loader");
    await removeMbApi();
    await saveMbApi(value);
