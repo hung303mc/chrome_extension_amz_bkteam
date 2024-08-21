@@ -200,7 +200,7 @@ const syncOrderComponent = `
       <div class="om-tab">
          <button class="tablinks" data-name="not_synced">Not Synced</button>
          <button class="tablinks" data-name="ignored" style="display: none;">Ignored</button>
-         <button class="tablinks" data-name="grand_total">Update Grand Totals</button>
+         <button class="tablinks" data-name="grand_total" style="display: none;">Update Grand Totals</button>
          <button class="tablinks" data-name="update_tracking">Update Tracking</button>
       </div>
       <div id="not_synced" class="tabcontent">

@@ -102,6 +102,13 @@ const sendToContentScript = (msg, data) =>
     });
   });
 
+const saveMBApiKey = (value) =>
+    new Promise((resolve) =>
+        chrome.storage.local.set({ "MBApi": value }).then(() => {
+          resolve(value);
+        })
+    );
+
 const getMBApiKey = () =>
   new Promise(async (resolve) => {
     await chrome.storage.local.get("MBApi").then((result) => {
@@ -161,6 +168,36 @@ const openOrderPage = () => {
     for (let tab of tabs) {
       if (found) break;
       if (tab?.url?.includes("orders-v3")) {
+        found = tab.id;
+        break;
+      }
+    }
+
+    if (found) {
+      chrome.tabs.update(found, {
+        active: true,
+        url,
+      });
+    } else {
+      chrome.tabs.create({
+        active: true,
+        url,
+      });
+    }
+  });
+};
+
+const openHomePage = () => {
+  if (!globalDomain.includes("sellercentral")) {
+    return;
+  }
+  const url = `${globalDomain}/home`;
+  chrome.tabs.query({}, (tabs) => {
+    let found = false;
+
+    for (let tab of tabs) {
+      if (found) break;
+      if (tab?.url?.includes("/home")) {
         found = tab.id;
         break;
       }
@@ -634,6 +671,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const { order } = data;
       if (!order || order["amazonOrderId"] != OrderInfo.orderId) return;
       OrderInfo.order = order;
+      saveLog("orderLog - dev tool", { type: "Order Information", data: order });
     }
     // capture shipping order info
     if (endPoint.includes("/orders-st/resolve")) {
@@ -680,8 +718,25 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// Hàm lưu log vào Chrome Storage
+const saveLog = (key, message) => {
+  chrome.storage.local.get([key], (result) => {
+    const logs = result[key] || [];
+    logs.push(message);
+    const data = {};
+    data[key] = logs;
+    chrome.storage.local.set(data);
+  });
+};
+
 const PT_ADDRESS = /\s(unit|stage|apt|ln|ste|ave)\s/i;
 const getOrderInfo = async (order, shipping) => {
+
+  // Lưu log vào localStorage
+  // saveLog("orderLog", { type: "Order Information", data: order });
+  // saveLog("shippingLog", { type: "Shipping Information", data: shipping });
+
+
   if (
     !order ||
     !shipping ||
@@ -720,7 +775,7 @@ const getOrderInfo = async (order, shipping) => {
     shippingService: order.shippingService,
     orderCreated: null,
     orderShipByDate: null,
-    orderDeliverByDate: null,
+    orderDeliveryByDate: null,
   };
   if (!info.shipping.address && info.shipping.address2) {
     info.shipping.address = info.shipping.address2;
@@ -758,6 +813,7 @@ const getOrderInfo = async (order, shipping) => {
   };
   info.orderCreated = getDate(order.purchaseDate, true);
   info.orderShipByDate = getDate(order.latestShipDate);
+  info.orderDeliveryByDate = getDate(order.latestDeliveryDate);
   const productWithContent = await getProductInfoString(order.orderItems);
   for (const item of order.orderItems) {
     if (item.QuantityOrdered < 1) continue; // case: qty = 0 => order can cancelled
@@ -1721,6 +1777,29 @@ chrome.runtime.onMessage.addListener(async (req) => {
   if (sender !== "OMG") return;
   switch (message) {
     case "response":
+      // Capture merchant ID from "get-merchant-marketplaces-for-partner-account"
+      if (endpoint.includes("get-merchant-marketplaces-for-partner-account")) {
+        const { merchantMarketplaces } = data;
+        if (merchantMarketplaces && merchantMarketplaces.length > 0) {
+          const usMarketplace = merchantMarketplaces.find(marketplace => marketplace.marketplaceName === "United States");
+          if (usMarketplace) {
+            const usMerchantId = usMarketplace.merchantId.split('.').pop();
+            console.log("Merchant ID for United States: inject js", usMerchantId);
+
+            // Check if mbapikey exists
+            const mbApiKey = await getMBApiKey();
+            if (!mbApiKey) {
+              // Save the merchantId to MBApi only if mbapikey does not exist
+              await saveMBApiKey(usMerchantId);
+              console.log("Merchant ID has been saved to MBApi");
+            } else {
+              console.log("MBApiKey already exists, not saving the Merchant ID");
+            }
+
+          }
+        }
+      }
+
       const mbApiKey = await getMBApiKey();
       if (!mbApiKey) return;
       if (!data) break;
@@ -1728,6 +1807,7 @@ chrome.runtime.onMessage.addListener(async (req) => {
         const { order } = data;
         if (!order || order["amazonOrderId"] != OrderInfo.orderId) return;
         OrderInfo.order = order;
+        saveLog("orderLog - inject js", { type: "Order Information", data: order });
       }
 
       if (endpoint.includes("/orders-st/resolve")) {
@@ -1775,13 +1855,14 @@ chrome.runtime.onMessage.addListener(async (req) => {
           CustomOrder.personalizedInfo = data;
         }
       }
+
       break;
     default:
       break;
   }
 });
 
-chrome.runtime.onInstalled.addListener(openOrderPage);
+chrome.runtime.onInstalled.addListener(openHomePage);
 
 function getRealTime(dateStr) {
   const myDate = new Date(parseInt(dateStr));
