@@ -1,4 +1,4 @@
-const mbApi = "MBApi";
+var mbApi = "MBApi";
 const addonCollapsible = "AddonCollapsible";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

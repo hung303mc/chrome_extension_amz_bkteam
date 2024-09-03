@@ -111,6 +111,8 @@ const detectCarrier = (carrierCode = "") => {
          return "DHL eCommerce";
       case "dhl_express":
          return "DHL Express";
+      case "xyex":
+         return "XYEX";
       default:
          break;
    }
@@ -289,6 +291,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
 
 const handleTracking = async (trackingInfo, confirmType) => {
    let err = "";
+
    try {
       if (!trackingInfo) throw Error("Invalid tracking info");
       const {orderId, isFakeTracking, tracking, carrier, shippingService } = trackingInfo;
@@ -299,13 +302,15 @@ const handleTracking = async (trackingInfo, confirmType) => {
          await sleep(500);
       }
       const carrierElem = document.querySelector(carrierXpath);
-      carrierElem.value = carrier;
+      // carrierElem.value = carrier;
       
       // update
       // select carrier
       //    + check carrier in options
       //    + else, set value = "Other"
       const carrierOptions = Array.from(carrierElem?.options)
+      let isOtherCarrier = false;
+
       if (carrierOptions?.length > 0) {
          // carrier code include list options.
          if ( carrier && carrierOptions.some((opt) => compareValues(opt?.value, carrier) )) {
@@ -319,29 +324,39 @@ const handleTracking = async (trackingInfo, confirmType) => {
             }
             carrierElem.value = matchVal;
          } else {
-            // set `USPS`
-            carrierElem.value = "USPS"
+            // set `others`
+            carrierElem.value = "Other";
+            isOtherCarrier = true; // Đánh dấu nếu carrier là "Other"
+            console.log("isOtherCarrier = true")
          }
       }
 
       const carrierEvent = document.createEvent("HTMLEvents");
       carrierEvent.initEvent("change", true, true);
       carrierElem.dispatchEvent(carrierEvent);
-      if (isFakeTracking) {
-         await sleep(1000);
-         // set carrier name
-         const carrierNameXpath = 'input[data-test-id="text-input-carrier"]';
+      await sleep(1000);
+
+      // Chỉ điền tên carrier manually nếu carrier là "Other"
+      if (isOtherCarrier) {
+         // set custom carrier name if 'Other' is selected
+         const customCarrierXpath = 'input[data-test-id="text-input-carrier"]';
          while (true) {
-            if ($(carrierNameXpath).length) break;
+            if ($(customCarrierXpath).length) break;
             await sleep(500);
          }
-         const carrierNameElem = $(carrierNameXpath);
-         carrierNameElem.focus();
-         carrierNameElem.val("");
-         document.execCommand("insertText", false, "Progressing");
-         carrierNameElem.blur();
+
+         const customCarrierElem = $(customCarrierXpath);
+         customCarrierElem.focus();
+         customCarrierElem.val("");
+         document.execCommand(
+             "insertText",
+             false,
+             carrier // Điền tên carrier vào đây
+         );
+         customCarrierElem.blur();
+         await sleep(2000);
       }
-      await sleep(2000);
+
       // select shipping option
       const shippingXpath = ".shipping-service-dropdown select";
       while (true) {
@@ -382,22 +397,43 @@ const handleTracking = async (trackingInfo, confirmType) => {
       if (!validShippingService) {
          // set shipping name
          const shippingNameXpath = 'input[data-test-id="shipping-service"]';
-         while (true) {
-            if ($(shippingNameXpath).length) break;
-            await sleep(500);
+         let attempts = 0;
+         let err = null;
+
+         while (attempts < 3) {
+            if ($(shippingNameXpath).length) {
+               const shippingNameElem = $(shippingNameXpath);
+               shippingNameElem.focus();
+               shippingNameElem.val("");
+               document.execCommand(
+                   "insertText",
+                   false,
+                   isFakeTracking ? "Standard Shipping" : carrier
+               );
+               shippingNameElem.blur();
+
+               await sleep(2000);
+               break;
+            } else {
+               // Nếu không tìm thấy, chờ 5 giây và kiểm tra lại
+               await sleep(5000);
+               shippingElem.dispatchEvent(shippingEvent);
+               attempts++;
+            }
          }
 
-         const shippingNameElem = $(shippingNameXpath);
-         shippingNameElem.focus();
-         shippingNameElem.val("");
-         document.execCommand(
-            "insertText",
-            false,
-            isFakeTracking ? "Standard Shipping" : carrier
-         );
-         shippingNameElem.blur();
-         await sleep(2000);
+         // Nếu sau 3 lần vẫn không tìm thấy, return error
+         if (attempts === 3) {
+            err = "Không thể tìm thấy phần tử shipping name sau 3 lần thử.";
+            chrome.runtime.sendMessage({
+               message: "addedTrackingCode",
+               error: err,
+               domain: window.location.origin,
+            });
+            return err;
+         }
       }
+
       
       // set tracking code
       const trackingElem = $(`input[data-test-id="text-input-tracking-id"]`);

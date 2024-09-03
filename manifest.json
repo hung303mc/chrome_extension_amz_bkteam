@@ -29,6 +29,7 @@
       "js": [
         "assets/libs/jquery.min.js",
         "assets/libs/jquery.toast.js",
+        "popup/popup.js",
         "scripts/content_script.js",
         "scripts/sync_order.js",
         "scripts/add_tracking.js",

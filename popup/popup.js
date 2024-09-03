@@ -1,40 +1,60 @@
-const mbApi = "MBApi";
+var mbApi = "MBApi";
 const saveMbApi = (apiKey) =>
-   new Promise((r) =>
-      chrome.storage.local.set({ [mbApi]: apiKey }).then(() => {
-         r(apiKey);
-      })
-   );
+    new Promise((resolve) => {
+        chrome.storage.local.set({ [mbApi]: apiKey }).then(() => {
+            localStorage.setItem(mbApi, apiKey);
+            resolve(apiKey);
+        });
+    });
+
 const getMbApi = () =>
-   new Promise((r) =>
-      chrome.storage.local.get(mbApi).then((result) => {
-         r(result[mbApi]);
-      })
-   );
+    new Promise((resolve) => {
+        chrome.storage.local.get(mbApi).then((result) => {
+            if (result[mbApi] !== undefined) {
+                resolve(result[mbApi]);
+            } else {
+                // Nếu không có trong chrome.storage.local, kiểm tra trong localStorage
+                const localData = localStorage.getItem(mbApi);
+                resolve(localData);
+            }
+        });
+    });
+
 const removeMbApi = () =>
-   new Promise((r) =>
-      chrome.storage.local.remove(mbApi).then((result) => {
-         r(result);
-      })
-   );
+    new Promise((resolve) => {
+        chrome.storage.local.remove(mbApi).then(() => {
+            localStorage.removeItem(mbApi);
+            resolve();
+        });
+    });
 
 $(document).on("click", "#save", async function () {
-   const value = $("#api_key").val();
+    const value = $("#api_key").val();
+    var $doc = $(this);
+    $doc.addClass("loader");
+    await removeMbApi();
+    await saveMbApi(value);
 
-   $(this).addClass("loader");
-   await removeMbApi();
-   await saveMbApi(value);
-   chrome.runtime.sendMessage({
-      message: "saveApiKey",
-      data: value,
-      domain: window.location.origin
-   });
+    chrome.runtime.sendMessage({
+        message: "saveApiKey",
+        data: value,
+    });
 });
 
+
 async function checkApiKey() {
-   const key = await getMbApi();
-   if (key) $("#api_key").val(key);
+    const key = await getMbApi();
+    if (key) {
+        console.log("API key retrieved:", key);
+        $("#api_key").val(key);
+        // Nếu có API key, lưu lại vào storage.local
+        await saveMbApi(key);
+        console.log("API key has been saved to storage.local");
+    } else {
+        console.log("No API key found.");
+    }
 }
+
 
 $(document).ready(function () {
    checkApiKey();

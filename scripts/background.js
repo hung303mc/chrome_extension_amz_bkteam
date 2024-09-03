@@ -102,13 +102,6 @@ const sendToContentScript = (msg, data) =>
     });
   });
 
-const saveMBApiKey = (value) =>
-    new Promise((resolve) =>
-        chrome.storage.local.set({ "MBApi": value }).then(() => {
-          resolve(value);
-        })
-    );
-
 const getMBApiKey = () =>
   new Promise(async (resolve) => {
     await chrome.storage.local.get("MBApi").then((result) => {
@@ -456,7 +449,12 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
   }
 
   if (message === "runUpdateTracking") {
-    const result = await sendRequestToMB("OrderNeedUpdateTracking", null, null);
+    const apiKey = await getMBApiKey();
+    let query = JSON.stringify({
+      input: apiKey
+    });
+
+    const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
     let error = null;
     if (result.error || result.errors?.[0].message) {
       error = result.error
@@ -745,6 +743,9 @@ const getOrderInfo = async (order, shipping) => {
   )
     return null;
 
+  // Lấy MB API Key để sử dụng làm merchantId
+  const merchantId = await getMBApiKey();
+
   let line1 = shipping.line1 || "";
   let line2 = shipping.line2 || "";
   const matcher = line1.match(PT_ADDRESS);
@@ -756,6 +757,7 @@ const getOrderInfo = async (order, shipping) => {
 
   const info = {
     orderId: order.amazonOrderId,
+    merchantId,  // Thêm merchantId vào info
     items: [],
     shipping: {
       name: shipping.name,
@@ -1778,28 +1780,6 @@ chrome.runtime.onMessage.addListener(async (req) => {
   switch (message) {
     case "response":
       // Capture merchant ID from "get-merchant-marketplaces-for-partner-account"
-      if (endpoint.includes("get-merchant-marketplaces-for-partner-account")) {
-        const { merchantMarketplaces } = data;
-        if (merchantMarketplaces && merchantMarketplaces.length > 0) {
-          const usMarketplace = merchantMarketplaces.find(marketplace => marketplace.marketplaceName === "United States");
-          if (usMarketplace) {
-            const usMerchantId = usMarketplace.merchantId.split('.').pop();
-            console.log("Merchant ID for United States: inject js", usMerchantId);
-
-            // Check if mbapikey exists
-            const mbApiKey = await getMBApiKey();
-            if (!mbApiKey) {
-              // Save the merchantId to MBApi only if mbapikey does not exist
-              await saveMBApiKey(usMerchantId);
-              console.log("Merchant ID has been saved to MBApi");
-            } else {
-              console.log("MBApiKey already exists, not saving the Merchant ID");
-            }
-
-          }
-        }
-      }
-
       const mbApiKey = await getMBApiKey();
       if (!mbApiKey) return;
       if (!data) break;
@@ -2053,6 +2033,8 @@ const detectCarrier = (carrierCode = "") => {
       return "DHL eCommerce";
     case "dhl_express":
       return "DHL Express";
+    case "xyex":
+      return "XYEX";
     default:
       break;
   }
