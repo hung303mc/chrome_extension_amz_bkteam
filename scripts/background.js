@@ -211,93 +211,73 @@ const openHomePage = () => {
 };
 
 const downloadFiles = async (fieldValues, apiKey) => {
-  const secret = "cb447af6-5125-4c59-b591-d0eba1c41642";
-  // const endpoint = "http://188.166.212.98:4082/";
-  const endpoint = "http://206.189.90.227:4082/";
-
-  const newBucket = "merchbridge";
-
   try {
     const result = await Promise.allSettled(
-      fieldValues.map(async (item) => {
-        const fileKey =
-          Array.from({ length: 2 })
-            .map(() => Math.random().toString(36).slice(2))
-            .join("_") + "_.jpg";
-        // const body = {
-        //   file_url: item.fileUrl,
-        //   file_key: fileKey,
-        //   secret: secret,
-        //   bucket: newBucket,
-        // };
-        const req = new Request(item.fileUrl);
-        const controller = new AbortController();
+        fieldValues.map(async (item) => {
+          const fileKey =
+              Array.from({ length: 2 })
+                  .map(() => Math.random().toString(36).slice(2))
+                  .join("_") + "_.jpg";
 
-        const timeoutId = setTimeout(() => controller.abort(), 1000 * 300); // 5m
-        const res = await fetch(req, { signal: controller.signal });
-        console.log("res  >>> ", res);
-        if (res.ok) {
-          const result = await res.blob();
-          if (result.type && result.size) {
-            const data = {
-              name: fileKey,
-              mimeType: result.type,
-              size: result.size,
-              folder: "amz_personalized_files",
-            };
-            let query = JSON.stringify({
-              operationName: "createUploadUrl",
-              variables: {
-                input: data,
-              },
-              query:
-                "mutation createUploadUrl($input: RequestFileUpload!) {createUploadUrl(input: $input){ key, url }}",
-            });
+          const req = new Request(item.fileUrl);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1000 * 300); // 5m
+          const res = await fetch(req, { signal: controller.signal });
 
-            const res = await sendRequestToMB(null, apiKey, query);
-            if (
-              res &&
-              res.data &&
-              res.data.createUploadUrl &&
-              res.data.createUploadUrl.url
-            ) {
-              const uploadedResponse = await fetch(
-                res.data.createUploadUrl.url,
-                {
-                  method: "PUT",
-                  headers: {
-                    "Content-Type": result.type,
-                  },
-                  body: result,
-                },
-              );
+          if (res.ok) {
+            const fileBlob = await res.blob();
+            if (fileBlob.type && fileBlob.size) {
+              // Sử dụng FileReader để chuyển đổi Blob thành chuỗi base64
+              const reader = new FileReader();
 
-              console.log("uploadedResponse", uploadedResponse);
-              if (uploadedResponse.ok) {
-                const resultend = await uploadedResponse.text();
-                console.log("resultend >>>", resultend);
+              return new Promise((resolve, reject) => {
+                reader.onloadend = async () => {
+                  const base64Data = reader.result.split(',')[1]; // Lấy phần base64 sau 'data:image/jpeg;base64,'
 
-                return {
-                  [item.name]: "__OM_FILE_KEY__" + res.data.createUploadUrl.key,
+                  // Chuẩn bị payload JSON để gửi qua sendRequestToMB
+                  const payload = {
+                    fileName: fileKey,
+                    fileData: base64Data, // Sử dụng chuỗi base64 đã chuyển đổi
+                    mimeType: fileBlob.type,
+                    folder: "desgin_images_data", // Chỉ cần subfolder tới đây
+                  };
+
+                  // Gửi yêu cầu qua sendRequestToMB
+                  const uploadResponse = await sendRequestToMB("createUploadUrl", apiKey, JSON.stringify(payload));
+
+                  if (uploadResponse && uploadResponse.fileUrl) {
+                    resolve({ [item.name]: uploadResponse.fileUrl });
+                  } else {
+                    console.error("Upload failed:", uploadResponse.error || "Unknown error");
+                    reject(null);
+                  }
                 };
-              }
+
+                reader.onerror = (error) => {
+                  console.error("Error reading file:", error);
+                  reject(null);
+                };
+
+                reader.readAsDataURL(fileBlob); // Đọc file dưới dạng Data URL (base64)
+              });
             }
           }
-        }
 
-        return null;
-      }),
+          return null;
+        })
     );
 
     return result
-      .filter((i) => i.status === "fulfilled")
-      .map(({ value }) => value);
+        .filter((i) => i.status === "fulfilled")
+        .map(({ value }) => value);
   } catch (err) {
     console.log("download file error: ", err);
   }
 
   return [];
 };
+
+
 
 let stopProcess = false;
 // capture event from content script
