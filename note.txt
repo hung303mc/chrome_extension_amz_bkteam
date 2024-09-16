@@ -283,7 +283,6 @@
           "expenseTotal": null,
           "hasLastMileNetworkIdVAS": false,
           "heavyOrBulky": false,
-          "jointFreeShippingPromotionApplied": false,
           "packageType": null,
           "transparencyItem": false,
           "transparencyItemAttribute": {

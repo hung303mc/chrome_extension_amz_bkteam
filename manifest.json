@@ -2,8 +2,8 @@
 "update_url": "https://clients2.google.com/service/update2/crx",
 
   "manifest_version": 3,
-  "name": "Bkteam Sync Order Amz",
-  "version": "1.0.1",
+  "name": "Bkteam Sync Order Amz v4",
+  "version": "1.0.4",
   "description": "An extension to help you fulfill Amazon orders easier with Bkteam.",
   "icons": {
     "16": "assets/images/16.png",
