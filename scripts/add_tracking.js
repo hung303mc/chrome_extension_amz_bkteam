@@ -295,6 +295,21 @@ const handleTracking = async (trackingInfo, confirmType) => {
    try {
       if (!trackingInfo) throw Error("Invalid tracking info");
       const {orderId, isFakeTracking, tracking, carrier, shippingService } = trackingInfo;
+
+      // Nếu trackingCode rỗng thì tick checkbox, nếu không thì bỏ tick checkbox
+      const checkboxSelector = '#missing-tracking-id-checkbox';
+      if (tracking === "") {
+         // Nếu chưa được tick, thì tick vào
+         if (!$(checkboxSelector).attr('checked')) {
+            $(checkboxSelector).attr('checked', 'checked');
+         }
+      } else {
+         // Nếu đã tick, thì bỏ tick
+         if ($(checkboxSelector).attr('checked')) {
+            $(checkboxSelector).removeAttr('checked');
+         }
+      }
+
       // select carrier
       const carrierXpath = '[data-test-id="tvs-carrier-dropdown"]>select';
       while (true) {
@@ -357,95 +372,102 @@ const handleTracking = async (trackingInfo, confirmType) => {
          await sleep(2000);
       }
 
-      // select shipping option
-      const shippingXpath = ".shipping-service-dropdown select";
-      while (true) {
-         if ($(shippingXpath).length) break;
-         await sleep(500);
-      }
-      const shippingElem = document.querySelector(shippingXpath);
-      // shippingElem.value = "Other";
+      // // select shipping option
+      // const shippingXpath = ".shipping-service-dropdown select";
+      // while (true) {
+      //    if ($(shippingXpath).length) break;
+      //    await sleep(500);
+      // }
+      // const shippingElem = document.querySelector(shippingXpath);
+      // // shippingElem.value = "Other";
+      //
+      // // set shipping service
+      // let validShippingService = false;
+      // const shippingServiceOptions = Array.from(shippingElem?.options);
+      // if (shippingServiceOptions?.length > 0) {
+      //    // check `shippingSerive` include
+      //    if (shippingService && shippingServiceOptions.some((opt) => compareValues(opt?.value, shippingService))) {
+      //       let matchVal = shippingService;
+      //       for (let opt of shippingServiceOptions) {
+      //          if (!opt || typeof opt !== "object") continue;
+      //          let selected = compareValues(opt.value, shippingService);
+      //
+      //          opt.selected = selected;
+      //          if (selected) matchVal = opt.value;
+      //       }
+      //       shippingElem.value = matchVal;
+      //       validShippingService = true;
+      //    } else {
+      //       shippingElem.value = "Other";
+      //    }
+      // }
+      //
+      //
+      // const shippingEvent = document.createEvent("HTMLEvents");
+      // shippingEvent.initEvent("change", true, true);
+      // shippingElem.dispatchEvent(shippingEvent);
+      // await sleep(1000);
+      //
+      // // case: validShippingService = false => set shipping name
+      // if (!validShippingService) {
+      //    // set shipping name
+      //    const shippingNameXpath = 'input[data-test-id="shipping-service"]';
+      //    let attempts = 0;
+      //    let err = null;
+      //
+      //    while (attempts < 3) {
+      //       if ($(shippingNameXpath).length) {
+      //          const shippingNameElem = $(shippingNameXpath);
+      //          shippingNameElem.focus();
+      //          shippingNameElem.val("");
+      //          document.execCommand(
+      //              "insertText",
+      //              false,
+      //              isFakeTracking ? "Standard Shipping" : carrier
+      //          );
+      //          shippingNameElem.blur();
+      //
+      //          await sleep(2000);
+      //          break;
+      //       } else {
+      //          // Nếu không tìm thấy, chờ 5 giây và kiểm tra lại
+      //          await sleep(5000);
+      //          shippingElem.dispatchEvent(shippingEvent);
+      //          attempts++;
+      //       }
+      //    }
+      //
+      //    // Nếu sau 3 lần vẫn không tìm thấy, return error
+      //    if (attempts === 3) {
+      //       err = "Không thể tìm thấy phần tử shipping name sau 3 lần thử.";
+      //       chrome.runtime.sendMessage({
+      //          message: "addedTrackingCode",
+      //          error: err,
+      //          domain: window.location.origin,
+      //       });
+      //       return err;
+      //    }
+      // }
 
-      // set shipping service
-      let validShippingService = false;
-      const shippingServiceOptions = Array.from(shippingElem?.options);
-      if (shippingServiceOptions?.length > 0) {
-         // check `shippingSerive` include
-         if (shippingService && shippingServiceOptions.some((opt) => compareValues(opt?.value, shippingService))) {
-            let matchVal = shippingService;
-            for (let opt of shippingServiceOptions) {
-               if (!opt || typeof opt !== "object") continue;
-               let selected = compareValues(opt.value, shippingService);
 
-               opt.selected = selected;
-               if (selected) matchVal = opt.value;
-            }
-            shippingElem.value = matchVal;
-            validShippingService = true;
-         } else {
-            shippingElem.value = "Other";
-         }
-      }
-
-
-      const shippingEvent = document.createEvent("HTMLEvents");
-      shippingEvent.initEvent("change", true, true);
-      shippingElem.dispatchEvent(shippingEvent);
-      await sleep(1000);
-
-      // case: validShippingService = false => set shipping name
-      if (!validShippingService) {
-         // set shipping name
-         const shippingNameXpath = 'input[data-test-id="shipping-service"]';
-         let attempts = 0;
-         let err = null;
-
-         while (attempts < 3) {
-            if ($(shippingNameXpath).length) {
-               const shippingNameElem = $(shippingNameXpath);
-               shippingNameElem.focus();
-               shippingNameElem.val("");
-               document.execCommand(
-                   "insertText",
-                   false,
-                   isFakeTracking ? "Standard Shipping" : carrier
-               );
-               shippingNameElem.blur();
-
-               await sleep(2000);
-               break;
-            } else {
-               // Nếu không tìm thấy, chờ 5 giây và kiểm tra lại
-               await sleep(5000);
-               shippingElem.dispatchEvent(shippingEvent);
-               attempts++;
-            }
-         }
-
-         // Nếu sau 3 lần vẫn không tìm thấy, return error
-         if (attempts === 3) {
-            err = "Không thể tìm thấy phần tử shipping name sau 3 lần thử.";
-            chrome.runtime.sendMessage({
-               message: "addedTrackingCode",
-               error: err,
-               domain: window.location.origin,
-            });
-            return err;
-         }
-      }
-
-      
-      // set tracking code
-      const trackingElem = $(`input[data-test-id="text-input-tracking-id"]`);
+// Lấy phần tử input của tracking code
+      const trackingElem = document.querySelector('input[data-test-id="text-input-tracking-id"]');
       trackingElem.focus();
-      trackingElem.val("");
 
-      // Nếu tracking là null, thay thế bằng chuỗi rỗng
+// Nếu tracking là null, thay thế bằng chuỗi rỗng
       const trackingCode = tracking !== null ? tracking : "";
 
-      document.execCommand("insertText", false, trackingCode);
+// Đặt giá trị trực tiếp cho tracking code bằng setAttribute và trigger sự kiện
+      trackingElem.setAttribute('value', trackingCode); // Đặt trực tiếp giá trị vào thuộc tính `value`
+      trackingElem.value = trackingCode; // Đặt lại giá trị thông qua thuộc tính `value` để đảm bảo sự thay đổi
+
+// Kích hoạt các sự kiện để đảm bảo trang web nhận diện được thay đổi
+      trackingElem.dispatchEvent(new Event('input', { bubbles: true }));
+      trackingElem.dispatchEvent(new Event('change', { bubbles: true }));
+
       trackingElem.blur();
       await sleep(2000);
+
 
       // get all item add tracking
       /*
@@ -477,11 +499,25 @@ const handleTracking = async (trackingInfo, confirmType) => {
       if (confirmType === 'add') {
          confirmBtnXpath = '[data-test-id="confirm-shipment-button-action"] input[value="Confirm shipment"]';
          $(confirmBtnXpath).trigger("click");
+         await sleep(2000);
 
          // Nếu tracking code là empty, đợi 1 giây và click thêm lần nữa
          if (trackingCode === "") {
             await sleep(1000);
             $(confirmBtnXpath).trigger("click");
+         }else{
+            // Đợi tối đa 5 lần (5 giây) để tìm và click nút "YES, please continue with this shipping service name"
+            const continueBtnXpath = 'input[value="YES, please continue with this shipping service name"]';
+            let maxRetries = 5;
+            while (maxRetries > 0) {
+               if ($(continueBtnXpath).length) {
+                  $(continueBtnXpath).trigger("click");
+                  await sleep(2000); // Đợi 2 giây sau khi click trước khi tiếp tục
+                  break; // Thoát khỏi vòng lặp sau khi click
+               }
+               await sleep(1000); // Đợi 1 giây trước khi thử lại
+               maxRetries--;
+            }
          }
       } else if (confirmType === 'edit') {
          confirmBtnXpath = 'input.a-button-input[value="Re-confirm Shipment"]';
@@ -495,12 +531,50 @@ const handleTracking = async (trackingInfo, confirmType) => {
             maxRetries--;
 
             // Kiểm tra và click nút "YES, continue with this shipping service name" nếu có
-            const continueBtnXpath = 'input[value="YES, continue with this shipping service name"]';
+            const continueBtnXpath = 'input[value="YES, please continue with this shipping service name"]';
             if ($(continueBtnXpath).length) {
                $(continueBtnXpath).trigger("click");
                maxRetries = 10; // Reset số lần kiểm tra sau khi click nút này
             }
          }
+
+         // // Nếu sau 5 giây không có thông báo "Shipment Updated", chọn lại shipping option
+         // if (maxRetries === 0) {
+         //    console.log("Không thấy thông báo 'Shipment Updated', đang chọn lại shipping option...");
+         //
+         //    // // Chọn lại shipping option
+         //    // const shippingXpath = ".shipping-service-dropdown select";
+         //    // while (true) {
+         //    //    if ($(shippingXpath).length) break;
+         //    //    await sleep(500);
+         //    // }
+         //    // const shippingElem = document.querySelector(shippingXpath);
+         //    //
+         //    // let validShippingService = false;
+         //    // const shippingServiceOptions = Array.from(shippingElem?.options);
+         //    // if (shippingServiceOptions?.length > 0) {
+         //    //    // check `shippingSerive` include
+         //    //    if (shippingService && shippingServiceOptions.some((opt) => compareValues(opt?.value, shippingService))) {
+         //    //       let matchVal = shippingService;
+         //    //       for (let opt of shippingServiceOptions) {
+         //    //          if (!opt || typeof opt !== "object") continue;
+         //    //          let selected = compareValues(opt.value, shippingService);
+         //    //
+         //    //          opt.selected = selected;
+         //    //          if (selected) matchVal = opt.value;
+         //    //       }
+         //    //       shippingElem.value = matchVal;
+         //    //       validShippingService = true;
+         //    //    } else {
+         //    //       shippingElem.value = "Other";
+         //    //    }
+         //    // }
+         //    //
+         //    // const shippingEvent = document.createEvent("HTMLEvents");
+         //    // shippingEvent.initEvent("change", true, true);
+         //    // shippingElem.dispatchEvent(shippingEvent);
+         //    // await sleep(1000);
+         // }
       }
 
 
