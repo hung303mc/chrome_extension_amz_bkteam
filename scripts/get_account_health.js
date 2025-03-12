@@ -239,7 +239,7 @@ async function getAccountHealth() {
         const jsonData = JSON.stringify(accountAmazon);
         console.log('accountAmazon :>> ', accountAmazon);
         console.log("Account Health Data:", jsonData);
-        await sendPostRequest("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api.php?case=10", jsonData);
+        await sendPostRequest("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api.php?case=getAccountHealth", jsonData);
     } catch (err) {
         console.error("Error in getAccountHealth:", err);
     }
