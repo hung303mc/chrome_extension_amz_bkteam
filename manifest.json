@@ -1,6 +1,5 @@
 {
-"update_url": "https://clients2.google.com/service/update2/crx",
-
+  "update_url": "https://clients2.google.com/service/update2/crx",
   "manifest_version": 3,
   "name": "Bkteam Sync Order Amz v5",
   "version": "1.0.5",
@@ -35,9 +34,13 @@
         "scripts/add_tracking.js",
         "scripts/grand_total.js",
         "scripts/update_tracking.js",
-        "scripts/sync_file.js"
+        "scripts/sync_file.js",
+        "scripts/get_account_health.js"
       ],
-      "css": ["assets/styles/jquery.toast.css", "assets/styles/content.css"],
+      "css": [
+        "assets/styles/jquery.toast.css",
+        "assets/styles/content.css"
+      ],
       "run_at": "document_end"
     },
     {
@@ -58,7 +61,13 @@
     "extension_pages": "script-src 'self'; object-src 'self'",
     "sandbox": "sandbox allow-scripts; script-src 'self' 'https://sellercentral.amazon.com/*'; object-src 'self'"
   },
-  "permissions": ["storage", "scripting", "activeTab"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab",
+    "webRequest",
+    "webRequestBlocking"
+  ],
   "host_permissions": [
     "https://sellercentral.amazon.com/*",
     "https://sellercentral-europe.amazon.com/*",

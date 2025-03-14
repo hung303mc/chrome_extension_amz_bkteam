@@ -2020,3 +2020,173 @@ const detectCarrier = (carrierCode = "") => {
   }
   return null;
 };
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.message === "getFeedbackData") {
+    // Mở tab ẩn với URL Feedback Manager
+    chrome.tabs.create({ url: "https://sellercentral.amazon.com/feedback-manager/index.html", active: false }, function(tab) {
+      const tabId = tab.id;
+
+      // Lắng nghe khi tab được cập nhật
+      function handleUpdated(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === "complete") {
+          // Khi trang load xong, thực hiện injection script để lấy dữ liệu
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: () => {
+              let result = {};
+              // Lấy điểm feedback
+              const feedbackSummary = document.querySelector("feedback-summary div div b");
+              if (feedbackSummary) {
+                result.fb_score = feedbackSummary.textContent.trim();
+              }
+              // Lấy dữ liệu từ feedback table (giả sử có tag kat-table-body)
+              const tableBody = document.querySelector("kat-table-body");
+              result.tableBody = tableBody;
+              if (tableBody) {
+                let rows = tableBody.querySelectorAll("kat-table-row");
+                // Positive row: hàng đầu tiên (index 0), lấy ô dữ liệu thứ 2 (index 1)
+                if (rows.length > 0) {
+                  let positiveCells = rows[0].querySelectorAll("kat-table-cell");
+                  if (positiveCells.length > 4) {
+                    let posText = positiveCells[1].textContent || "";
+                    let posMatch = posText.match(/\((\d+)\)/);
+                    if (posMatch) result.fb_possitive_last_30 = parseInt(posMatch[1]);
+                  }
+                }
+                // Negative row: hàng thứ ba (index 2), lấy ô dữ liệu thứ 2 (index 1)
+                if (rows.length > 2) {
+                  let negativeCells = rows[2].querySelectorAll("kat-table-cell");
+                  if (negativeCells.length > 1) {
+                    let negText = negativeCells[1].textContent || "";
+                    let negMatch = negText.match(/\((\d+)\)/);
+                    if (negMatch) result.fb_negative_last_30 = parseInt(negMatch[1]);
+                  }
+                }
+
+                if (rows.length > 3) {
+                  let countText = rows[3].querySelector(".rating-count")?.textContent || "";
+                  result.fb_count = parseInt(countText.replace(/[^\d]/g, ""));
+                }
+              }
+              return result;
+            }
+          }, (results) => {
+            if (chrome.runtime.lastError) {
+              sendResponse({ error: chrome.runtime.lastError.message });
+            } else {
+              sendResponse(results[0].result);
+            }
+            // Loại bỏ listener và đóng tab sau khi hoàn thành
+            setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(handleUpdated);
+              chrome.tabs.remove(tabId);
+            }, 1000);
+          });
+        }
+      }
+      chrome.tabs.onUpdated.addListener(handleUpdated);
+    });
+    // Trả về true để thông báo sendResponse được gọi bất đồng bộ
+    return true;
+  }
+
+  // Xử lý message lấy thông tin Payment
+  if (request.message === "getPaymentData") {
+    console.log('getPaymentData');
+    chrome.tabs.create({ 
+      url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx", 
+      active: false 
+    }, function(tab) {
+      const tabId = tab.id;
+      let executed = false;
+      // Buộc timeout sau 10 giây nếu trang không chuyển sang complete
+      const forcedTimeout = setTimeout(() => {
+        if (!executed) {
+          executed = true;
+          executePaymentScript(tabId);
+        }
+      }, 10000);
+  
+      function handleUpdated(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === "complete" && !executed) {
+          executed = true;
+          clearTimeout(forcedTimeout);
+          executePaymentScript(tabId);
+        }
+      }
+      chrome.tabs.onUpdated.addListener(handleUpdated);
+  
+      function executePaymentScript(tabId) {
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          func: () => {
+            let result = {};
+            // Lấy Payment Blocks
+            const paymentBlocks = document.getElementsByClassName("linkable-multi-row-card-rows-container");
+            if (paymentBlocks.length > 0) {
+              let paymentBlock = paymentBlocks[1] || paymentBlocks[0];
+              let rows = paymentBlock.getElementsByClassName("linkable-multi-row-card-row");
+              if (rows.length === 4) {
+                result.standard_orders = rows[0].querySelector(".underline-link")?.textContent.trim() || "";
+                result.invoiced_orders = rows[1].querySelector(".underline-link")?.textContent.trim() || "";
+                result.deferred_transactions = rows[2].querySelector(".underline-link #link-target")?.getAttribute("label")?.trim() || "";
+                result.balance_com = rows[3].querySelector(".currency-total-amount")?.textContent.trim() || "";
+              } else if (rows.length === 3) {
+                result.standard_orders = rows[0].querySelector(".underline-link")?.textContent.trim() || "";
+                result.deferred_transactions = rows[1].querySelector(".underline-link #link-target")?.getAttribute("label")?.trim() || "";
+                result.balance_com = rows[2].querySelector(".currency-total-amount")?.textContent.trim() || "";
+              } else if (rows.length === 2) {
+                result.standard_orders = rows[0].querySelector(".underline-link")?.textContent.trim() || "";
+                result.balance_com = rows[1].querySelector(".currency-total-amount")?.textContent.trim() || "";
+              }
+            }
+            // Lấy thông tin payment_today
+            const currencyElements = document.getElementsByClassName("currency-total-amount");
+            if (currencyElements.length > 1) {
+              let span = currencyElements[1].querySelector("span");
+              if (span) {
+                result.payment_today = span.textContent.replace(/\$/g, "").replace(/,/g, "").trim();
+              }
+            }
+            // Lấy payment_amount
+            const multiLine = document.getElementsByClassName("multi-line-child-content");
+            if (multiLine.length > 2) {
+              result.payment_amount = multiLine[2].textContent.replace(/\$/g, "").replace(/,/g, "").trim();
+            }
+            // Lấy payment_date từ thông điệp hiển thị
+            const fundElements = document.getElementsByClassName("fund-transfer-primary-message");
+            if (fundElements.length > 0) {
+              let span = fundElements[0].querySelector("span");
+              if (span) {
+                let msg = span.textContent.trim();
+                let dateMatch = msg.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+                if (dateMatch) {
+                  let parts = dateMatch[0].split("/");
+                  result.payment_date = `${parts[2]}-${parts[0]}-${parts[1]}`;
+                }
+              }
+            }
+            // Tính balance_hold = balance_com - payment_today (nếu có)
+            if (result.balance_com && result.payment_today) {
+              let balance = parseFloat(result.balance_com.replace(/\$/g, "").replace(/,/g, ""));
+              let today = parseFloat(result.payment_today.replace(/\$/g, "").replace(/,/g, ""));
+              result.balance_hold = (balance - today).toString();
+            }
+            return result;
+          }
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({ error: chrome.runtime.lastError.message });
+          } else {
+            sendResponse(results[0].result);
+          }
+          chrome.tabs.onUpdated.removeListener(handleUpdated);
+          chrome.tabs.remove(tabId);
+        });
+      }
+    });
+    return true;
+  }
+  
+});

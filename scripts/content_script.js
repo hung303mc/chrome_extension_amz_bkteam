@@ -202,6 +202,7 @@ const syncOrderComponent = `
          <button class="tablinks" data-name="ignored" style="display: none;">Ignored</button>
          <button class="tablinks" data-name="grand_total" style="display: none;">Update Grand Totals</button>
          <button class="tablinks" data-name="update_tracking">Update Tracking</button>
+         <button class="tablinks" data-name="account_health">Account Health</button>
       </div>
       <div id="not_synced" class="tabcontent">
          <div class="om-fl-center btn-sync-order-wrap">
@@ -223,6 +224,11 @@ const syncOrderComponent = `
             <button id="update-tracking" class="om-btn">Start Update</button>
          </div>
       </div>
+      <div id="account_health" class="tabcontent">
+         <div class="om-fl-center btn-updatetracking-wrap">
+            <button id="account-health" class="om-btn">Get account health</button>
+         </div>
+      </div>
    </div>
 `;
 
@@ -237,7 +243,8 @@ const initAddon = async () => {
    if (
       !window.location.href.includes("/orders-v3") &&
       !window.location.href.includes("/payments") &&
-      !window.location.href.includes("/gestalt/fulfillment")
+      !window.location.href.includes("/gestalt/fulfillment") &&
+      !window.location.href.includes("/home")
    )
       return;
    if ($(".om-addon").length) return;
