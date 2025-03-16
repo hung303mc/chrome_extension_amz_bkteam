@@ -239,7 +239,7 @@ async function getAccountHealth() {
         const jsonData = JSON.stringify(accountAmazon);
         console.log('accountAmazon :>> ', accountAmazon);
         console.log("Account Health Data:", jsonData);
-        await sendPostRequest("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api.php?case=getAccountHealth", jsonData);
+        await sendPostRequest("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=getAccountHealth", jsonData);
     } catch (err) {
         console.error("Error in getAccountHealth:", err);
     }
@@ -341,6 +341,7 @@ function getKpi(kpiData, accountAmazon) {
 async function sendPostRequest(url, jsonData) {
     const params = new URLSearchParams();
     params.append("account_info", jsonData);
+    console.log('jsonData :>> ', jsonData);
     const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -351,7 +352,7 @@ async function sendPostRequest(url, jsonData) {
     if (response.ok) {
         console.log("Data sent successfully.");
     } else {
-        console.error("Failed to send data:", response.status);
+        console.error("Failed to send data:", response.message);
     }
 }
 
