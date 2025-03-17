@@ -88,11 +88,27 @@ async function getAccountHealth() {
         if (odrSection) {
             let rows = odrSection.getElementsByClassName("a-row");
             if (rows.length >= 3) {
-                accountAmazon["fb_negative"] = extractText(rows[0], ".a-size-base");
-                accountAmazon["claims_atoz"] = extractText(rows[1], ".a-size-base");
-                accountAmazon["claims_cb"] = extractText(rows[2], ".a-size-base");
+                // Lấy giá trị ở cột số 2 cho mỗi hàng
+                let rawFbNegative = extractText(rows[0], ".sp-middle-col .a-size-base");
+                let rawClaimsAtoz = extractText(rows[1], ".sp-middle-col .a-size-base");
+                let rawClaimsCb   = extractText(rows[2], ".sp-middle-col .a-size-base");
+
+                // Hàm xử lý: loại bỏ dấu "%" và convert sang số, làm tròn 2 chữ số
+                const processValue = (rawValue) => {
+                    if (rawValue !== "N/A") {
+                        const num = parseFloat(rawValue.replace("%", "").trim());
+                        return Number(num.toFixed(2));
+                    }
+                    return null;
+                };
+
+                accountAmazon["fb_negative"] = processValue(rawFbNegative);
+                accountAmazon["claims_atoz"] = processValue(rawClaimsAtoz);
+                accountAmazon["claims_cb"]   = processValue(rawClaimsCb);
             }
         }
+
+
         const ahrElem = doc.querySelector(".ahd-numeric-ahr-indicator .a-row .a-column:nth-child(2) h3");
         if (ahrElem) {
             accountAmazon["ahr"] = parseInt(ahrElem.textContent.trim());
