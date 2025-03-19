@@ -350,6 +350,17 @@ chrome.runtime.onMessage.addListener(async function (req, sender, res) {
             data: await getStorage(mbApi),
          });
          break;
+      case "updateCancelledOrdersResponse":
+         res({ message: "received" });
+         
+         const { success, message: responseMessage, error } = data;
+         
+         if (!success || error) {
+            notifyError(error || "Có lỗi xảy ra khi cập nhật đơn hàng bị hủy.");
+         } else {
+            notifySuccess(responseMessage || "Đã cập nhật đơn hàng bị hủy thành công.");
+         }
+         break;
       default:
          break;
    }

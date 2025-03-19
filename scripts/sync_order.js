@@ -55,6 +55,81 @@ const forceConfirmBtn = ({
   return confirmShipmentBtn;
 };
 
+// Thêm hàm kiểm tra đơn hủy vào scripts/sync_order.js
+
+// Hàm để kiểm tra xem đơn hàng có bị hủy bởi khách hàng không
+const checkCancelledOrders = async (orders) => {
+  const cancelledOrders = [];
+  const ordersXpath = "#orders-table tbody tr";
+  
+  for (let i = 0; i < $(ordersXpath).length; i++) {
+    const item = $(ordersXpath)?.eq(i);
+    const orderId = item?.find("td:nth-child(3) .cell-body-title")?.text();
+    
+    // Kiểm tra nếu có phần tử có class "buyer-requested-cancel"
+    const hasCancelRequest = item.find(".buyer-requested-cancel").length > 0;
+    
+    // Hoặc kiểm tra nếu văn bản chứa thông tin về hủy đơn
+    const statusText = item.find(".order-status-column").text();
+    const hasCancelText = statusText.includes("Buyer cancellation") || 
+                          statusText.includes("Order Created by Mistake") ||
+                          statusText.includes("Cancel");
+    
+    if ((hasCancelRequest || hasCancelText) && orderId) {
+      // Tìm đơn tương ứng trong danh sách đơn hàng
+      const order = orders.find(o => o.id === orderId);
+      if (order) {
+        // Lấy lý do hủy đơn nếu có
+        let cancelReason = "";
+        const reasonElement = item.find(".buyer-requested-cancel-order-status-message");
+        if (reasonElement.length > 0) {
+          cancelReason = reasonElement.text().replace("Cancellation reason: ", "").trim();
+        }
+        
+        // Thêm thông tin hủy đơn vào đối tượng đơn hàng
+        cancelledOrders.push({
+          ...order,
+          cancelReason: cancelReason
+        });
+      }
+    }
+  }
+  
+  return cancelledOrders;
+};
+
+// Thêm hàm để gửi đơn hàng đã hủy lên server
+const updateCancelledOrders = async (cancelledOrders) => {
+  if (cancelledOrders.length === 0) return;
+  
+  try {
+    const mbApiKey = await getStorage(mbApi);
+    if (!mbApiKey) {
+      notifyError("Không tìm thấy MB API key.");
+      return;
+    }
+    
+    // Tạo danh sách ID đơn hàng bị hủy
+    const orderIds = cancelledOrders.map(order => order.id);
+    
+    // Gửi yêu cầu cập nhật đơn hàng bị hủy
+    chrome.runtime.sendMessage({
+      message: "updateCancelledOrders",
+      data: {
+        apiKey: mbApiKey,
+        orderIds: orderIds,
+        cancelledOrders: cancelledOrders
+      },
+      domain: window.location.origin,
+    });
+    
+  } catch (error) {
+    console.error("Lỗi khi cập nhật đơn hàng bị hủy:", error);
+    notifyError("Có lỗi xảy ra khi cập nhật đơn hàng bị hủy.");
+  }
+};
+
+// Sửa đổi hàm getOrderLists để thêm quét đơn bị hủy
 const getOrderLists = async () => {
   const orders = [];
   // wait load dom
@@ -123,8 +198,17 @@ const getOrderLists = async () => {
     if (!id) continue;
     orders.push({ id, img, productUrl });
   }
+  
+  // Kiểm tra đơn hàng bị hủy và gửi lên server
+  const cancelledOrders = await checkCancelledOrders(orders);
+  if (cancelledOrders.length > 0) {
+    console.log(`Tìm thấy ${cancelledOrders.length} đơn hàng bị hủy.`);
+    await updateCancelledOrders(cancelledOrders);
+  }
+  
   return orders;
 };
+
 
 const addStatusLabel = (orderInfos) => {
   if (!orderInfos) return;

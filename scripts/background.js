@@ -395,6 +395,50 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     }
   }
 
+  // Thêm case mới để xử lý đơn hàng bị hủy
+  if (message === "updateCancelledOrders") {
+    const { apiKey, orderIds, cancelledOrders } = data;
+    if (!orderIds || !orderIds.length) return;
+
+    try {
+      // Chuẩn bị dữ liệu cho request API
+      let query = JSON.stringify({
+        case: "updateCancelledOrders",
+        input: {
+          merchantId: apiKey,
+          orderIds: orderIds,
+          cancelledOrders: cancelledOrders.map(order => ({
+            orderId: order.id,
+            cancelReason: order.cancelReason || "Unknown"
+          }))
+        }
+      });
+
+      // Gửi request API đến server
+      const result = await sendRequestToMB("updateCancelledOrders", apiKey, query);
+      
+      // Gửi kết quả trở lại content script
+      const resp = {
+        success: true,
+        message: `Đã cập nhật ${orderIds.length} đơn hàng bị hủy`,
+        error: result.error
+          ? result.error
+          : result.errors
+            ? result.errors[0].message
+            : null,
+      };
+      
+      sendMessage(sender.tab.id, "updateCancelledOrdersResponse", resp);
+    } catch (error) {
+      console.error("Error updating cancelled orders:", error);
+      sendMessage(sender.tab.id, "updateCancelledOrdersResponse", {
+        success: false,
+        message: "Có lỗi xảy ra khi cập nhật đơn hàng bị hủy",
+        error: error.message
+      });
+    }
+  }
+
   if (message === "runUpdateGrandTotal") {
     let query = JSON.stringify({
       query: `
@@ -575,6 +619,28 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     sendMessage(sender.tab.id || activeTabId, "syncFileCompleted", {});
   }
 });
+
+// Thêm vào handleUpdateCancelledOrders hoặc có thể sử dụng hàm sendRequestToMB hiện có
+const handleUpdateCancelledOrders = async (orderIds, cancelReasons, apiKey, domain) => {
+  if (!orderIds || !orderIds.length) return;
+  if (!apiKey) apiKey = await getMBApiKey();
+  
+  try {
+    // Chuẩn bị dữ liệu gửi lên server
+    let query = JSON.stringify({
+      orderIds: orderIds,
+      cancelReasons: cancelReasons
+    });
+    
+    // Gửi request
+    const result = await sendRequestToMB("updateCancelledOrders", apiKey, query);
+    return result;
+  } catch (error) {
+    console.error("Error in handleUpdateCancelledOrders:", error);
+    return { error: error.message };
+  }
+};
+
 
 // capture event from popup
 chrome.runtime.onMessage.addListener((req, sender, res) => {
