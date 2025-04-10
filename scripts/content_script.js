@@ -203,6 +203,7 @@ const syncOrderComponent = `
          <button class="tablinks" data-name="grand_total" style="display: none;">Update Grand Totals</button>
          <button class="tablinks" data-name="update_tracking">Update Tracking</button>
          <button class="tablinks" data-name="account_health">Account Health</button>
+         <button class="tablinks" data-name="ads_report">Ads Report</button>         
       </div>
       <div id="not_synced" class="tabcontent">
          <div class="om-fl-center btn-sync-order-wrap">
@@ -229,6 +230,11 @@ const syncOrderComponent = `
             <button id="account-health" class="om-btn">Get account health</button>
          </div>
       </div>
+      <div id="ads_report" class="tabcontent">
+         <div class="om-fl-center btn-adsreport-wrap">
+            <button id="ads-report" class="om-btn">Download Ads Reports</button>
+         </div>
+      </div>      
    </div>
 `;
 
@@ -244,7 +250,8 @@ const initAddon = async () => {
       !window.location.href.includes("/orders-v3") &&
       !window.location.href.includes("/payments") &&
       !window.location.href.includes("/gestalt/fulfillment") &&
-      !window.location.href.includes("/home")
+      !window.location.href.includes("/home") &&
+      !window.location.href.includes("advertising.amazon.com/reports")
    )
       return;
    if ($(".om-addon").length) return;
