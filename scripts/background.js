@@ -612,43 +612,56 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                     let successCount = 0;
                     const reportNames = [];
                     
-                    // Tải xuống tất cả báo cáo cùng một lúc thay vì tuần tự
+                    // Tải xuống các báo cáo lần lượt với độ trễ phù hợp
                     const downloadPromises = downloadButtons.map(async (button, index) => {
-                        try {
-                            // Tìm tên báo cáo từ cùng hàng
-                            let reportName = "Báo cáo " + (index + 1);
-                            try {
-                                const parentRow = button.closest('.ag-row');
-                                if (parentRow) {
-                                    const reportLink = parentRow.querySelector('a.sc-fqkvVR');
-                                    if (reportLink) {
-                                        reportName = reportLink.textContent.trim();
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("Lỗi lấy tên báo cáo:", e);
-                            }
-                            
-                            reportNames.push(reportName);
-                            
-                            // Mở link trong tab mới - cách hiệu quả để tải file
-                            window.open(button.href, '_blank');
-                            
-                            // Thêm độ trễ nhỏ giữa các lần mở để tránh trình duyệt chặn
-                            await wait(300);
-                            
-                            return true;
-                        } catch (error) {
-                            console.error(`Lỗi xử lý nút ${index + 1}:`, error);
-                            return false;
-                        }
+                      try {
+                          // Tìm tên báo cáo từ cùng hàng
+                          let reportName = "Báo cáo " + (index + 1);
+                          try {
+                              // Tìm kiếm theo nhiều selector để tăng khả năng tìm thấy tên báo cáo
+                              const parentRow = button.closest('.ag-row, tr, [role="row"]');
+                              if (parentRow) {
+                                  const reportLink = parentRow.querySelector('a.sc-fqkvVR, a, .cell-value, td');
+                                  if (reportLink) {
+                                      reportName = reportLink.textContent.trim();
+                                  }
+                              }
+                          } catch (e) {
+                              console.error("Lỗi lấy tên báo cáo:", e);
+                          }
+                          
+                          reportNames.push(reportName);
+                          console.log(`Đang tải xuống báo cáo #${index + 1}: ${reportName}`);
+                          
+                          // Mở link trong tab mới
+                          const newTab = window.open(button.href, '_blank');
+                          
+                          // Đợi đủ thời gian để đảm bảo tải xuống được khởi động
+                          // Tăng từ 300ms lên 1500ms để đảm bảo file bắt đầu tải xuống
+                          await wait(1500);
+                          
+                          // Đóng tab sau một khoảng thời gian để tránh mở quá nhiều tab
+                          // Lưu ý: với file nhỏ, việc download vẫn tiếp tục khi tab bị đóng
+                          setTimeout(() => {
+                              try {
+                                  if (newTab && !newTab.closed) {
+                                      newTab.close();
+                                  }
+                              } catch (e) {
+                                  // Bỏ qua lỗi khi đóng tab
+                              }
+                          }, 3000);
+                          
+                          return true;
+                      } catch (error) {
+                          console.error(`Lỗi xử lý nút ${index + 1}:`, error);
+                          return false;
+                      }
                     });
-                    
-                    // Đợi tất cả các báo cáo được tải xuống
+
+                    // Đợi tất cả các báo cáo bắt đầu tải xuống, không đợi hoàn thành
                     const results = await Promise.allSettled(downloadPromises);
-                    successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
-                    
-                    return { 
+                    successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;                    return { 
                         successCount,
                         reportNames
                     };
