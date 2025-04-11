@@ -1,3 +1,4 @@
+// Trong file scripts/ads_report.js
 $(document).on("click", "#ads-report", function () {
     $(this).addClass("loader");
     chrome.runtime.sendMessage({
@@ -22,12 +23,12 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
         
         if (successCount > 0) {
             if (reportDetails) {
-                notifySuccess(`Downloaded ${successCount} ads reports: ${reportDetails}`);
+                notifySuccess(`Đã tải ${successCount} báo cáo: ${reportDetails}`);
             } else {
-                notifySuccess(`Downloaded ${successCount} ads reports successfully.`);
+                notifySuccess(`Đã tải ${successCount} báo cáo thành công.`);
             }
         } else {
-            notifySuccess("Ads reports processing completed. No reports were found for download.");
+            notifySuccess("Quá trình tải báo cáo hoàn tất. Không tìm thấy báo cáo nào để tải xuống.");
         }
     }
     
@@ -41,7 +42,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
             if ((typeof jQuery !== 'undefined' && $("#ads-report").length) || countCheck$ === 30) {
                 break;
             }
-            await sleep(1000);
+            await sleep(500);
             countCheck$++;
         }
 
