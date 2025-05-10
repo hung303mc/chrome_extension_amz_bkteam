@@ -2933,11 +2933,44 @@ function reloadTabBeforeAction(tabId, callback, delay = 3000) {
         // Đợi thêm delay ms sau khi reload để trang hoàn toàn ổn định
         setTimeout(() => {
           console.log(`[BACKGROUND] Executing callback after reload...`);
-          // Thực thi callback sau khi reload hoàn tất
-          callback();
+          
+          // Ensure content scripts are injected
+          ensureContentScriptsInjected(tabId, () => {
+            // Thực thi callback sau khi reload hoàn tất và content scripts injected
+            callback();
+          });
         }, delay);
       }
     });
+  });
+}
+
+// Helper function to ensure content scripts are injected
+function ensureContentScriptsInjected(tabId, callback) {
+  // Check if content scripts are already loaded
+  chrome.tabs.sendMessage(tabId, { message: "contentScriptCheck" }, function(response) {
+    if (chrome.runtime.lastError) {
+      console.log(`[BACKGROUND] Content scripts not ready in tab ${tabId}, injecting now...`);
+      
+      // Content scripts aren't ready, try to inject them
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['scripts/content_script.js']
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error("[BACKGROUND] Error injecting content script:", chrome.runtime.lastError);
+        } else {
+          console.log("[BACKGROUND] Content script injected successfully");
+        }
+        
+        // Wait a bit before proceeding to allow content script to initialize
+        setTimeout(callback, 500);
+      });
+    } else {
+      // Content scripts already loaded, proceed immediately
+      console.log("[BACKGROUND] Content scripts already loaded, proceeding...");
+      callback();
+    }
   });
 }
 
@@ -2952,42 +2985,76 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     
-    reloadTabBeforeAction(tabId, () => {
-      // Gửi message thích hợp dựa trên action sau khi reload hoàn tất
-      switch(action) {
-        case "autoSync":
-          console.log("[BACKGROUND] Triggering auto sync after reload");
-          chrome.tabs.sendMessage(tabId, { 
-            message: "triggerAutoSync",
-            data: actionData
-          });
-          break;
-        
-        case "updateTracking":
-          console.log("[BACKGROUND] Triggering update tracking after reload");
-          chrome.tabs.sendMessage(tabId, { 
-            message: "startUpdateTrackingAuto" 
-          });
-          break;
-        
-        case "downloadAdsReports":
-          console.log("[BACKGROUND] Triggering ads report download after reload");
-          chrome.runtime.sendMessage({
-            message: "runDownloadAdsReports",
-            domain: actionData?.domain
-          });
-          break;
-        
-        case "accountHealth":
-          console.log("[BACKGROUND] Triggering account health update after reload");
-          chrome.tabs.sendMessage(tabId, { 
-            message: "startAccountHealthAuto" 
-          });
-          break;
-          
-        default:
-          console.log(`[BACKGROUND] No specific action defined after reload`);
+    // First check if the tab actually exists
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        console.error(`[BACKGROUND] Tab ${tabId} does not exist:`, chrome.runtime.lastError.message);
+        sendResponse({ success: false, error: "Tab does not exist" });
+        return;
       }
+      
+      // Tab exists, proceed with reload
+      reloadTabBeforeAction(tabId, () => {
+        try {
+          // Gửi message thích hợp dựa trên action sau khi reload hoàn tất
+          switch(action) {
+            case "autoSync":
+              console.log("[BACKGROUND] Triggering auto sync after reload");
+              chrome.tabs.sendMessage(tabId, { 
+                message: "triggerAutoSync",
+                data: actionData
+              }, (response) => {
+                if (chrome.runtime.lastError) {
+                  console.log("[BACKGROUND] Message to content script failed (normal if script not ready):", 
+                    chrome.runtime.lastError.message);
+                }
+              });
+              break;
+            
+            case "updateTracking":
+              console.log("[BACKGROUND] Triggering update tracking after reload");
+              chrome.tabs.sendMessage(tabId, { 
+                message: "startUpdateTrackingAuto" 
+              }, (response) => {
+                if (chrome.runtime.lastError) {
+                  console.log("[BACKGROUND] Message to content script failed (normal if script not ready):", 
+                    chrome.runtime.lastError.message);
+                }
+              });
+              break;
+            
+            case "downloadAdsReports":
+              console.log("[BACKGROUND] Triggering ads report download after reload");
+              chrome.runtime.sendMessage({
+                message: "runDownloadAdsReports",
+                domain: actionData?.domain
+              }, (response) => {
+                if (chrome.runtime.lastError) {
+                  console.log("[BACKGROUND] Message to background failed:", 
+                    chrome.runtime.lastError.message);
+                }
+              });
+              break;
+            
+            case "accountHealth":
+              console.log("[BACKGROUND] Triggering account health update after reload");
+              chrome.tabs.sendMessage(tabId, { 
+                message: "startAccountHealthAuto" 
+              }, (response) => {
+                if (chrome.runtime.lastError) {
+                  console.log("[BACKGROUND] Message to content script failed (normal if script not ready):", 
+                    chrome.runtime.lastError.message);
+                }
+              });
+              break;
+              
+            default:
+              console.log(`[BACKGROUND] No specific action defined after reload`);
+          }
+        } catch (error) {
+          console.error("[BACKGROUND] Error during post-reload action:", error);
+        }
+      });
     });
     
     sendResponse({ success: true });

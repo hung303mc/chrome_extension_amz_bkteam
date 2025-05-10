@@ -107,7 +107,7 @@ function scheduleUpdateTracking() {
    const updateTime = new Date();
    
    // Đặt thời gian cập nhật là 9h15 sáng
-   updateTime.setHours(9, 45, 0, 0);
+   updateTime.setHours(9, 30, 0, 0);
    
    // Nếu thời gian hiện tại đã qua 9h15 sáng, đặt lịch cho ngày mai
    if (now > updateTime) {

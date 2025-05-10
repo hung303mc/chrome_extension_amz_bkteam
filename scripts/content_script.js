@@ -3,6 +3,15 @@ const addonCollapsible = "AddonCollapsible";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Add a listener to respond to content script check messages
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.message === "contentScriptCheck") {
+    console.log("[CONTENT] Content script check received, responding as ready");
+    sendResponse({ status: "ready" });
+    return true;
+  }
+});
+
 const getStorage = (key) =>
    new Promise((r) =>
       chrome.storage.local.get(key).then((result) => {

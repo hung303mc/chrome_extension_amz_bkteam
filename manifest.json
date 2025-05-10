@@ -90,7 +90,9 @@
         "assets/images/not-found.png",
         "assets/images/completed.png",
         "scripts/update_tracking_scheduler.js",
-        "scripts/auto_sync_scheduler.js"
+        "scripts/auto_sync_scheduler.js",
+        "scripts/ads_report.js",
+        "scripts/get_account_health.js"
       ],
       "matches": [
         "https://sellercentral.amazon.com/*",
