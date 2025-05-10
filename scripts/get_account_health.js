@@ -108,7 +108,7 @@ function scheduleAccountHealth() {
     const updateTime = new Date();
     
     // Đặt thời gian cập nhật là 10h20 sáng
-    updateTime.setHours(10, 20, 0, 0);
+    updateTime.setHours(9, 15, 0, 0);
     
     // Nếu thời gian hiện tại đã qua 10h20 sáng, đặt lịch cho ngày mai
     if (now > updateTime) {

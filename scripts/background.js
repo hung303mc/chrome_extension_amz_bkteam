@@ -60,7 +60,7 @@ function scheduleAutoSync() {
   const syncTime = new Date();
   
   // Đặt thời gian đồng bộ là 9:00 sáng
-  syncTime.setHours(17, 30, 0, 0);
+  syncTime.setHours(9, 0, 0, 0);
   
   // Nếu thời gian hiện tại đã qua 9h sáng, đặt lịch cho ngày mai
   if (now > syncTime) {

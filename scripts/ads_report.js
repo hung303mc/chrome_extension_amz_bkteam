@@ -9,7 +9,7 @@ function scheduleAdsReport() {
     const updateTime = new Date();
     
     // Đặt thời gian cập nhật là 10h30 sáng
-    updateTime.setHours(10, 30, 0, 0);
+    updateTime.setHours(9, 30, 0, 0);
     
     // Nếu thời gian hiện tại đã qua 10h00 sáng, đặt lịch cho ngày mai
     if (now > updateTime) {
