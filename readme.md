@@ -1,91 +1,55 @@
 # Tính năng Tự động đồng bộ lúc 9:00 sáng cho Amazon BKTeam Extension
 
-Tài liệu này hướng dẫn cách tích hợp tính năng tự động đồng bộ lúc 9:00 sáng vào Chrome extension Amazon BKTeam.
+Hệ thống lập lịch tự động cho các tác vụ Amazon Seller thông qua JavaScript trong Chrome Extension.
 
 ## Tổng quan
 
-Extension này sẽ tự động mở trang Amazon Seller Central và tiến hành đồng bộ đơn hàng vào lúc 9:00 sáng mỗi ngày khi Chrome đang chạy.
+Hệ thống tự động hóa này sử dụng JavaScript trực tiếp trong Chrome Extension để lập lịch các tác vụ vào thời điểm cụ thể mỗi ngày:
 
-### Lưu ý quan trọng
-- Giải pháp này **chỉ hoạt động khi Chrome đã được mở** (không thể tự khởi động Chrome).
-- Nếu muốn tự động khởi động Chrome, hãy sử dụng file `auto_launch_amz_extension.py` và `install_amz_extension_task.ps1` được cung cấp riêng.
+1. **Đồng bộ đơn hàng** (9:00 AM)
+   - Tự động đồng bộ thông tin đơn hàng từ Amazon
+   - Sử dụng `auto_sync_scheduler.js`
 
-## Hướng dẫn cài đặt
+2. **Kiểm tra sức khỏe tài khoản** (9:15 AM)
+   - Giám sát các chỉ số sức khỏe tài khoản và lưu trong cơ sở dữ liệu
+   - Được lên lịch bởi `scheduler.js`
 
-### Bước 1: Thêm các file vào extension
+3. **Tải báo cáo quảng cáo** (9:30 AM)
+   - Tải xuống và xử lý báo cáo quảng cáo
+   - Được lên lịch bởi `scheduler.js`
 
-Bạn cần thêm 2 file sau vào thư mục extension:
-
-1. `scripts/auto_sync_scheduler.js` - Module tự động đồng bộ
-2. `scripts/use_auto_sync.js` - UI cho popup
-
-### Bước 2: Chỉnh sửa file background.js
-
-Thêm đoạn mã sau vào cuối file `scripts/background.js`:
-
-```javascript
-// Tích hợp Auto Sync Scheduler
-if (typeof self !== 'undefined') {
-  importScripts('/scripts/auto_sync_scheduler.js');
-  
-  // Khởi tạo auto sync scheduler
-  if (typeof AutoSyncScheduler !== 'undefined') {
-    console.log('[BACKGROUND] Khởi tạo AutoSyncScheduler...');
-    AutoSyncScheduler.init();
-  } else {
-    console.log('[BACKGROUND] Warning: AutoSyncScheduler không được tìm thấy');
-  }
-}
-```
-
-### Bước 3: Thêm script vào popup
-
-Chỉnh sửa file `popup/index.html` để thêm script `use_auto_sync.js`:
-
-```html
-<!-- Thêm sau các scripts khác và trước </body> -->
-<script src="../scripts/use_auto_sync.js"></script>
-```
-
-### Bước 4: Cập nhật manifest.json
-
-Cập nhật file `manifest.json` để thêm quyền:
-
-```json
-"permissions": [
-  "storage",
-  "scripting",
-  "activeTab",
-  "webRequest",
-  "webRequestBlocking",
-  "alarms",
-  "notifications"
-],
-```
-
-## Cách sử dụng
-
-1. Sau khi cài đặt, bạn sẽ thấy phần "Tự động đồng bộ lúc 9:00 sáng" trong popup của extension
-2. Bật/tắt tính năng bằng nút toggle
-3. Xem thời gian đồng bộ tiếp theo
-4. Có thể nhấn "Đồng bộ ngay" để chạy đồng bộ ngay lập tức
+4. **Cập nhật mã theo dõi** (9:45 AM)
+   - Tự động cập nhật mã theo dõi cho đơn hàng
+   - Được lên lịch bởi `scheduler.js`
 
 ## Cách hoạt động
 
-1. Khi Chrome khởi động hoặc extension được cài đặt, extension kiểm tra trạng thái tự động đồng bộ
-2. Nếu tính năng được bật, extension sẽ lên lịch chạy vào 9:00 sáng
-3. Vào thời điểm lên lịch, extension sẽ:
-   - Tìm tab Amazon đang mở hoặc mở tab mới
-   - Gửi lệnh đồng bộ đến content script
-   - Lên lịch cho ngày hôm sau
+Thay vì sử dụng crontab và shell scripts bên ngoài, hệ thống này hoạt động hoàn toàn trong JavaScript của Chrome Extension:
 
-## Khắc phục sự cố
+1. `background.js`: Tải và khởi tạo các file scheduler
+2. `scheduler.js`: Lên lịch và thực hiện các tác vụ tự động
+3. `auto_sync_scheduler.js`: Xử lý đồng bộ đơn hàng vào 9:00 AM
 
-- **Không tự động đồng bộ**: Đảm bảo Chrome đang chạy vào lúc 9:00 sáng
-- **Hiển thị "Không thể kết nối với extension"**: Thử reload extension
-- **Không thấy tùy chọn trong popup**: Kiểm tra xem script đã được thêm đúng cách chưa
+Các tác vụ được lên lịch bên trong extension, lưu trữ thời gian lên lịch trong chrome.storage.local, và tự khôi phục khi Chrome được khởi động lại.
 
-## Phát triển thêm
+## Các tập tin
 
-- Có thể tùy chỉnh thời gian đồng bộ trong file `auto_sync_scheduler.js`
-- Có thể sửa giao diện UI trong file `use_auto_sync.js` 
+- **scheduler.js**: Bộ lập lịch thống nhất cho tất cả các tác vụ
+- **auto_sync_scheduler.js**: Bộ lập lịch đồng bộ đơn hàng (file gốc)
+- **background.js**: Tích hợp và khởi tạo các bộ lập lịch
+- **popup.js**: Giao diện điều khiển bộ lập lịch cho người dùng
+
+
+## Cách sử dụng
+
+1. Cài đặt Chrome Extension
+2. Kích hoạt tự động hóa qua popup menu của extension:
+   - Bật/tắt tự động hóa
+   - Chạy riêng lẻ từng tác vụ khi cần
+
+## Ghi chú kỹ thuật
+
+- Hệ thống sử dụng `setTimeout` để lập lịch các tác vụ dựa trên thời gian hệ thống
+- Trạng thái và thời gian lên lịch được lưu trong `chrome.storage.local`
+- URLSearchParams được sử dụng để kích hoạt tác vụ thông qua tham số URL khi cần
+- Tất cả tác vụ được lên lịch theo thời gian cách nhau 15 phút để tránh xung đột 
