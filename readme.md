@@ -53,3 +53,4 @@ Các tác vụ được lên lịch bên trong extension, lưu trữ thời gian
 - Trạng thái và thời gian lên lịch được lưu trong `chrome.storage.local`
 - URLSearchParams được sử dụng để kích hoạt tác vụ thông qua tham số URL khi cần
 - Tất cả tác vụ được lên lịch theo thời gian cách nhau 15 phút để tránh xung đột 
+####
