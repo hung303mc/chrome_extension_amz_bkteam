@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "Bkteam Sync Order Amz",
+  "version": "1.2.30",
+  "description": "An extension to help you fulfill Amazon orders easier with MerchBridge.",
+  "devtools_page": "devtool/devtool.html",
+  "icons": {
+    "16": "assets/images/16.png",
+    "48": "assets/images/48.png",
+    "128": "assets/images/128.png"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Bkteam Sync Order Amz",
+    "default_icon": {
+      "48": "assets/images/48.png"
+    }
+  },
+  "default_locale": "en",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://sellercentral.amazon.com/*",
+        "https://sellercentral-europe.amazon.com/*",
+        "https://sellercentral.amazon.de/*",
+        "https://sellercentral.amazon.co.uk/*"
+      ],
+      "js": [
+        "assets/libs/jquery.min.js",
+        "assets/libs/jquery.toast.js",
+        "scripts/content_script.js",
+        "scripts/sync_order.js",
+        "scripts/add_tracking.js",
+        "scripts/grand_total.js"
+      ],
+      "css": ["assets/styles/jquery.toast.css", "assets/styles/content.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "scripts/background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'https://sellercentral.amazon.com/*'; object-src 'self'"
+  },
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://sellercentral.amazon.com/*",
+    "https://sellercentral-europe.amazon.com/*",
+    "https://sellercentral.amazon.co.uk/*",
+    "https://sellercentral.amazon.de/*",
+    "https://www.amazon.com/*",
+    "https://bkteam.top/dungvuong-admin/*",
+    "http://bkteam.top/dungvuong-admin/*",
+    "http://127.0.0.1:8080/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/images/not-found.png",
+        "assets/images/completed.png"
+      ],
+      "matches": [
+        "https://sellercentral.amazon.com/*",
+        "https://sellercentral-europe.amazon.com/*",
+        "https://sellercentral.amazon.de/*",
+        "https://sellercentral.amazon.co.uk/*"
+      ]
+    }
+  ]
+}

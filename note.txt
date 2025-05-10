@@ -1,0 +1,428 @@
+// order info
+[
+  {
+    "data": {
+      "actions": [
+        "buyShipping",
+        "confirmShipment",
+        "editMerchantOrderId",
+        "manageFeedback",
+        "manageSellerNotes",
+        "printPackingSlip",
+        "contactBuyer",
+        "cancelOrder",
+        "canViewOrderHistory"
+      ],
+      "addressType": "Residential",
+      "alertMessages": [],
+      "alerts": [],
+      "amazonInvoiced": false,
+      "amazonOrderId": "113-8690602-9757838",
+      "assignedShipFromLocationAddressId": "U5X4JPGKXYSDM3YMB3W4G122R4PZJVPRXA31XRPVJZP4R2APXTQ2EIA2OXBI7FJE",
+      "automatedShippingSettings": {
+        "automatedCarrierName": null,
+        "automatedCarrierStringId": null,
+        "automatedShipFromLocationAddressId": null,
+        "automatedShipMethodName": null,
+        "automatedShipMethodStringId": null,
+        "hasAutomatedShippingSettings": false
+      },
+      "awaitingVerification": false,
+      "badges": [
+        "CustomOrder"
+      ],
+      "badgesWithTooltips": [
+        {
+          "badge": "CustomOrder",
+          "tooltip": null
+        }
+      ],
+      "billingCountry": null,
+      "billingCountryFlagUrl": null,
+      "blob": "AAAAAAAAAAB2ppyKOnwqyMLx5wjJp1AHDQUAAAAAAABMaCV0+Fux/YhNWO49DKzSKVl7YUIvQEMVFqY7A6CEX6ww9Pns1ZLTACdPs4Y1QS9i8fMr6d6EOb66wzzCvcwZELHoNbkdTlKf/Y094uvEFK4xQa6VZ4tT5zxoa+6qsJoXMA2AKdVBvQ3SpAAmOagIP9wu2symVz+TkeEJun8EXB4j4HRoiqPuLqWYMVVJCpMX+aQDqCDh/wKpCRZKJTlxJmXHQW9MVBZ58PB46/Xk17XV+swpgILi6nQ4x9soh/K6kqqae1DgrA3c85Sv0dGjPo7Bn1jaIM6Du5fAKES3bf90WG40ZgJfPxaRwfgK8i9EA2A/3IR6GuNAirXmqUDYXA89RPDeRcwYF/b1gA1ag4xYbnqdGVSqqEN0yqa64JmK/dgdrDR5G+o7+ML0wKwFCUKaMcjC33k+kpLXZZUYgF80aSHYGbg+B/40IehOf5DGe8bMI9FEL5v6AyCMHkvsm6LLwM28diB5RkD1ZBXzQgGn+NxObqFxZQgB51jgbYtzPu7jsdpsW9DP0Lj2+wYDhJlwo+5nI++O9lg1FImcAz8F7NwMS96eWEqzkZgRsAv3x2Yubn2rZIy94LVpoHEhTZQ9ODAtkDqfbO6AVyh6xr7PMemzBnlpx39XbKrtc/qGwH25nt6gQCn2e4NKYQADTyT9OwQplm+JhHHgSqFrq5IYkBhpDd/dEtIUGc2ui6fo5TA6kU59vPDCh++P0t50cBEZ7wVq+dBvmCJ3GdlgioEB4rwKXMRTwfr76MFXHPTvxEiy/3K/xkB3RrsxCA6Y9ZinfPuvqmCNFL3nH1jQBJZjk5VI0QLiQYPHJaEf+ePRzjBHhDc/qX2j2AaIZ023OMm7e7GO/7k/Vpk3UC6nhKTQjMFRmApSxN1o3TJBaOg71Hwzysr9kGNU9DH5qxkmwjcUUdHpd7rBqbqLbYFGb9/smiBB0rk/9bsC8PnSqcZ15DZE2tzNx0WyA9xCUXcaNx0spIBFUkV6AVnoq72jh9zpPR/qB4RFUmIn6hl3asAd5qXGg7vqbYTvr+m70TgIk+iH9z7faFDFNviNNLZPu5PM9wJYV8u4h/f36r1w1Wb+WMABNqk5GGqZeFygJLFYM7aXhkCMCSNbY7rVml5A7v48nnLaCZW32z8XDVjlImscEREUr5JtEJRhFbmFgkPGSeOeQWUAtU1TZU2OYOoL37zyw3+JqhbXjUn3iLJygfSt2sHikIYuKnd9tCFzwZ4Z3ylyFsEmUcj/kIoqIsdM9uyfBH16hu4O4DWHCe4tUszxTOBAys99iV//w7crgnK+pLn7LwKBd7CTyuj6cDchidtKYtMJGPbaiAhVNeZFMPj7lPiEgqWGUFwQglGzqXSTwYWBg80Cvsa65oT/gLRgVFqAnqYYHgta5nr18PplGEyXszb2mTCuynoYJilEpOjh7mQcyANR81vCjpmXKmkehzVsT2VWKxCK6spSMbyIR9CNFJprhSrKEargzcHu1WoUuexIncCsDdrt/9r/1xaBPdJ14IFq0amtdsooHc2jxDaNTVKpBr2DUjxaObO3xhaqGuMIACU0HFKBWcc46P53Ye0BBmdAmaGawGPjXd+o4tgDajlRrVcYHMIdxlEyM/nUWE4bbunuw5g6UFBbq9d6PRrhTU0Crm33u+hD0KI5BgsqosTesEkba+taeeG4fV0d0pwiogxkAsPZU3xY1aWPfFvXe8zXkqTsnGEjgPA=",
+      "blob2": "AAAAAAAAAAB2ppyKOnwqyMLx5wjJp1AHKgAAAAAAAAC3/H39QmEZppaL/IKiFezSx1PT8z6eOY20DaVyU5bUj5yUze1KLljhQtk=",
+      "buyerCompanyName": null,
+      "buyerPONumber": null,
+      "buyerProxyEmail": "6gnzn2nn4hbnpy0@marketplace.amazon.com",
+      "cancelOrderDetails": null,
+      "cancellationDate": 1725346799,
+      "cancellationFees": null,
+      "cod": false,
+      "complexActions": {},
+      "deemedResellerCategory": null,
+      "deliveryNoteMetadata": null,
+      "earliestDeliveryDate": 1725346800,
+      "earliestShipDate": 1724310000,
+      "euDeemedReseller": true,
+      "filterShipFromLocations": true,
+      "fulfillmentChannel": "Seller",
+      "fulfillmentStatusReason": null,
+      "handoverAddressDetails": null,
+      "hasSensitiveRights": true,
+      "hasSystemUnknownPromiseDate": false,
+      "ibaSellerFacingOrders": null,
+      "instructionId": null,
+      "invoiceUploadMetadata": null,
+      "iossNumber": null,
+      "isAccessPointOrder": false,
+      "isBuybackOrder": false,
+      "isIBAOrder": false,
+      "labelAvailableDateUtc": null,
+      "labelRefundPackages": null,
+      "labelStatus": null,
+      "latestDeliveryDate": 1726297199,
+      "latestShipDate": 1724482799,
+      "marketplaceTaxingSeller": "Amazon Services, Inc.",
+      "maximumTransitTimeDisplayUnit": "Day",
+      "orderChannel": null,
+      "orderCost": {
+        "CODCollectible": null,
+        "CODGrandTotal": {
+          "Amount": 26.65,
+          "CurrencyCode": "USD",
+          "EncryptedAmount": null
+        },
+        "CODTotal": null,
+        "CODTotalTax": null,
+        "CancelableRefundTotal": null,
+        "ExportChargeTotal": null,
+        "ExportChargeTotalTax": null,
+        "GiftWrapTotal": null,
+        "GiftWrapTotalTax": null,
+        "GrandTotal": {
+          "Amount": 26.65,
+          "CurrencyCode": "USD",
+          "EncryptedAmount": null
+        },
+        "NetSalesProceeds": {
+          "Amount": 24.9,
+          "CurrencyCode": "USD",
+          "EncryptedAmount": null
+        },
+        "PaymentMethodFeeTotal": null,
+        "PaymentMethodFeeTotalTax": null,
+        "Prepaid": null,
+        "PromotionTotal": null,
+        "PromotionTotalTax": null,
+        "RefundAppliedTotal": null,
+        "RefundPendingTotal": null,
+        "RefundTotal": null,
+        "ShippingTotal": {
+          "Amount": 6.95,
+          "CurrencyCode": "USD",
+          "EncryptedAmount": null
+        },
+        "ShippingTotalTax": null,
+        "TaxTotal": {
+          "Amount": 1.75,
+          "CurrencyCode": "USD",
+          "EncryptedAmount": null
+        },
+        "Total": {
+          "Amount": 17.95,
+          "CurrencyCode": "USD",
+          "EncryptedAmount": null
+        },
+        "TotalTax": null
+      },
+      "orderItems": [
+        {
+          "ASIN": "B0CJ4Y4VT1",
+          "AssociatedItems": [],
+          "BuyerRequestedCancel": {
+            "cancelReason": null,
+            "isBuyerRequestedCancel": false
+          },
+          "Condition": "New",
+          "ConditionNote": null,
+          "ConditionSubtype": null,
+          "CustomerOrderItemCode": "VAgTo+YysV6/3I8WlHEU2ENgu3n9s5639k16yinZoC3SZMM0DxN7Ug==",
+          "CustomizationInfoMap": {
+            "customized_url": "https://zme-caps.amazon.com/t/PGwqBfH8yDAY/-hnKvzk3ehS0uelHrklBkJTo8AD-7l7U-x55ASNQN6c/22",
+            "numberOfItems": "1",
+            "product_custom_page_url": "https://a.co/20DO79M",
+            "product_customization_token": "GT_Blanket_1#380ed1df-35ab-4238-aaa3-a9d3d7707143"
+          },
+          "Gift": false,
+          "GiftMessage": null,
+          "GiftWrapType": null,
+          "HarmonizedCode": null,
+          "ImageSourceSarek": false,
+          "ImageUrl": "https://m.media-amazon.com/images/I/51Dgr7H5d5L._SCLZZZZZZZ__SX55_.jpg",
+          "InvoiceData": null,
+          "ItemCost": {
+            "COD": null,
+            "CODGrandTotal": {
+              "Amount": 26.65,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "CODTax": null,
+            "ExportCharge": null,
+            "ExportChargeTax": null,
+            "GiftWrap": null,
+            "GiftWrapTax": null,
+            "NetSalesProceeds": {
+              "Amount": 24.9,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "PaymentMethodFee": null,
+            "PaymentMethodFeeTax": null,
+            "Promotion": null,
+            "PromotionTax": null,
+            "Refund": null,
+            "RefundApplied": null,
+            "RefundPending": null,
+            "Shipping": {
+              "Amount": 6.95,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "ShippingTax": null,
+            "Subtotal": {
+              "Amount": 17.95,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "SubtotalTax": null,
+            "Tax": {
+              "Amount": 1.75,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "Total": {
+              "Amount": 26.65,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "UnitPrice": {
+              "Amount": 17.95,
+              "CurrencyCode": "USD",
+              "EncryptedAmount": null
+            },
+            "UnitPriceExclTax": null
+          },
+          "ItemCustomizations": {
+            "CustomId": null,
+            "CustomPageLabel": "Customization Information",
+            "CustomPageUrl": "/gestalt/fulfillment/index.html?orderId=113-8690602-9757838&orderItemId=107780280160521&marketplaceId=ATVPDKIKX0DER",
+            "EncodeOnDisplay": true,
+            "HeaderLabelId": "Customizations:",
+            "ModificationGroups": [
+              {
+                "Modifications": [
+                  {
+                    "Name": "Choose Your Size",
+                    "NameId": null,
+                    "Properties": {},
+                    "RenderType": "string",
+                    "Scope": [
+                      "ALL"
+                    ],
+                    "Value": "40\"x30\" Fleece Blanket"
+                  },
+                  {
+                    "Name": "Custom Your Item",
+                    "NameId": null,
+                    "Properties": {},
+                    "RenderType": "string",
+                    "Scope": [
+                      "ALL"
+                    ],
+                    "Value": "Leroy Isaac Turner"
+                  },
+                  {
+                    "Name": "SIZE CHART CONFIRMATION",
+                    "NameId": null,
+                    "Properties": {},
+                    "RenderType": "string",
+                    "Scope": [
+                      "ALL"
+                    ],
+                    "Value": "Yes, I have reviewed it"
+                  }
+                ],
+                "Name": "Surface 1",
+                "NameId": null,
+                "PreviewImageUrls": []
+              }
+            ],
+            "ReplacementThumbnailImageUrl": null,
+            "ReplacementTitle": null
+          },
+          "ItemHeight": null,
+          "ItemLength": null,
+          "ItemPointsSummary": {
+            "PointsGranted": null,
+            "Reversals": null
+          },
+          "ItemStatus": {
+            "CancelStatus": "None",
+            "InvoiceNotSent": false,
+            "InvoiceSent": false,
+            "ItemStatus": "Unshipped"
+          },
+          "ItemWeight": null,
+          "ItemWidth": null,
+          "LegacyListingId": null,
+          "OrderItemId": "107780280160521",
+          "PriceDesignation": null,
+          "ProductCustomizations": null,
+          "ProductLink": "https://www.amazon.com/gp/product/B0CJ4Y4VT1",
+          "QuantityCanceled": 0,
+          "QuantityOrdered": 1,
+          "QuantityShipped": 0,
+          "QuantityUnshipped": 1,
+          "SellerSKU": "DUCK04-TTD-BLK",
+          "SerialNumbers": null,
+          "ShipmentIdLists": null,
+          "SignatureRecommended": false,
+          "Title": "DIZZY Hunting Baby Blankets for Boys, Customized Baby Blankets for Boys, Hunting Fishing Name Baby Blanket, Best Gift for Baby, Newborn, New Mom, Super Soft Plush Fleece",
+          "amazonPrograms": null,
+          "expenseTotal": null,
+          "hasLastMileNetworkIdVAS": false,
+          "heavyOrBulky": false,
+          "packageType": null,
+          "transparencyItem": false,
+          "transparencyItemAttribute": {
+            "isCheckEnabled": false,
+            "primarySNCaptureTechnology": null
+          }
+        }
+      ],
+      "orderMarketplaceId": "ATVPDKIKX0DER",
+      "orderPointsSummary": {
+        "PointsGranted": null,
+        "Reversals": {
+          "PointsReturned": null
+        }
+      },
+      "orderStatus": {
+        "AtRiskOfCancellation": false,
+        "InvoiceNotSent": false,
+        "InvoiceNotUploaded": false,
+        "InvoiceSent": false,
+        "Late": false,
+        "OrderStatus": "Unshipped",
+        "RefundApplied": false,
+        "RefundPending": false
+      },
+      "orderType": null,
+      "packageHandlingInstructions": null,
+      "packages": null,
+      "paymentMethodDetails": [
+        "Standard"
+      ],
+      "pluginActions": {
+        "requestAReview": {
+          "displayText": "Request a Review",
+          "isAvailable": false,
+          "properties": {},
+          "reason": "ReasonNotShippedOrder",
+          "url": "/messaging/reviews?orderId=113-8690602-9757838&marketplaceId=ATVPDKIKX0DER"
+        }
+      },
+      "pluginAlertMessages": [],
+      "pluginBadges": [],
+      "pluginOrderStatus": null,
+      "pluginValuePairs": [],
+      "possibleCancelReasons": [
+        "NoInventory",
+        "BuyerCanceled",
+        "GeneralAdjustment",
+        "ShippingAddressUndeliverable",
+        "CustomerExchange",
+        "PricingError"
+      ],
+      "preferredDeliveryTime": null,
+      "promiseResponseDueDate": null,
+      "purchaseDate": 1724216886.269,
+      "recommendedCarrierInfo": null,
+      "replacedOrderId": null,
+      "rootMarketplaceId": "ATVPDKIKX0DER",
+      "salesChannel": "Amazon.com",
+      "salesChannelFlagUrl": "https://m.media-amazon.com/images/G/01/rainier/nav/USAmazon._CB485934361_.png",
+      "scheduledDeliveryEndDateUtc": null,
+      "scheduledDeliveryStartDateUtc": null,
+      "scheduledDeliveryTimeZone": null,
+      "scheduledSlot": null,
+      "sellerNotes": null,
+      "sellerOrderId": null,
+      "shippingFromCountry": "CA",
+      "shippingService": "Standard",
+      "shippingServiceOption": null,
+      "shouldDisplayInFBA": false,
+      "shouldEnableTradewindUX": false,
+      "showCRDLink": false,
+      "showRecalculatingProceedsAlert": false,
+      "showShipFromAddressChangeWarning": true,
+      "showVATNotFinalWarning": false,
+      "storeChainStoreID": null,
+      "taxCollectionModel": "MarketplaceFacilitator",
+      "taxLabelStrings": {
+        "IncludedTax": "Included VAT",
+        "Tax": "Tax",
+        "TaxExclusive": "(VAT exclusive)",
+        "TaxInclusive": "(VAT inclusive)",
+        "TaxTotal": "Tax total"
+      },
+      "taxResponsiblePartyName": "Amazon Services LLC",
+      "timeZoneDetailsMap": {
+        "cancellationDate": {
+          "offset": -25200000,
+          "shortenedTzString": "PDT"
+        },
+        "earliestDeliveryDate": {
+          "offset": -25200000,
+          "shortenedTzString": "PDT"
+        },
+        "earliestShipDate": {
+          "offset": -25200000,
+          "shortenedTzString": "PDT"
+        },
+        "latestDeliveryDate": {
+          "offset": -25200000,
+          "shortenedTzString": "PDT"
+        },
+        "latestShipDate": {
+          "offset": -25200000,
+          "shortenedTzString": "PDT"
+        },
+        "purchaseDate": {
+          "offset": -25200000,
+          "shortenedTzString": "PDT"
+        }
+      },
+      "verifiedBusinessBuyer": false
+    },
+    "type": "Order Information"
+  }
+]
+
+// shipping info
+[
+  {
+    "data": {
+      "addressId": "RP2SHNFPLHQZKPRGYKTEG120DHNJ7WSRFA2NFRSW7JNHD0JPXTQ2EIA2OXKNLYQD",
+      "city": "THOMASVILLE",
+      "companyName": null,
+      "confidentialVisibleAddress": false,
+      "countryCode": "US",
+      "countryLine": "United States",
+      "county": null,
+      "label": null,
+      "line1": "320 SUNSET LN",
+      "line2": null,
+      "line3": null,
+      "messageStr": "",
+      "municipality": null,
+      "name": "Lisa Hurley",
+      "phoneNumber": "+1 347-448-3190 ext. 65798",
+      "phoneNumberLine": "+1 347-448-3190 ext. 65798",
+      "postalCode": "27360-0213",
+      "stateOrRegion": "NC"
+    },
+    "type": "Shipping Information"
+  }
+]
