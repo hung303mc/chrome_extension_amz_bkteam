@@ -463,6 +463,38 @@ const setTextBtnRevert = () => {
   else $("#revert-order").text("Revert Orders");
 };
 
+// Hàm để lấy danh sách order theo trạng thái
+const getOrderWithStatus = (status) => {
+  const orders = [];
+  // Kiểm tra xem có cần sync order cụ thể không
+  let isSyncOrderSpecify = false;
+  $(".force-sync-item .om-checkbox").each(function () {
+    if ($(this).is(":checked")) {
+      isSyncOrderSpecify = true;
+      return false;
+    }
+  });
+
+  $(".force-sync-item .om-checkbox").each(function () {
+    const orderString = $(this).attr("data-order");
+    if (!orderString) return true;
+    const order = b64Decode(orderString);
+    
+    if (isSyncOrderSpecify) {
+      // Nếu người dùng đã chọn các order cụ thể, chỉ thêm các order được chọn
+      if ($(this).is(":checked")) orders.push(order);
+      return true;
+    }
+    
+    // Ngược lại, lấy tất cả order
+    if (!status || $(this).attr("data-status") === status) {
+      orders.push(order);
+    }
+  });
+  
+  return orders;
+};
+
 $(document).ready(async () => {
   if (!window.location.href.includes("/orders-v3")) return;
   if (window.location.href.includes("/orders-v3/order/")) return;
@@ -621,47 +653,82 @@ $(document).on("click", ".force-revert-item .om-checkbox", function () {
 });
 
 // click sync orders
-$(document).on("click", "#sync-order", async function () {
-  const orders = [];
-  // check sync order specify
-  let isSyncOrderSpecify = false;
-  $(".force-sync-item .om-checkbox").each(function () {
-    if ($(this).is(":checked")) {
-      isSyncOrderSpecify = true;
-      return false;
-    }
-  });
-  $(".force-sync-item .om-checkbox").each(function () {
-    const orderString = $(this).attr("data-order");
-    if (!orderString) return true;
-    const order = b64Decode(orderString);
-    if (isSyncOrderSpecify) {
-      if ($(this).is(":checked")) orders.push(order);
-      return true;
-    }
-    orders.push(order);
-  });
-  if (orders.length == 0) {
-    notifyError("Order not found   #sync-order .");
+$(document).on("click", "#sync-order", async function (e) {
+  const orders = getOrderWithStatus("Not Synced");
+  const mbApiKey = await getStorage(mbApi);
+
+  // kiểm tra có trong chế độ auto sync không
+  const isAutoSync = await getStorage("_mb_auto");
+
+  if (!mbApiKey) {
+    notifyError("Please enter MB api key.");
     return;
   }
-  $(this).addClass("loader");
-  for (const order of orders) {
-    $(`.sync-order-item[data-order-id="${order.orderId}"]`).addClass("loader");
+  if (!orders.length) {
+    notifyError("Please select at least one order.");
+    return;
   }
+  // hide this button
+  $(".btn-sync-order-wrap").css("display", "none");
+  taskProcessing(`Syncing orders: 0/${orders.length}`);
+  $("#not_synced table").remove();
+  const table = `
+      <table class="om-table">
+         <thead>
+         <tr>
+            <th>Order Number</th>
+            <th>Status</th>
+         </tr>
+         </thead>
+         <tbody>
+         </tbody>
+      </table>
+   `;
+  $("#not_synced").append(table);
 
-  const isAuto = await getStorage("_mb_auto");
-  const autoKey = await getStorage("_mb_auto_key");
-  // send order ids to background
-  chrome.runtime.sendMessage({
-    message: "syncOrderToMB",
-    domain: window.location.origin,
-    data: {
-      apiKey: await getStorage(mbApi),
-      orders,
-      markSynced: isAuto && autoKey,
-    },
-  });
+  let resp = { isSuccess: true, message: "" };
+  for (let i = 0; i < orders.length; i++) {
+    $(".om-processing-label").text(`Syncing orders: ${i + 1}/${orders.length}`);
+    await appendProcessSyncOrderItem({
+      order: orders[i],
+      status: "processing",
+      message: "",
+    });
+    const data = {
+      apiKey: mbApiKey,
+      orders: [orders[i]],
+      options: null,
+      markSynced: isAutoSync ? true : false, // Nếu trong chế độ auto sync, tự động đánh dấu đã sync
+    };
+    await chrome.runtime.sendMessage({
+      message: "syncOrderToMB",
+      data,
+      domain: window.location.origin,
+    });
+    await sleep(200);
+  }
+  $(".om-processing").remove();
+  $(".btn-sync-order-wrap").css("display", "flex");
+
+  // Nếu đang trong chế độ auto sync, xóa trạng thái auto và thông báo thành công
+  if (isAutoSync) {
+    await setStorage("_mb_auto", false);
+    notifySuccess("Tự động đồng bộ đơn hàng hoàn tất!");
+    // Thông báo cho background script biết quá trình đã hoàn tất
+    chrome.runtime.sendMessage({
+      message: "autoSyncFinished",
+      domain: window.location.origin
+    });
+    
+    // Kiểm tra nếu không có đơn hàng nào để sync hoặc tất cả đơn hàng đã được sync
+    // thì chuyển đến trang order details để thực hiện update tracking
+    if (orders.length === 0 || $("#not_synced .om-synced-all-wrap").length > 0) {
+      notifySuccess("Chuyển đến trang chi tiết đơn hàng để update tracking...");
+      setTimeout(() => {
+        window.location.href = "https://sellercentral.amazon.com/orders-v3/order";
+      }, 3000);
+    }
+  }
 });
 
 // click force sync order
@@ -805,6 +872,41 @@ $(document).on("click", "#sync-order-option", async function () {
       options,
     },
   });
+});
+
+// Thêm hàm để kiểm tra nếu không còn order nào chưa sync và chuyển hướng tới trang orders
+const checkAndRedirectAfterSync = async () => {
+  try {
+    // Lấy các đơn hàng trên trang
+    const orders = await getOrderLists();
+    
+    // Kiểm tra xem có đơn hàng nào chưa được sync không
+    let hasUnsynced = false;
+    const ordersXpath = "#orders-table tbody tr";
+    for (let i = 0; i < $(ordersXpath).length; i++) {
+      const item = $(ordersXpath)?.eq(i);
+      if (item.find('[data-status="Not Synced"]').length > 0) {
+        hasUnsynced = true;
+        break;
+      }
+    }
+    
+    // Nếu không còn đơn hàng nào chưa sync hoặc không có đơn hàng nào
+    if (!hasUnsynced || orders.length === 0) {
+      notifySuccess("Không còn đơn hàng nào cần đồng bộ. Chuyển hướng đến trang order...");
+      setTimeout(() => {
+        window.location.href = "https://sellercentral.amazon.com/orders-v3/order";
+      }, 3000);
+    }
+  } catch (error) {
+    console.error("Lỗi khi kiểm tra trạng thái đơn hàng:", error);
+  }
+};
+
+// Thêm lắng nghe sự kiện khi quá trình đồng bộ hoàn tất
+window.addEventListener("mb_sync_done", function() {
+  console.log("Quá trình đồng bộ đã hoàn tất, kiểm tra và chuyển hướng nếu cần");
+  checkAndRedirectAfterSync();
 });
 
 // amzapi-76b801cd-e694-40fc-94f2-e357a8e2443e
