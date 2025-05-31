@@ -81,7 +81,7 @@ const setupDailyAlarm = () => {
     delayInMinutes: minutesUntilAccountHealth,
     periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
   });
-  
+
   // Tạo alarm cho download ads reports
   chrome.alarms.create("dailyDownloadAdsReports", {
     delayInMinutes: minutesUntilAdsReports,
@@ -942,61 +942,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
       sendMessage(tab.id, "forceAddTracking", data),
     );
   }
-  if (message === "addedTrackingCode") {
-    const { trackingCode, orderId } = data;
-
-    // Nếu tracking code không phải là empty, tiến hành verify
-    if (trackingCode && trackingCode.trim() !== "") {
-      const url = `${domain}/orders-v3/order/${orderId}`;
-      chrome.tabs.update({ url }, (tab) =>
-          sendMessage(tab.id, "verifyAddTracking", data),
-      );
-    } else {
-      console.log(`Tracking code is empty for order ${orderId}. No need to verify.`);
-    }
-  }
-
-  if (message === "verifyAddTracking") {
-    const { status, orderId, trackingCode, message: verificationMessage } = data;
-
-    // Kiểm tra xem việc thêm tracking có thành công không
-    if (status === "success") {
-      const query = JSON.stringify({
-        orderId,
-        trackingCode,
-      });
-      try {
-        const resAddTrack = await sendRequestToMB("addedTrackingCode", null, query);
-        console.log(`Thêm tracking cho đơn hàng ${orderId} thành công:`, resAddTrack);
-        
-        // Lưu log về tracking đã được thêm thành công
-        saveLog("trackingAddedLog", { 
-          type: "Tracking Added", 
-          date: new Date().toISOString(),
-          orderId, 
-          trackingCode, 
-          result: resAddTrack 
-        });
-      } catch (error) {
-        console.error(`Lỗi gửi tracking đến server cho đơn hàng ${orderId}:`, error);
-      }
-    } else {
-      // Ghi log hoặc thực hiện các hành động khác nếu cần thiết khi tracking không thành công
-      console.warn(`Failed to add tracking for order ${orderId}: ${verificationMessage}`);
-      
-      // Lưu log về tracking thất bại
-      saveLog("trackingAddedLog", { 
-        type: "Tracking Failed", 
-        date: new Date().toISOString(),
-        orderId, 
-        trackingCode, 
-        error: verificationMessage 
-      });
-    }
-    
-    // Phản hồi để xác nhận đã nhận thông báo
-    if (res) res({ received: true });
-  }
 
   // Thêm case mới để xử lý đơn hàng bị hủy
   if (message === "updateCancelledOrders") {
@@ -1075,104 +1020,61 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     sendMessage(sender.tab.id, "updateGrandTotal", { error });
   }
 
-  if (message === "runUpdateTracking") {
-    const apiKey = await getMBApiKey();
-    let query = JSON.stringify({
-      input: apiKey
-    });
-    
-    // Lấy tham số autoMode từ request
-    const autoMode = data?.autoMode || false;
+    if (message === "runUpdateTracking") {
+        // Bao bọc logic bất đồng bộ vào một hàm async IIFE (Immediately Invoked Function Expression)
+        // để dễ quản lý và đảm bảo `return true` được gọi đúng chỗ.
+        const initialTabId = sender.tab ? sender.tab.id : null;
+        const autoModeFromReq = data?.autoMode; // Lấy autoMode từ request
 
-    const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
-    let error = null;
-    if (result.error || result.errors?.[0].message) {
-      error = result.error
-          ? result.error
-          : result.errors
-              ? result.errors[0].message
-              : null;
-      sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
-      return;
-    }
-    const orders = result.data;
-
-    // Lấy UnshippedOrders từ chrome.storage.local
-    const UnshippedOrders = await new Promise((resolve) => {
-      chrome.storage.local.get("UnshippedOrders", (result) => {
-        resolve(result.UnshippedOrders || []);
-      });
-    });
-
-    // Hàm xử lý từng order theo thứ tự
-    const processOrder = async (index) => {
-      if (index >= orders.length) {
-        // Khi tất cả các order đã được xử lý, gửi message "updateTracking"
-        sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
-        return;
-      }
-
-      const order = orders[index];
-
-      let carrier = order.carrier;
-      if (carrier) {
-        carrier = detectCarrier(carrier.toLowerCase());
-      }
-
-      if (!carrier) {
-        carrier = detectCarrier(detectCarrierCode(order.tracking));
-      }
-
-      order.carrier = carrier;
-
-      let url;
-      if (UnshippedOrders.includes(order.orderId)) {
-        // Nếu orderId có trong UnshippedOrders, thực hiện logic cập nhật tracking
-        url = `${domain}/orders-v3/order/${order.orderId}/confirm-shipment`;
-        chrome.tabs.update({ url }, (tab) =>
-            sendMessage(tab.id, "forceAddTracking", order)
-        );
-      } else {
-        // Nếu orderId không có trong UnshippedOrders, thực hiện logic chỉnh sửa tracking
-        url = `${domain}/orders-v3/order/${order.orderId}/edit-shipment`;
-        chrome.tabs.update({ url }, (tab) =>
-            sendMessage(tab.id, "forceEditTracking", order)
-        );
-      }
-
-      // Nghe tín hiệu từ `verifyAddTracking` sau khi tracking đã được thêm
-      // Tạo một hàm listener cụ thể để có thể gỡ bỏ sau này
-      const trackingListener = async (req, sender, res) => {
-        const { message, data } = req || {};
-        if (message === "verifyAddTracking" && data.orderId === order.orderId) {
-          // Gỡ bỏ listener để tránh bị gọi nhiều lần
-          chrome.runtime.onMessage.removeListener(trackingListener);
-          
-          // Sau khi verify thành công, tiến tới order tiếp theo
-          await sleep(5000);  // Thời gian chờ xử lý xong
-          processOrder(index + 1);  // Xử lý order tiếp theo
+        if (!initialTabId) {
+            console.error("[BG] 'runUpdateTracking' không có sender.tab.id.");
+            // Gửi lỗi về tab nếu cần, dùng hàm sendMessage của mày
+            // sendMessage(sender.tab.id, "updateTracking", { error: "Lỗi: Không tìm thấy ID tab gốc.", autoMode: autoModeFromReq });
+            return; // Thoát khỏi hàm async IIFE này
         }
-      };
 
-      // Đăng ký listener
-      chrome.runtime.onMessage.addListener(trackingListener);
-      
-      // Đặt timeout để tránh trường hợp không nhận được message
-      setTimeout(() => {
-        // Kiểm tra nếu listener vẫn còn tồn tại (không bị gỡ bỏ) thì tiếp tục với đơn hàng tiếp theo
+        console.log(`[BG] Nhận 'runUpdateTracking' từ tab ${initialTabId}. AutoMode: ${autoModeFromReq}, Domain: ${domain}`);
+
         try {
-          chrome.runtime.onMessage.removeListener(trackingListener);
-          console.log(`Timeout xử lý đơn hàng ${order.orderId}, tiếp tục với đơn hàng tiếp theo`);
-          processOrder(index + 1);
-        } catch (e) {
-          // Bỏ qua lỗi nếu listener đã bị gỡ bỏ
-        }
-      }, 60000); // 60 giây timeout
-    };
+            const apiKey = await getMBApiKey();
+            const query = JSON.stringify({input: apiKey}); // Đảm bảo 'input' đúng với API của mày
+            const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
 
-    // Bắt đầu xử lý từ order đầu tiên
-    processOrder(0);
-  }
+            let error = null;
+            if (result.error || (result.errors && result.errors[0] && result.errors[0].message)) {
+                error = result.error || result.errors[0].message;
+                console.warn(`[BG] Lỗi khi lấy danh sách đơn hàng cho updateTracking: ${error}`);
+                // Sử dụng hàm sendMessage của mày để gửi kết quả/lỗi
+                sendMessage(initialTabId, "updateTracking", {error, autoMode: autoModeFromReq});
+                return; // Thoát khỏi hàm async IIFE
+            }
+
+            const orders = result.data; // Giả sử result.data là một mảng orders
+            if (orders && orders.length > 0) {
+                console.log(`[BG] Có ${orders.length} đơn hàng cần update tracking. Bắt đầu runUpdateTrackingMain...`);
+                // Gọi runUpdateTrackingMain. Hàm này sẽ tự gửi message "updateTracking" khi hoàn tất.
+                await runUpdateTrackingMain(orders, initialTabId, autoModeFromReq, domain, apiKey);
+            } else {
+                console.log("[BG] Không có đơn hàng nào cần update tracking.");
+                sendMessage(initialTabId, "updateTracking", {
+                    error: null,
+                    message: "Không có đơn hàng nào cần xử lý.",
+                    autoMode: autoModeFromReq
+                });
+            }
+        } catch (e) {
+            console.error("[BG] Lỗi nghiêm trọng trong quá trình xử lý 'runUpdateTracking':", e);
+            // Gửi lỗi về tab nếu có lỗi ngoài dự kiến
+            sendMessage(initialTabId, "updateTracking", {
+                error: `Lỗi hệ thống: ${e.message}`,
+                autoMode: autoModeFromReq
+            });
+        }
+
+        return true; // QUAN TRỌNG: Giữ kênh message mở cho xử lý bất đồng bộ!
+    }
+
+
 
   if (message === "runDownloadAdsReports") {
     try {
@@ -2475,6 +2377,237 @@ const getCustomImage = (data) => {
   }
   return customImages;
 };
+
+// Hàm helper để mở hoặc cập nhật tab và chờ nó load xong
+async function openAndEnsureTabReady(url, tabIdToUpdate = null) {
+    return new Promise((resolve, reject) => {
+        let targetTabId; // Khai báo ở đây để cả hai nhánh if/else đều dùng được
+
+        const onUpdatedListener = (updatedTabId, changeInfo, tab) => {
+            // Chỉ xử lý khi targetTabId đã được gán và khớp với updatedTabId
+            if (targetTabId && updatedTabId === targetTabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+                clearTimeout(tabLoadTimeout);
+                console.log(`[BG - openTab] Tab ${targetTabId} ready with URL: ${tab.url}`);
+                resolve(tab);
+            }
+        };
+
+        const tabLoadTimeout = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+            reject(new Error(`Timeout loading tab for URL: ${url}`));
+        }, 30000); // 30 giây timeout cho tab load
+
+        chrome.tabs.onUpdated.addListener(onUpdatedListener); // Đăng ký listener trước khi action
+
+        if (tabIdToUpdate) {
+            targetTabId = tabIdToUpdate;
+            console.log(`[BG - openTab] Updating tab ${targetTabId} to URL: ${url}`);
+            chrome.tabs.update(tabIdToUpdate, { url, active: true }, (tab) => {
+                if (chrome.runtime.lastError || !tab) {
+                    clearTimeout(tabLoadTimeout);
+                    chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+                    return reject(new Error(`Failed to update tab ${tabIdToUpdate} to ${url}: ${chrome.runtime.lastError?.message}`));
+                }
+                // Nếu tab đã complete ngay sau update (ví dụ cache), onUpdatedListener sẽ xử lý
+                // Hoặc nếu không, onUpdatedListener sẽ chờ event 'complete'
+            });
+        } else {
+            console.log(`[BG - openTab] Creating new tab for URL: ${url}`);
+            chrome.tabs.create({ url, active: true }, (tab) => {
+                if (chrome.runtime.lastError || !tab) {
+                    clearTimeout(tabLoadTimeout);
+                    chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+                    return reject(new Error(`Failed to create tab for ${url}: ${chrome.runtime.lastError?.message}`));
+                }
+                targetTabId = tab.id;
+                // Nếu tab đã complete ngay sau create, onUpdatedListener sẽ xử lý
+            });
+        }
+    });
+}
+
+// Hàm helper để gửi message và chờ một message phản hồi cụ thể (Promise-based)
+function sendMessageAndPromiseResponse(tabId, messageToSend, dataToSend, expectedResponseMessage, expectedOrderId, timeoutMs = 60000) {
+    return new Promise((resolve, reject) => {
+        let listener; // Sẽ được gán ở dưới
+        const timeoutId = setTimeout(() => {
+            if (listener) { // Kiểm tra listener tồn tại trước khi gỡ
+                chrome.runtime.onMessage.removeListener(listener);
+            }
+            reject(new Error(`Timeout (${timeoutMs/1000}s) waiting for '${expectedResponseMessage}' for order ${expectedOrderId || 'any'} from tab ${tabId}`));
+        }, timeoutMs);
+
+        listener = (request, senderDetails, sendResponseFunc) => {
+            if (senderDetails.tab && senderDetails.tab.id === tabId && request.message === expectedResponseMessage) {
+                if (expectedOrderId && (!request.data || request.data.orderId !== expectedOrderId)) {
+                    // console.log(`[BG - promise] Ignored '${expectedResponseMessage}' for wrong orderId. Expected: ${expectedOrderId}, Got: ${request.data?.orderId}`);
+                    return false;
+                }
+
+                clearTimeout(timeoutId);
+                chrome.runtime.onMessage.removeListener(listener);
+                console.log(`[BG - promise] Received '${expectedResponseMessage}' for order ${expectedOrderId || 'any'} from tab ${tabId}:`, request.data);
+                resolve(request.data);
+                return false;
+            }
+            return false;
+        };
+
+        chrome.runtime.onMessage.addListener(listener);
+
+        console.log(`[BG - promise] Sending '${messageToSend}' to tab ${tabId} for order ${dataToSend?.orderId || expectedOrderId || 'any'}`);
+        // Giả sử hàm sendMessage của mày đã tồn tại và hoạt động đúng
+        // Nó cần đảm bảo message được gửi tới content script trên tabId đó.
+        sendMessage(tabId, messageToSend, dataToSend);
+    });
+}
+
+// Hàm chính để xử lý update tracking cho nhiều đơn hàng
+async function runUpdateTrackingMain(ordersFromApi, initialSenderTabId, autoMode, domainToUse, apiKey) {
+    // apiKey có thể chưa dùng trực tiếp ở đây nhưng vẫn truyền vào cho giống handleSyncOrders
+    // và có thể dùng sau này nếu cần tương tác API MB bên trong vòng lặp mà không muốn gọi getMBApiKey() nhiều lần.
+
+    const UnshippedOrders = await new Promise(resolve => chrome.storage.local.get("UnshippedOrders", r => resolve(r.UnshippedOrders || [])));
+    let overallErrorMessage = null;
+
+    console.log(`[BG] Bắt đầu runUpdateTrackingMain với ${ordersFromApi.length} đơn hàng. Domain sử dụng: ${domainToUse}`);
+
+    for (const order of ordersFromApi) {
+        console.log(`[BG] Đang xử lý đơn hàng: ${order.orderId}`);
+        try {
+            // Bước 1: Chuẩn bị thông tin và gửi lệnh cho content script xử lý form
+            const isUnshipped = UnshippedOrders.includes(order.orderId);
+            const actionUrl = isUnshipped ?
+                `${domainToUse}/orders-v3/order/${order.orderId}/confirm-shipment` :
+                `${domainToUse}/orders-v3/order/${order.orderId}/edit-shipment`;
+            const formFillMessageType = isUnshipped ? "forceAddTracking" : "forceEditTracking";
+
+            console.log(`[BG] Order ${order.orderId} - Action URL: ${actionUrl}, Message Type: ${formFillMessageType}`);
+
+            let actionTab = await openAndEnsureTabReady(actionUrl);
+
+            const addedTrackingData = await sendMessageAndPromiseResponse(
+                actionTab.id,
+                formFillMessageType,
+                order,
+                "addedTrackingCode",
+                order.orderId
+            );
+
+            console.log(`[BG] Order ${order.orderId} - Form đã xử lý. Tracking code: '${addedTrackingData.trackingCode}'`);
+
+            // Bước 2: Mở tab chi tiết đơn hàng để xác minh
+            const verifyUrl = `${domainToUse}/orders-v3/order/${order.orderId}`;
+            console.log(`[BG] Order ${order.orderId} - Verify URL: ${verifyUrl}`);
+            let verifyTab = await openAndEnsureTabReady(verifyUrl, actionTab.id); // Có thể update tab cũ
+
+            // Bước 3: Gửi lệnh cho content script xác minh và chờ kết quả
+            const verificationResult = await sendMessageAndPromiseResponse(
+                verifyTab.id,
+                "verifyAddTracking",
+                { orderId: order.orderId, trackingCode: addedTrackingData.trackingCode },
+                "verifyAddTracking",
+                order.orderId
+            );
+
+            console.log(`[BG] Order ${order.orderId} - Kết quả xác minh:`, verificationResult);
+
+            // >>>>>>>>> ĐÓNG TAB verifyTab SAU KHI BƯỚC 3 HOÀN TẤT <<<<<<<<<<
+            if (verifyTab && verifyTab.id) {
+                const tabIdToClose = verifyTab.id; // Lưu ID lạiเผื่อ `verifyTab` bị thay đổi
+                console.log(`[BG] Order ${order.orderId} - Chuẩn bị đóng verifyTab (ID: ${tabIdToClose}).`);
+                try {
+                    await chrome.tabs.remove(tabIdToClose);
+                    console.log(`[BG] Order ${order.orderId} - Đã đóng verifyTab (ID: ${tabIdToClose}) thành công.`);
+                } catch (closeTabError) {
+                    console.warn(`[BG] Order ${order.orderId} - Lỗi khi đóng verifyTab (ID: ${tabIdToClose}): ${closeTabError.message}`);
+                } finally {
+                    // Đánh dấu là đã xử lý (hoặc cố gắng xử lý) việc đóng tab này
+                    // để khối catch lớn không cố đóng lại một tab không còn tồn tại hoặc đã được xử lý.
+                    if (actionTab && actionTab.id === tabIdToClose) {
+                        actionTab = null; // Nếu actionTab và verifyTab là một, actionTab cũng coi như đã xử lý.
+                    }
+                    verifyTab = null; // Quan trọng: set verifyTab về null.
+                }
+            }
+            // >>>>>>>>> KẾT THÚC PHẦN ĐÓNG TAB <<<<<<<<<<
+
+            // Bước 4: Xử lý kết quả xác minh
+            if (verificationResult && verificationResult.status === "success") {
+                const query = JSON.stringify({ orderId: order.orderId, trackingCode: addedTrackingData.trackingCode });
+                // Giả sử sendRequestToMB tự lấy apiKey nếu không được truyền
+                await sendRequestToMB("addedTrackingCode", null, query);
+                console.log(`[BG] Order ${order.orderId} - Đã cập nhật tracking lên MB thành công.`);
+                saveLog("trackingVerificationLog", {
+                    type: "Tracking Verification Success (Refactored)",
+                    date: new Date().toISOString(),
+                    orderId: order.orderId,
+                    trackingCode: addedTrackingData.trackingCode,
+                    verificationMessage: verificationResult.message
+                });
+            } else {
+                const errorMessage = verificationResult ? verificationResult.message : "Không có phản hồi xác minh hoặc phản hồi không hợp lệ.";
+                console.warn(`[BG] Order ${order.orderId} - Xác minh thất bại hoặc có lỗi: ${errorMessage}`);
+                saveLog("trackingVerificationLog", {
+                    type: "Tracking Verification Failed (Refactored)",
+                    date: new Date().toISOString(),
+                    orderId: order.orderId,
+                    trackingCode: addedTrackingData.trackingCode,
+                    error: errorMessage
+                });
+            }
+
+            await sleep(2000 + Math.random() * 1000);
+
+        } catch (error) {
+            console.error(`[BG] Lỗi nghiêm trọng khi xử lý đơn hàng ${order.orderId}: ${error.message}`, error.stack);
+            overallErrorMessage = error.message;
+            saveLog("trackingProcessingError", {
+                orderId: order.orderId,
+                error: error.message,
+                stack: error.stack // Log cả stack trace để dễ debug
+            });
+            // Cân nhắc có nên `break;` vòng lặp ở đây không nếu lỗi quá nghiêm trọng
+            await sleep(3000);
+        }
+    }
+
+    console.log("[BG] Đã xử lý xong tất cả đơn hàng trong runUpdateTrackingMain.");
+    if (initialSenderTabId) {
+        try {
+            // Kiểm tra xem tab có còn tồn tại không
+            const tabExists = await new Promise(resolve => {
+                chrome.tabs.get(initialSenderTabId, (tab) => {
+                    if (chrome.runtime.lastError || !tab) {
+                        resolve(false);
+                    } else {
+                        resolve(true);
+                    }
+                });
+            });
+
+            if (tabExists) {
+                await chrome.tabs.update(initialSenderTabId, { active: true });
+                console.log(`[BG] Đã quay lại tab ban đầu: ${initialSenderTabId}`);
+            } else {
+                console.warn(`[BG] Tab ban đầu ${initialSenderTabId} không còn tồn tại, không thể quay lại.`);
+            }
+        } catch (e) {
+            console.warn(`[BG] Lỗi khi cố gắng quay lại tab ban đầu ${initialSenderTabId}:`, e);
+        }
+
+        // Gửi message kết quả về cho tab gốc
+        // Hàm sendMessage tùy chỉnh của mày đã đóng gói đúng cấu trúc { message: "tên", data: payload } rồi.
+        console.log(`[BG] Gửi 'updateTracking' về tab ${initialSenderTabId} với data:`, { error: overallErrorMessage, autoMode });
+        sendMessage(initialSenderTabId, "updateTracking", { error: overallErrorMessage, autoMode: autoMode });
+        //                                                                                      ^^^^^^^^
+        //                                                                                      Đảm bảo biến autoMode này có giá trị đúng
+        //                                                                                      (nó được truyền vào runUpdateTrackingMain)
+    } else {
+        console.warn("[BG] Không có initialSenderTabId để gửi thông báo hoàn tất updateTracking.");
+    }
+}
 
 const handleSyncOrders = async (orders, options, apiKey, domain) => {
   const results = [];
