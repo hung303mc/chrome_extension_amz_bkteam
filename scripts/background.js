@@ -24,19 +24,19 @@ const setupDailyAlarm = () => {
   // Tính toán thời gian cho 9h sáng hôm nay
   const now = new Date();
   const syncTime = new Date();
-  syncTime.setHours(13, 43, 0, 0); // 9:00:00 AM
+  syncTime.setHours(8, 0, 0, 0); // 9:00:00 AM
 
   // Tính toán thời gian cho 9h10 sáng
   const updateTrackingTime = new Date();
-  updateTrackingTime.setHours(13, 52, 0, 0); // 9:10:00 AM
+  updateTrackingTime.setHours(14, 34, 0, 0); // 9:10:00 AM
 
   // Tính toán thời gian cho 9h20 sáng (get_account_health)
   const accountHealthTime = new Date();
-  accountHealthTime.setHours(11, 25, 0, 0); // 9:20:00 AM
+  accountHealthTime.setHours(13, 28, 0, 0); // 9:20:00 AM
   
   // Tính toán thời gian cho 9h40 sáng (download_ads_reports)
   const adsReportsTime = new Date();
-  adsReportsTime.setHours(14, 30, 0, 0); // 9:40:00 AM
+  adsReportsTime.setHours(9, 0, 0, 0); // 9:40:00 AM
 
   // Nếu đã qua 9h sáng, đặt cho ngày mai
   if (now > syncTime) {
@@ -67,25 +67,25 @@ const setupDailyAlarm = () => {
   // Tạo alarm cho sync order
   chrome.alarms.create("dailySyncOrder", {
     delayInMinutes: minutesUntilSync,
-    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 8 * 60 // Lặp lại mỗi 24 giờ
   });
 
   // Tạo alarm cho update tracking
   chrome.alarms.create("dailyUpdateTracking", {
     delayInMinutes: minutesUntilUpdateTracking,
-    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 8 * 60 // Lặp lại mỗi 24 giờ
   });
 
   // Tạo alarm cho account health
   chrome.alarms.create("dailyAccountHealth", {
     delayInMinutes: minutesUntilAccountHealth,
-    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 8 * 60 // Lặp lại mỗi 24 giờ
   });
 
   // Tạo alarm cho download ads reports
   chrome.alarms.create("dailyDownloadAdsReports", {
     delayInMinutes: minutesUntilAdsReports,
-    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 24 * 60 // Lặp lại mỗi 24 giờ
   });
 
   console.log(`Đã đặt lịch sync order vào lúc ${syncTime.toLocaleString()}`);
@@ -109,6 +109,7 @@ const setupDailyAlarm = () => {
 };
 
 // Xử lý alarm khi kích hoạt
+
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "dailySyncOrder") {
     console.log("Đang chạy tự động sync order theo lịch lúc 9h sáng...");
@@ -133,7 +134,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   else if (alarm.name === "dailyUpdateTracking") {
     console.log("Đang chạy tự động update tracking theo lịch lúc 9h10 sáng...");
     // Mở trang order details
-    openOrderDetailPage();
+    openOrderDetailPage(); // Reverted to correct function call for update tracking
     
     // Chờ 5 giây để trang load xong
     setTimeout(() => {
@@ -148,35 +149,42 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }, 5000);
   }
   else if (alarm.name === "dailyAccountHealth") {
-    console.log("Đang chạy tự động kiểm tra account health theo lịch lúc 9h20 sáng...");
-    // Mở trang account health/performance dashboard
-    const url = `${globalDomain}/performance/dashboard`;
-    chrome.tabs.query({}, (tabs) => {
-      let found = false;
-      
-      for (let tab of tabs) {
-        if (found) break;
-        if (tab?.url?.includes("/performance/dashboard")) {
-          found = tab.id;
-          break;
-        }
-      }
-      
-      if (found) {
-        chrome.tabs.update(found, {
-          active: true,
-          url,
-        });
-      } else {
-        chrome.tabs.create({
-          active: true,
-          url,
-        });
-      }
-    });
+    console.log("Đang chạy tự động kiểm tra account health theo lịch. Calling openOrderDetailPage()...");
     
+    openOrderDetailPage(); // This function should handle opening/navigating to the correct page.
+
     // Lưu log hoạt động
     saveLog("accountHealthLog", { type: "Auto Account Health Check", date: new Date().toISOString() });
+    
+    const messagePayload = { message: "triggerGetAccountHealth" };
+
+    // After openOrderDetailPage() is called, we assume it makes the target tab active.
+    // We'll wait a short moment for the page to potentially start loading/become active, then query the active tab.
+    // A more robust solution would involve openOrderDetailPage providing a callback or promise with the tabId.
+    setTimeout(() => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs.length > 0 && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+                console.log(`Sending 'triggerGetAccountHealth' to active tab ID: ${activeTabId} after openOrderDetailPage.`);
+                
+                // Using sendMessageToTabWhenLoaded to ensure the tab is ready.
+                // The third argument is an optional callback for the response from the content script.
+                sendMessageToTabWhenLoaded(activeTabId, messagePayload, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error(`Error sending 'triggerGetAccountHealth' to tab ${activeTabId}:`, chrome.runtime.lastError.message);
+                        return;
+                    }
+                    if (response) {
+                        console.log("Response from content script (triggerGetAccountHealth):", response);
+                    } else {
+                        console.log("No response from content script (triggerGetAccountHealth), or an error occurred before response.");
+                    }
+                });
+            } else {
+                console.error("Could not find an active tab after openOrderDetailPage to send 'triggerGetAccountHealth'.");
+            }
+        });
+    }, 3000); // Wait 3 seconds for the page to likely become active and start loading. Adjust if needed.
   }
   else if (alarm.name === "dailyDownloadAdsReports") {
     console.log("Đang chạy tự động tải báo cáo quảng cáo theo lịch lúc 9h40 sáng...");
@@ -548,6 +556,23 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
+// Helper function to send message after tab loads
+function sendMessageToTabWhenLoaded(tabId, messagePayload) {
+    chrome.tabs.onUpdated.addListener(function listener(updatedTabId, changeInfo, tab) {
+        // Ensure the tab is fully loaded and is the performance dashboard page
+        if (updatedTabId === tabId && changeInfo.status === 'complete' && tab.url && tab.url.includes("/performance/dashboard")) {
+            chrome.tabs.onUpdated.removeListener(listener); // Important: remove listener to prevent multiple triggers
+            chrome.tabs.sendMessage(tabId, messagePayload, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(`Error sending message to tab ${tabId} (${tab.url}):`, chrome.runtime.lastError.message);
+                } else {
+                    console.log(`Message sent to tab ${tabId} (${tab.url}), response:`, response);
+                }
+            });
+        }
+    });
+}
+
 // Chạy thiết lập alarm khi extension được tải
 setupDailyAlarm();
 
@@ -568,76 +593,151 @@ chrome.tabs.onActivated.addListener(function (activeInfo) {
   activeTabId = activeInfo?.tabId;
 });
 
-const sendMessage = (tabId, message, data) => {
+// Utility function for showing error notifications
+const notifyError = (message) => {
+  // Send error notification to active tab
+  if (activeTabId) {
+    chrome.tabs.sendMessage(activeTabId, {
+      message: "showNotification",
+      type: "error",
+      text: message
+    });
+  }
+  console.error(message);
+};
+
+// Correctly defined stopInterval function
+const stopInterval = (intervalId) => {
+  if (intervalId) {
+    clearInterval(intervalId);
+  }
+};
+
+const sendMessage = async (tabId, message, data) => {
+  if (!tabId) return;
+  
+  // Đảm bảo content script đã được tiêm nếu là message quan trọng liên quan đến đơn hàng
+  if (message === 'getOrderItemInfo') {
+    try {
+      console.log(`[BG] Đảm bảo content script đã được tiêm trước khi gửi message ${message} to tab ${tabId}`);
+      const scriptInjected = await ensureContentScriptInjected(tabId, 'scripts/sync_order.js');
+      if (!scriptInjected) {
+        console.error(`[BG] Không thể tiêm content script vào tab ${tabId}`);
+      }
+    } catch (error) {
+      console.error(`[BG] Lỗi khi tiêm content script:`, error);
+    }
+  }
+  
   let timeOut = 0;
   let start = setInterval(() => {
     timeOut++;
-    // chrome.tabs.sendMessage(
-    //    tabId,
-    //    {
-    //       message,
-    //       data,
-    //    },
-    //    (resp) => {
-    //       if (!chrome.runtime.lastError && resp?.message === "received")
-    //          stopInteval(start);
-    //    },
-    // );
-
-    chrome.tabs.get(tabId, function (tabInner) {
-      if (tabInner) {
-        chrome.tabs.sendMessage(
-          tabId,
-          {
-            message,
-            data,
-          },
-          (resp) => {
-            if (!chrome.runtime.lastError && resp?.message === "received")
-              stopInteval(start);
-          },
-        );
-      } else {
-        chrome.tabs.get(activeTabId, function (tab) {
-          if (tab?.id) {
+    
+    // First check if the tab exists
+    try {
+      chrome.tabs.get(tabId, function (tabInner) {
+        if (tabInner && !chrome.runtime.lastError) {
+          // Tab exists, send message to it
+          try {
             chrome.tabs.sendMessage(
-              tab?.id,
+              tabId,
               {
                 message,
                 data,
               },
               (resp) => {
-                if (!chrome.runtime.lastError && resp?.message === "received")
-                  stopInteval(start);
-              },
+                // Check for errors and handle them
+                if (chrome.runtime.lastError) {
+                  console.log(`Error sending message to tab ${tabId}:`, chrome.runtime.lastError);
+                } else if (resp?.message === "received") {
+                  stopInterval(start);
+                }
+              }
             );
+          } catch (error) {
+            console.error(`Error in sendMessage to tab ${tabId}:`, error);
           }
-        });
-      }
-    });
+        } else if (typeof activeTabId !== 'undefined' && activeTabId) {
+          // Original tab doesn't exist, try sending to active tab
+          try {
+            chrome.tabs.get(activeTabId, function (tab) {
+              if (tab?.id && !chrome.runtime.lastError) {
+                chrome.tabs.sendMessage(
+                  tab.id,
+                  {
+                    message,
+                    data,
+                  },
+                  (resp) => {
+                    // Check for errors and handle them
+                    if (chrome.runtime.lastError) {
+                      console.log(`Error sending message to activeTab ${activeTabId}:`, chrome.runtime.lastError);
+                    } else if (resp?.message === "received") {
+                      stopInterval(start);
+                    }
+                  }
+                );
+              }
+            });
+          } catch (error) {
+            console.error(`Error in sendMessage to activeTab ${activeTabId}:`, error);
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error in chrome.tabs.get:", error);
+    }
 
-    if (timeOut == 120) stopInteval(start);
+    // Stop after 120 seconds to prevent infinite loops
+    if (timeOut >= 120) {
+      console.log("Timeout reached for message sending, stopping interval");
+      stopInterval(start);
+    }
   }, 1000);
+  
+  return start; // Return the interval ID for external stopping if needed
 };
 
 const sendToContentScript = (msg, data) =>
   new Promise(async (resolve) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (!tabs || !tabs.length || !tabs[0].id) {
-        if (activeTabId) {
-          chrome.tabs.get(activeTabId, function (tab) {
-            if (tab) {
-              sendMessage(tab.id, msg, data);
-              return resolve(true);
-            }
-            return resolve(false);
-          });
+    try {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error querying tabs:", chrome.runtime.lastError);
+          return resolve(false);
         }
-        return resolve(false);
-      }
-      sendMessage(tabs[0].id, msg, data);
-      resolve(true);
-    });
+        
+        if (!tabs || !tabs.length || !tabs[0].id) {
+          if (typeof activeTabId !== 'undefined' && activeTabId) {
+            try {
+              chrome.tabs.get(activeTabId, function (tab) {
+                if (chrome.runtime.lastError) {
+                  console.error("Error getting active tab:", chrome.runtime.lastError);
+                  return resolve(false);
+                }
+                
+                if (tab && tab.id) {
+                  sendMessage(tab.id, msg, data);
+                  return resolve(true);
+                }
+                return resolve(false);
+              });
+            } catch (error) {
+              console.error("Error in chrome.tabs.get for activeTabId:", error);
+              return resolve(false);
+            }
+          } else {
+            return resolve(false);
+          }
+        } else {
+          sendMessage(tabs[0].id, msg, data);
+          resolve(true);
+        }
+      });
+    } catch (error) {
+      console.error("Error in sendToContentScript:", error);
+      resolve(false);
+    }
   });
 
 const getMBApiKey = () =>
@@ -682,10 +782,14 @@ const sendRequestToMB = async (endPoint, apiKey, data) => {
   return res;
 };
 
-const redirectToNewURL = async (fn) => {
-  let querying = chrome.tabs.query({ currentWindow: true });
-  querying.then(fn);
-  return;
+const redirectToNewURL = (fn) => {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ currentWindow: true }, (tabs) => {
+      fn(tabs);
+      // Thêm một khoảng thời gian ngắn để đảm bảo trình duyệt có thởi gian để bắt đầu quá trình điều hướng
+      setTimeout(resolve, 500);
+    });
+  });
 };
 
 const openOrderPage = () => {
@@ -796,7 +900,7 @@ const downloadFiles = async (fieldValues, apiKey) => {
                   reject(null);
                 };
 
-                reader.readAsDataURL(fileBlob); // Đọc file dưới dạng Data URL (base64)
+                reader.readAsDataURL(fileBlob); // Đọc file dướidạng Data URL (base64)
               });
             }
           }
@@ -818,9 +922,314 @@ const downloadFiles = async (fieldValues, apiKey) => {
 
 
 let stopProcess = false;
+
+// Tạo một interval để giữ service worker luôn hoạt động
+let keepAliveInterval = null;
+
+// Hàm để giữ service worker không bị Chrome tắt
+function keepServiceWorkerAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+  }
+  
+  console.log("[BG] Setting up keep-alive mechanism for service worker");
+  
+  // Ping định kỳ mỗi 20 giây để giữ service worker hoạt động
+  keepAliveInterval = setInterval(() => {
+    console.log("[BG] Service worker keep-alive ping");
+    // Tạo một hoạt động nhỏ để service worker không bị tắt
+    chrome.storage.local.get(["lastActivityTime"], (result) => {
+      chrome.storage.local.set({ "lastActivityTime": Date.now() });
+    });
+  }, 20000);
+}
+
+// Bắt đầu giữ service worker hoạt động ngay khi script được tải
+keepServiceWorkerAlive();
+
 // capture event from content script
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
-  const { message, data, domain: oldDomain } = req || {};
+  const { message, data, domain: oldDomain, action } = req || {};
+  
+  // Xử lý thông báo khi quá trình tự động update tracking hoàn tất
+  if (message === "autoUpdateTrackingFinished") {
+    console.log("[BG] Nhận thông báo autoUpdateTrackingFinished");
+    if (res) res({ message: "received" });
+    
+    // Thông báo rằng quá trình tự động update tracking đã hoàn tất
+    showNotification("success", "Auto update tracking process completed successfully");
+    
+    // Có thể thêm các xử lý khác ở đây, như cập nhật trạng thái, ghi log, v.v.
+    console.log("[BG] Quá trình tự động update tracking đã hoàn tất thành công");
+    return true;
+  }
+  
+  // Xử lý tin nhắn keep-alive từ content script
+  if (action === "userInteraction") {
+    console.log("[BG] Received user interaction notification, service worker refreshed");
+    keepServiceWorkerAlive(); // Khởi động lại cơ chế keep-alive
+    if (res) res({ status: "Service worker active" });
+    return true; // Trả về true để cho biết sẽ gọi callback res bất đồng bộ
+  }
+  if (message === "runUpdateTracking") {
+    const apiKey = await getMBApiKey();
+    let query = JSON.stringify({
+      input: apiKey
+    });
+    
+    // Lấy tham số autoMode từ request
+    const autoMode = data?.autoMode || false;
+
+    const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
+    let error = null;
+    if (result.error || result.errors?.[0].message) {
+      error = result.error
+          ? result.error
+          : result.errors
+              ? result.errors[0].message
+              : null;
+      sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
+      return;
+    }
+    const orders = result.data;
+
+    // Lấy UnshippedOrders từ chrome.storage.local
+    const UnshippedOrders = await new Promise((resolve) => {
+      chrome.storage.local.get("UnshippedOrders", (result) => {
+        resolve(result.UnshippedOrders || []);
+      });
+    });
+
+    // Hàm xử lý từng order theo thứ tự
+    const processOrder = async (index) => {
+      if (index >= orders.length) {
+        // Khi tất cả các order đã được xử lý, gửi message "updateTracking"
+        sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
+        return;
+      }
+
+      const order = orders[index];
+
+      let carrier = order.carrier;
+      if (carrier) {
+        carrier = detectCarrier(carrier.toLowerCase());
+      }
+
+      if (!carrier) {
+        carrier = detectCarrier(detectCarrierCode(order.tracking));
+      }
+
+      order.carrier = carrier;
+
+      let url;
+      if (UnshippedOrders.includes(order.orderId)) {
+        // Nếu orderId có trong UnshippedOrders, thực hiện logic cập nhật tracking
+        url = `${globalDomain}/orders-v3/order/${order.orderId}/confirm-shipment`;
+        chrome.tabs.update({ url }, (tab) =>
+            sendMessage(tab.id, "forceAddTracking", order)
+        );
+      } else {
+        // Nếu orderId không có trong UnshippedOrders, thực hiện logic chỉnh sửa tracking
+        url = `${globalDomain}/orders-v3/order/${order.orderId}/edit-shipment`;
+        chrome.tabs.update({ url }, (tab) =>
+            sendMessage(tab.id, "forceEditTracking", order)
+        );
+      }
+
+      // Nghe tín hiệu từ `verifyAddTracking` sau khi tracking đã được thêm
+      // Tạo một hàm listener cụ thể để có thể gỡ bỏ sau này
+      const trackingListener = async (req, sender, res) => {
+        const { message, data } = req || {};
+        if (message === "verifyAddTracking" && data.orderId === order.orderId) {
+          // Gỡ bỏ listener để tránh bị gọi nhiều lần
+          chrome.runtime.onMessage.removeListener(trackingListener);
+          
+          // Sau khi verify thành công, tiến tới order tiếp theo
+          await sleep(5000);  // Thời gian chờ xử lý xong
+          processOrder(index + 1);  // Xử lý order tiếp theo
+        }
+      };
+
+      // Đăng ký listener
+      chrome.runtime.onMessage.addListener(trackingListener);
+      
+      // Đặt timeout để tránh trường hợp không nhận được message
+      setTimeout(() => {
+        // Kiểm tra nếu listener vẫn còn tồn tại (không bị gỡ bỏ) thì tiếp tục với đơn hàng tiếp theo
+        try {
+          chrome.runtime.onMessage.removeListener(trackingListener);
+          console.log(`Timeout xử lý đơn hàng ${order.orderId}, tiếp tục với đơn hàng tiếp theo`);
+          processOrder(index + 1);
+        } catch (e) {
+          // Bỏ qua lỗi nếu listener đã bị gỡ bỏ
+        }
+      }, 60000); // 60 giây timeout
+    };
+
+    // Bắt đầu xử lý từ order đầu tiên
+    processOrder(0);
+  }
+  // if (message === "runUpdateTracking") {
+  //   console.log("[BG] Received runUpdateTracking message. Data:", data);
+  //   // Trả về phản hồi ngay lập tức để tránh lỗi timeout
+  //   if (res) res({ message: "received" });
+    
+  //   // Xử lý Update Tracking bất đồng bộ
+  //   (async () => {
+  //     try {
+  //       // Lấy API key
+  //       console.log("[BG] Attempting to fetch API key...");
+  //       const apiKey = await getMBApiKey();
+  //       console.log("[BG] API Key fetched:", apiKey ? 'Exists' : 'Not found');
+  //       let query = JSON.stringify({
+  //         input: apiKey
+  //       });
+        
+  //       // Lấy tham số autoMode từ request
+  //       const autoMode = data?.autoMode || false;
+
+  //       // Gửi request đến server để lấy danh sách orders cần update tracking
+  //       console.log("[BG] Fetching orders needing update tracking...");
+  //       const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
+  //       console.log("[BG] Orders fetched. Result:", result);
+  //       let error = null;
+        
+  //       if (result.error || result.errors?.[0]?.message) {
+  //         error = result.error
+  //             ? result.error
+  //             : result.errors
+  //                 ? result.errors[0].message
+  //                 : null;
+  //         sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
+  //         return;
+  //       }
+        
+  //       const orders = result.data || [];
+  //       let accumulatedErrors = []; // Initialize accumulatedErrors
+
+  //       // Lấy UnshippedOrders từ chrome.storage.local
+  //       const UnshippedOrders = await new Promise((resolve) => {
+  //         chrome.storage.local.get("UnshippedOrders", (result) => {
+  //           resolve(result.UnshippedOrders || []);
+  //         });
+  //       });
+
+  //       // Hàm xử lý từng order theo thứ tự (UI-driven)
+  //       const processOrder = async (index) => {
+  //         console.log(`[BG] processOrder called for index: ${index}`);
+  //         if (index >= orders.length) {
+  //           console.log("[BG] All orders processed.");
+  //           sendMessage(sender.tab.id, "updateTracking", { error: accumulatedErrors.length > 0 ? accumulatedErrors.join('; ') : null, autoMode });
+  //           return;
+  //         }
+
+  //         const order = orders[index];
+  //         const currentTabId = sender.tab.id;
+  //         const orderDomain = globalDomain; // Ensure globalDomain is correctly set (e.g., https://sellercentral.amazon.com)
+
+  //         console.log(`[BG] Processing order ${index + 1}/${orders.length}: ${order.amazon_order_id}`);
+
+  //         const orderDetailPageUrl = `${orderDomain}/orders-v3/order/${order.amazon_order_id}`;
+  //         const confirmShipmentPageUrl = `${orderDomain}/orders-v3/order/${order.amazon_order_id}/confirm-shipment`;
+
+  //         let tabUpdateListenerInstance = null;
+  //         let verifyListenerInstance = null;
+  //         let processingTimeout = null;
+
+  //         const cleanupCurrentOrderListeners = () => {
+  //           if (tabUpdateListenerInstance) {
+  //             chrome.tabs.onUpdated.removeListener(tabUpdateListenerInstance);
+  //             tabUpdateListenerInstance = null;
+  //           }
+  //           if (verifyListenerInstance) {
+  //             chrome.runtime.onMessage.removeListener(verifyListenerInstance);
+  //             verifyListenerInstance = null;
+  //           }
+  //           if (processingTimeout) {
+  //             clearTimeout(processingTimeout);
+  //             processingTimeout = null;
+  //           }
+  //         };
+
+  //         const proceedToNextOrder = (orderError = null) => {
+  //           cleanupCurrentOrderListeners();
+  //           if (orderError) {
+  //             console.error(`[BG] Error processing order ${order.amazon_order_id}: ${orderError}.`);
+  //             accumulatedErrors.push(`Order ${order.amazon_order_id}: ${orderError}`);
+  //           }
+  //           setTimeout(() => processOrder(index + 1), 1000); // Delay before next order
+  //         };
+
+  //         processingTimeout = setTimeout(() => {
+  //           console.warn(`[BG] Timeout processing order ${order.amazon_order_id}. Moving to next.`);
+  //           proceedToNextOrder("Order processing timeout (60s)");
+  //         }, 60000); // 60 seconds timeout per order
+
+  //         verifyListenerInstance = (request, msgSender, sendResponse) => {
+  //           if (request.message === "verifyAddTracking" && msgSender.tab && msgSender.tab.id === currentTabId && request.data.orderId === order.amazon_order_id) {
+  //             console.log(`[BG] Received verifyAddTracking for ${order.amazon_order_id}:`, request.data);
+  //             if (request.data.status === "error") {
+  //               proceedToNextOrder(`Tracking update failed: ${request.data.message}`);
+  //             } else {
+  //               proceedToNextOrder(); // Success
+  //             }
+  //             if (sendResponse) sendResponse({message: "BG acknowledged verifyAddTracking"});
+  //             return true;
+  //           }
+  //         };
+
+  //         tabUpdateListenerInstance = (tabId, changeInfo, tab) => {
+  //           if (tabId === currentTabId && changeInfo.status === 'complete' && tab.url) {
+  //             if (tab.url.startsWith(orderDetailPageUrl)) {
+  //               console.log(`[BG] Tab updated to Order Detail Page: ${tab.url}. Sending clickInitialConfirmShipment.`);
+  //               sendMessage(currentTabId, "clickInitialConfirmShipment", { orderId: order.amazon_order_id });
+  //             } else if (tab.url.startsWith(confirmShipmentPageUrl)) {
+  //               console.log(`[BG] Tab updated to Confirm Shipment Page: ${tab.url}. Removing tab listener and sending forceAddTracking.`);
+  //               chrome.tabs.onUpdated.removeListener(tabUpdateListenerInstance); // Clean up tab update listener for this order
+  //               tabUpdateListenerInstance = null;
+
+  //               chrome.runtime.onMessage.addListener(verifyListenerInstance);
+
+  //               const trackingData = {
+  //                 orderId: order.amazon_order_id,
+  //                 tracking: order.tracking_id, // add_tracking.js expects 'tracking'
+  //                 carrier: order.carrier,
+  //                 domain: new URL(tab.url).origin,
+  //                 // Include other fields from 'order' if add_tracking.js's handAddTracking needs them
+  //               };
+  //               sendMessage(currentTabId, "forceAddTracking", trackingData);
+  //             }
+  //           }
+  //         };
+
+  //         chrome.tabs.onUpdated.addListener(tabUpdateListenerInstance);
+
+  //         console.log(`[BG] Navigating to Order Detail Page for order ${order.amazon_order_id}: ${orderDetailPageUrl}. CurrentTabId: ${currentTabId}`);
+  //         chrome.tabs.update(currentTabId, { url: orderDetailPageUrl }, (tab) => {
+  //           if (chrome.runtime.lastError) {
+  //             proceedToNextOrder(`Navigation error: ${chrome.runtime.lastError.message}`);
+  //           }
+  //         });
+  //       };
+
+  //       // Bắt đầu xử lý orders
+  //       if (orders.length > 0) {
+  //         processOrder(0);
+  //       } else {
+  //         sendMessage(sender.tab.id, "updateTracking", { error: null, autoMode });
+  //       }
+  //     } catch (error) {
+  //       console.error("Lỗi trong quá trình xử lý Update Tracking:", error);
+  //       sendMessage(sender.tab.id, "updateTracking", { 
+  //         error: error.message || "Lỗi không xác định", 
+  //         autoMode: data?.autoMode || false 
+  //       });
+  //     }
+  //   })();
+    
+  //   return true; // Trả về true để giữ kết nối mở cho async response
+  // }
+  
   let domain = AMZDomain;
   if (AMZDomains.includes(oldDomain)) {
     domain = oldDomain;
@@ -935,12 +1344,74 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
       url: `${domain}/orders-v3?page=1`,
     });
   }
+  // if (message === "forceAddTracking") {
+  //   // const url = `${AMZDomain}/orders-v3/order/${data.orderId}/confirm-shipment`;
+  //   const url = `${domain}/orders-v3/order/${data.orderId}/confirm-shipment`;
+  //   chrome.tabs.update({ url }, (tab) =>
+  //     sendMessage(tab.id, "forceAddTracking", data),
+  //   );
+  // }
   if (message === "forceAddTracking") {
     // const url = `${AMZDomain}/orders-v3/order/${data.orderId}/confirm-shipment`;
     const url = `${domain}/orders-v3/order/${data.orderId}/confirm-shipment`;
     chrome.tabs.update({ url }, (tab) =>
       sendMessage(tab.id, "forceAddTracking", data),
     );
+  }
+  if (message === "addedTrackingCode") {
+    const { trackingCode, orderId } = data;
+
+    // Nếu tracking code không phải là empty, tiến hành verify
+    if (trackingCode && trackingCode.trim() !== "") {
+      const url = `${domain}/orders-v3/order/${orderId}`;
+      chrome.tabs.update({ url }, (tab) =>
+          sendMessage(tab.id, "verifyAddTracking", data),
+      );
+    } else {
+      console.log(`Tracking code is empty for order ${orderId}. No need to verify.`);
+    }
+  }
+
+  if (message === "verifyAddTracking") {
+    const { status, orderId, trackingCode, message: verificationMessage } = data;
+
+    // Kiểm tra xem việc thêm tracking có thành công không
+    if (status === "success") {
+      const query = JSON.stringify({
+        orderId,
+        trackingCode,
+      });
+      try {
+        const resAddTrack = await sendRequestToMB("addedTrackingCode", null, query);
+        console.log(`Thêm tracking cho đơn hàng ${orderId} thành công:`, resAddTrack);
+        
+        // Lưu log về tracking đã được thêm thành công
+        saveLog("trackingAddedLog", { 
+          type: "Tracking Added", 
+          date: new Date().toISOString(),
+          orderId, 
+          trackingCode, 
+          result: resAddTrack 
+        });
+      } catch (error) {
+        console.error(`Lỗi gửi tracking đến server cho đơn hàng ${orderId}:`, error);
+      }
+    } else {
+      // Ghi log hoặc thực hiện các hành động khác nếu cần thiết khi tracking không thành công
+      console.warn(`Failed to add tracking for order ${orderId}: ${verificationMessage}`);
+      
+      // Lưu log về tracking thất bại
+      saveLog("trackingAddedLog", { 
+        type: "Tracking Failed", 
+        date: new Date().toISOString(),
+        orderId, 
+        trackingCode, 
+        error: verificationMessage 
+      });
+    }
+    
+    // Phản hồi để xác nhận đã nhận thông báo
+    if (res) res({ received: true });
   }
 
   // Thêm case mới để xử lý đơn hàng bị hủy
@@ -1020,60 +1491,108 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     sendMessage(sender.tab.id, "updateGrandTotal", { error });
   }
 
-    if (message === "runUpdateTracking") {
-        // Bao bọc logic bất đồng bộ vào một hàm async IIFE (Immediately Invoked Function Expression)
-        // để dễ quản lý và đảm bảo `return true` được gọi đúng chỗ.
-        const initialTabId = sender.tab ? sender.tab.id : null;
-        const autoModeFromReq = data?.autoMode; // Lấy autoMode từ request
+  if (message === "runUpdateTracking") {
+    const apiKey = await getMBApiKey();
+    let query = JSON.stringify({
+      input: apiKey
+    });
+    
+    // Lấy tham số autoMode từ request
+    const autoMode = data?.autoMode || false;
 
-        if (!initialTabId) {
-            console.error("[BG] 'runUpdateTracking' không có sender.tab.id.");
-            // Gửi lỗi về tab nếu cần, dùng hàm sendMessage của mày
-            // sendMessage(sender.tab.id, "updateTracking", { error: "Lỗi: Không tìm thấy ID tab gốc.", autoMode: autoModeFromReq });
-            return; // Thoát khỏi hàm async IIFE này
-        }
+    // Log message khi bắt đầu update tracking
+    console.log("Bắt đầu quá trình update tracking", { autoMode });
 
-        console.log(`[BG] Nhận 'runUpdateTracking' từ tab ${initialTabId}. AutoMode: ${autoModeFromReq}, Domain: ${domain}`);
-
-        try {
-            const apiKey = await getMBApiKey();
-            const query = JSON.stringify({input: apiKey}); // Đảm bảo 'input' đúng với API của mày
-            const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
-
-            let error = null;
-            if (result.error || (result.errors && result.errors[0] && result.errors[0].message)) {
-                error = result.error || result.errors[0].message;
-                console.warn(`[BG] Lỗi khi lấy danh sách đơn hàng cho updateTracking: ${error}`);
-                // Sử dụng hàm sendMessage của mày để gửi kết quả/lỗi
-                sendMessage(initialTabId, "updateTracking", {error, autoMode: autoModeFromReq});
-                return; // Thoát khỏi hàm async IIFE
-            }
-
-            const orders = result.data; // Giả sử result.data là một mảng orders
-            if (orders && orders.length > 0) {
-                console.log(`[BG] Có ${orders.length} đơn hàng cần update tracking. Bắt đầu runUpdateTrackingMain...`);
-                // Gọi runUpdateTrackingMain. Hàm này sẽ tự gửi message "updateTracking" khi hoàn tất.
-                await runUpdateTrackingMain(orders, initialTabId, autoModeFromReq, domain, apiKey);
-            } else {
-                console.log("[BG] Không có đơn hàng nào cần update tracking.");
-                sendMessage(initialTabId, "updateTracking", {
-                    error: null,
-                    message: "Không có đơn hàng nào cần xử lý.",
-                    autoMode: autoModeFromReq
-                });
-            }
-        } catch (e) {
-            console.error("[BG] Lỗi nghiêm trọng trong quá trình xử lý 'runUpdateTracking':", e);
-            // Gửi lỗi về tab nếu có lỗi ngoài dự kiến
-            sendMessage(initialTabId, "updateTracking", {
-                error: `Lỗi hệ thống: ${e.message}`,
-                autoMode: autoModeFromReq
-            });
-        }
-
-        return true; // QUAN TRỌNG: Giữ kênh message mở cho xử lý bất đồng bộ!
+    const result = await sendRequestToMB("OrderNeedUpdateTracking", apiKey, query);
+    let error = null;
+    if (result.error || result.errors?.[0].message) {
+      error = result.error
+          ? result.error
+          : result.errors
+              ? result.errors[0].message
+              : null;
+      console.error("Lỗi khi lấy danh sách đơn hàng cần update tracking:", error);
+      sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
+      return;
     }
+    const orders = result.data;
 
+    // Lấy UnshippedOrders từ chrome.storage.local
+    const UnshippedOrders = await new Promise((resolve) => {
+      chrome.storage.local.get("UnshippedOrders", (result) => {
+        resolve(result.UnshippedOrders || []);
+      });
+    });
+
+    // Hàm xử lý từng order theo thứ tự
+    const processOrder = async (index) => {
+      if (index >= orders.length) {
+        // Khi tất cả các order đã được xử lý, gửi message "updateTracking"
+        sendMessage(sender.tab.id, "updateTracking", { error, autoMode });
+        return;
+      }
+
+      const order = orders[index];
+
+      let carrier = order.carrier;
+      if (carrier) {
+        carrier = detectCarrier(carrier.toLowerCase());
+      }
+
+      if (!carrier) {
+        carrier = detectCarrier(detectCarrierCode(order.tracking));
+      }
+
+      order.carrier = carrier;
+
+      let url;
+      if (UnshippedOrders.includes(order.orderId)) {
+        // Nếu orderId có trong UnshippedOrders, thực hiện logic cập nhật tracking
+        url = `${globalDomain}/orders-v3/order/${order.orderId}/confirm-shipment`;
+        chrome.tabs.update({ url }, (tab) =>
+            sendMessage(tab.id, "forceAddTracking", order)
+        );
+      } else {
+        // Nếu orderId không có trong UnshippedOrders, thực hiện logic chỉnh sửa tracking
+        url = `${globalDomain}/orders-v3/order/${order.orderId}/edit-shipment`;
+        chrome.tabs.update({ url }, (tab) =>
+            sendMessage(tab.id, "forceEditTracking", order)
+        );
+      }
+
+      // Nghe tín hiệu từ `verifyAddTracking` sau khi tracking đã được thêm
+      // Tạo một hàm listener cụ thể để có thể gỡ bỏ sau này
+      const trackingListener = async (req, sender, res) => {
+        const { message, data } = req || {};
+        if (message === "verifyAddTracking" && data.orderId === order.orderId) {
+          // Gỡ bỏ listener để tránh bị gọi nhiều lần
+          chrome.runtime.onMessage.removeListener(trackingListener);
+          
+          // Sau khi verify thành công, tiến tới order tiếp theo
+          await sleep(5000);  // Thời gian chờ xử lý xong
+          processOrder(index + 1);  // Xử lý order tiếp theo
+        }
+      };
+
+      // Đăng ký listener
+      chrome.runtime.onMessage.addListener(trackingListener);
+      
+      // Đặt timeout để tránh trường hợp không nhận được message
+      setTimeout(() => {
+        // Kiểm tra nếu listener vẫn còn tồn tại (không bị gỡ bỏ) thì tiếp tục với đơn hàng tiếp theo
+        try {
+          chrome.runtime.onMessage.removeListener(trackingListener);
+          console.log(`Timeout xử lý đơn hàng ${order.orderId}, tiếp tục với đơn hàng tiếp theo`);
+          processOrder(index + 1);
+        } catch (e) {
+          // Bỏ qua lỗi nếu listener đã bị gỡ bỏ
+        }
+      }, 60000); // 60 giây timeout
+    };
+
+    // Bắt đầu xử lý từ order đầu tiên
+    processOrder(0);
+  }
 
 
   if (message === "runDownloadAdsReports") {
@@ -1197,7 +1716,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                     // Tìm tất cả các nút tải xuống
                     let downloadButtons = findDownloadButtons();
                     
-                    // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thời gian ngắn
+                    // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thởi gian ngắn
                     if (downloadButtons.length === 0) {
                         await wait(2000);
                         downloadButtons = findDownloadButtons();
@@ -1438,7 +1957,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     openOrderPage();
     return;
   }
-
   // Sync Files
   if (message === "syncFiletoMB") {
     if (!data) return;
@@ -1494,76 +2012,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     }
     sendMessage(sender.tab.id || activeTabId, "syncFileCompleted", {});
   }
-  if (message === "autoUpdateTrackingFinished") {
-    console.log("Tự động cập nhật tracking đã hoàn tất");
-    saveLog("autoUpdateTrackingLog", { type: "Auto Update Tracking Completed", date: new Date().toISOString() });
-    
-    // Sau khi hoàn tất update tracking, chuyển về trang orders
-    setTimeout(() => {
-      openOrderPage();
-    }, 2000);
-  }
-  
-  // Xử lý yêu cầu xuất log
-  if (message === "exportLogs") {
-    try {
-      if (!data || !data.format) {
-        data = { format: 'json' }; // Mặc định là định dạng JSON
-      }
-      
-      try {
-        if (extendedLogSystem) {
-          extendedLogSystem.info('LogSystem', 'Bắt đầu xuất log theo yêu cầu người dùng', { format: data.format });
-          
-          // Xuất log theo định dạng được chỉ định
-          const filename = await extendedLogSystem.exportLogs(data.format);
-          
-          // Gửi kết quả thành công về cho người dùng
-          if (sender.tab?.id) {
-            sendMessage(sender.tab.id, "exportLogsResult", { 
-              success: true, 
-              filename: filename,
-              message: `Đã xuất log thành công vào file: ${filename}`
-            });
-          }
-        } else {
-          // Nếu không có hệ thống log, trả về lỗi
-          if (sender.tab?.id) {
-            sendMessage(sender.tab.id, "exportLogsResult", { 
-              success: false, 
-              error: "Hệ thống log không khả dụng trong môi trường service worker"
-            });
-          }
-        }
-      } catch (logError) {
-        console.error("Logging export error:", logError);
-        if (sender.tab?.id) {
-          sendMessage(sender.tab.id, "exportLogsResult", { 
-            success: false, 
-            error: "Lỗi hệ thống log: " + logError.message
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Lỗi khi xuất log:", error);
-      
-      try {
-        if (extendedLogSystem) {
-          extendedLogSystem.error('LogSystem', 'Lỗi khi xuất log', { error: error.message });
-        }
-      } catch (logError) {
-        console.error("Logging error:", logError);
-      }
-      
-      // Gửi thông báo lỗi về cho người dùng
-      if (sender.tab?.id) {
-        sendMessage(sender.tab.id, "exportLogsResult", { 
-          success: false, 
-          error: error.message || "Lỗi không xác định khi xuất log"
-        });
-      }
-    }
-  }
 });
 
 // Thêm vào handleUpdateCancelledOrders hoặc có thể sử dụng hàm sendRequestToMB hiện có
@@ -1586,7 +2034,6 @@ const handleUpdateCancelledOrders = async (orderIds, cancelReasons, apiKey, doma
     return { error: error.message };
   }
 };
-
 
 // capture event from popup
 chrome.runtime.onMessage.addListener((req, sender, res) => {
@@ -1710,308 +2157,14 @@ chrome.runtime.onConnect.addListener((port) => {
 
 // Hàm lưu log vào Chrome Storage
 const saveLog = (key, message) => {
-  // Lưu log vào storage
   chrome.storage.local.get([key], (result) => {
     const logs = result[key] || [];
     logs.push(message);
     const data = {};
     data[key] = logs;
     chrome.storage.local.set(data);
-    
-    // Đồng thời ghi vào hệ thống log chi tiết
-    if (extendedLogSystem) {
-      extendedLogSystem.info(key, `Log entry saved to ${key}`, message);
-    }
   });
 };
-
-// Hệ thống log chi tiết
-const extendedLogSystem = (() => {
-  try {
-    // Dữ liệu log
-    let allLogs = [];
-    
-    // Số lượng log tối đa
-    const MAX_LOG_ENTRIES = 5000;
-    
-    // Cấp độ log hiện tại
-    let logLevel = 'info'; // 'debug', 'info', 'warn', 'error'
-    
-    // Bản đồ cấp độ log
-    const LOG_LEVELS = {
-      'debug': 0,
-      'info': 1,
-      'warn': 2,
-      'error': 3
-    };
-    
-    // Lấy timestamp
-    const getTimestamp = () => {
-      const now = new Date();
-      return now.toISOString();
-    };
-    
-    // Thêm một mục log
-    const addLogEntry = (level, category, message, data = null) => {
-      try {
-        // Kiểm tra cấp độ log
-        if (LOG_LEVELS[level] < LOG_LEVELS[logLevel]) {
-          return;
-        }
-        
-        const logEntry = {
-          timestamp: getTimestamp(),
-          level,
-          category,
-          message,
-          data: data ? JSON.parse(JSON.stringify(data)) : null
-        };
-        
-        // Thêm vào mảng log
-        allLogs.push(logEntry);
-        
-        // Giới hạn kích thước mảng
-        if (allLogs.length > MAX_LOG_ENTRIES) {
-          allLogs = allLogs.slice(-MAX_LOG_ENTRIES);
-        }
-        
-        // Ghi vào console
-        const consoleMsg = `[${logEntry.timestamp}] [${level.toUpperCase()}] [${category}] ${message}`;
-        switch (level) {
-          case 'debug':
-            console.debug(consoleMsg, data);
-            break;
-          case 'info':
-            console.info(consoleMsg, data);
-            break;
-          case 'warn':
-            console.warn(consoleMsg, data);
-            break;
-          case 'error':
-            console.error(consoleMsg, data);
-            break;
-        }
-        
-        // Lưu vào storage theo định kỳ
-        if (allLogs.length % 50 === 0) {
-          saveLogsToStorage();
-        }
-      } catch (error) {
-        console.error("Error in addLogEntry:", error);
-      }
-    };
-    
-    // Lưu log vào storage
-    const saveLogsToStorage = () => {
-      try {
-        chrome.storage.local.set({ 'detailedLogs': allLogs }, () => {
-          if (chrome.runtime.lastError) {
-            console.error("Lỗi khi lưu log vào storage:", chrome.runtime.lastError);
-          }
-        });
-      } catch (error) {
-        console.error("Error in saveLogsToStorage:", error);
-      }
-    };
-    
-    // Tải log từ storage
-    const loadLogsFromStorage = () => {
-      return new Promise((resolve) => {
-        try {
-          chrome.storage.local.get(['detailedLogs'], (result) => {
-            if (result.detailedLogs) {
-              allLogs = result.detailedLogs;
-            }
-            resolve(allLogs);
-          });
-        } catch (error) {
-          console.error("Error in loadLogsFromStorage:", error);
-          resolve([]);
-        }
-      });
-    };
-    
-    // Xuất log ra file
-    const exportLogsToFile = (fileType = 'json') => {
-      return new Promise(async (resolve, reject) => {
-        try {
-          // Đảm bảo có log mới nhất
-          await loadLogsFromStorage();
-          
-          // Tạo tên thư mục với ngày hiện tại (DD-MM-YYYY)
-          const today = new Date();
-          const day = String(today.getDate()).padStart(2, '0');
-          const month = String(today.getMonth() + 1).padStart(2, '0');
-          const year = today.getFullYear();
-          const hours = String(today.getHours()).padStart(2, '0');
-          const minutes = String(today.getMinutes()).padStart(2, '0');
-          
-          const timestamp = `${hours}-${minutes}`;
-          const folderName = `${day}-${month}-${year}`;
-          
-          let filename, content, type;
-          
-          if (fileType === 'json') {
-            filename = `bkteam_extension_logs_${timestamp}.json`;
-            content = JSON.stringify(allLogs, null, 2);
-            type = 'application/json';
-          } else {
-            filename = `bkteam_extension_logs_${timestamp}.txt`;
-            
-            // Định dạng văn bản dễ đọc
-            content = allLogs.map(entry => {
-              let line = `[${entry.timestamp}] [${entry.level.toUpperCase()}] [${entry.category}] ${entry.message}`;
-              if (entry.data) {
-                line += `\nDỮ LIỆU: ${JSON.stringify(entry.data, null, 2)}`;
-              }
-              return line;
-            }).join('\n\n');
-            
-            type = 'text/plain';
-          }
-          
-          // Tạo URL cho blob
-          const blob = new Blob([content], { type });
-          const url = URL.createObjectURL(blob);
-          
-          // Tải xuống file
-          if (chrome.downloads && typeof chrome.downloads.download === 'function') {
-            // Tạo thư mục logs nếu chưa tồn tại
-            chrome.downloads.download({
-              url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
-              filename: `logs/.keep`,
-              conflictAction: 'uniquify',
-              saveAs: false
-            }, () => {
-              // Tiếp theo tạo thư mục ngày tháng nếu chưa tồn tại
-              chrome.downloads.download({
-                url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
-                filename: `logs/${folderName}/.keep`,
-                conflictAction: 'uniquify',
-                saveAs: false
-              }, () => {
-                console.log(`Đã tạo thư mục logs/${folderName}`);
-                
-                // Sau khi tạo thư mục, tải file log
-                chrome.downloads.download({
-                  url: url,
-                  filename: `logs/${folderName}/${filename}`,
-                  conflictAction: 'uniquify',
-                  saveAs: false
-                }, (downloadId) => {
-                  if (chrome.runtime.lastError) {
-                    console.error("Lỗi khi xuất log:", chrome.runtime.lastError);
-                    reject(chrome.runtime.lastError);
-                  } else {
-                    console.log(`Đã xuất log thành công vào logs/${folderName}/${filename}`);
-                    
-                    // Ghi lại việc xuất log
-                    addLogEntry('info', 'LogSystem', `Đã xuất log ra file: logs/${folderName}/${filename}`);
-                    
-                    // Thu hồi URL sau 60 giây
-                    setTimeout(() => URL.revokeObjectURL(url), 60000);
-                    resolve(`logs/${folderName}/${filename}`);
-                  }
-                });
-              });
-            });
-          } else {
-            // Phương pháp thay thế nếu API downloads không khả dụng
-            console.error("chrome.downloads API không khả dụng");
-            reject(new Error("chrome.downloads API không khả dụng trong môi trường này"));
-          }
-        } catch (error) {
-          console.error("Lỗi khi xuất log:", error);
-          reject(error);
-        }
-      });
-    };
-    
-    // Xóa log
-    const clearLogs = () => {
-      try {
-        allLogs = [];
-        chrome.storage.local.remove(['detailedLogs'], () => {
-          console.log("Đã xóa log thành công");
-        });
-      } catch (error) {
-        console.error("Error in clearLogs:", error);
-      }
-    };
-    
-    // Lấy log đã lọc
-    const getLogs = (filter = {}) => {
-      try {
-        const { level, category, startDate, endDate } = filter;
-        
-        return allLogs.filter(log => {
-          if (level && log.level !== level) return false;
-          if (category && log.category !== category) return false;
-          if (startDate && new Date(log.timestamp) < new Date(startDate)) return false;
-          if (endDate && new Date(log.timestamp) > new Date(endDate)) return false;
-          return true;
-        });
-      } catch (error) {
-        console.error("Error in getLogs:", error);
-        return [];
-      }
-    };
-    
-    // Đặt cấp độ log
-    const setLogLevel = (level) => {
-      try {
-        if (LOG_LEVELS.hasOwnProperty(level)) {
-          logLevel = level;
-          addLogEntry('info', 'LogSystem', `Đã thay đổi cấp độ log thành: ${level}`);
-          return true;
-        }
-      } catch (error) {
-        console.error("Error in setLogLevel:", error);
-      }
-      return false;
-    };
-    
-    // Khởi tạo hệ thống log
-    const init = async () => {
-      try {
-        await loadLogsFromStorage();
-        addLogEntry('info', 'LogSystem', 'Hệ thống log đã được khởi tạo');
-      } catch (error) {
-        console.error("Error initializing log system:", error);
-      }
-    };
-    
-    // Gọi khi khởi tạo
-    init();
-    
-    // API công khai
-    return {
-      debug: (category, message, data) => addLogEntry('debug', category, message, data),
-      info: (category, message, data) => addLogEntry('info', category, message, data),
-      warn: (category, message, data) => addLogEntry('warn', category, message, data),
-      error: (category, message, data) => addLogEntry('error', category, message, data),
-      exportLogs: exportLogsToFile,
-      clearLogs,
-      getLogs,
-      setLogLevel,
-      getLogLevel: () => logLevel
-    };
-  } catch (error) {
-    console.error("Failed to initialize extended log system:", error);
-    // Return a dummy implementation that won't cause errors
-    return {
-      debug: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-      exportLogs: () => Promise.reject("Log system not available"),
-      clearLogs: () => {},
-      getLogs: () => [],
-      setLogLevel: () => false,
-      getLogLevel: () => 'info'
-    };
-  }
-})();
 
 const PT_ADDRESS = /\s(unit|stage|apt|ln|ste|ave)\s/i;
 const getOrderInfo = async (order, shipping) => {
@@ -2377,237 +2530,6 @@ const getCustomImage = (data) => {
   }
   return customImages;
 };
-
-// Hàm helper để mở hoặc cập nhật tab và chờ nó load xong
-async function openAndEnsureTabReady(url, tabIdToUpdate = null) {
-    return new Promise((resolve, reject) => {
-        let targetTabId; // Khai báo ở đây để cả hai nhánh if/else đều dùng được
-
-        const onUpdatedListener = (updatedTabId, changeInfo, tab) => {
-            // Chỉ xử lý khi targetTabId đã được gán và khớp với updatedTabId
-            if (targetTabId && updatedTabId === targetTabId && changeInfo.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(onUpdatedListener);
-                clearTimeout(tabLoadTimeout);
-                console.log(`[BG - openTab] Tab ${targetTabId} ready with URL: ${tab.url}`);
-                resolve(tab);
-            }
-        };
-
-        const tabLoadTimeout = setTimeout(() => {
-            chrome.tabs.onUpdated.removeListener(onUpdatedListener);
-            reject(new Error(`Timeout loading tab for URL: ${url}`));
-        }, 30000); // 30 giây timeout cho tab load
-
-        chrome.tabs.onUpdated.addListener(onUpdatedListener); // Đăng ký listener trước khi action
-
-        if (tabIdToUpdate) {
-            targetTabId = tabIdToUpdate;
-            console.log(`[BG - openTab] Updating tab ${targetTabId} to URL: ${url}`);
-            chrome.tabs.update(tabIdToUpdate, { url, active: true }, (tab) => {
-                if (chrome.runtime.lastError || !tab) {
-                    clearTimeout(tabLoadTimeout);
-                    chrome.tabs.onUpdated.removeListener(onUpdatedListener);
-                    return reject(new Error(`Failed to update tab ${tabIdToUpdate} to ${url}: ${chrome.runtime.lastError?.message}`));
-                }
-                // Nếu tab đã complete ngay sau update (ví dụ cache), onUpdatedListener sẽ xử lý
-                // Hoặc nếu không, onUpdatedListener sẽ chờ event 'complete'
-            });
-        } else {
-            console.log(`[BG - openTab] Creating new tab for URL: ${url}`);
-            chrome.tabs.create({ url, active: true }, (tab) => {
-                if (chrome.runtime.lastError || !tab) {
-                    clearTimeout(tabLoadTimeout);
-                    chrome.tabs.onUpdated.removeListener(onUpdatedListener);
-                    return reject(new Error(`Failed to create tab for ${url}: ${chrome.runtime.lastError?.message}`));
-                }
-                targetTabId = tab.id;
-                // Nếu tab đã complete ngay sau create, onUpdatedListener sẽ xử lý
-            });
-        }
-    });
-}
-
-// Hàm helper để gửi message và chờ một message phản hồi cụ thể (Promise-based)
-function sendMessageAndPromiseResponse(tabId, messageToSend, dataToSend, expectedResponseMessage, expectedOrderId, timeoutMs = 60000) {
-    return new Promise((resolve, reject) => {
-        let listener; // Sẽ được gán ở dưới
-        const timeoutId = setTimeout(() => {
-            if (listener) { // Kiểm tra listener tồn tại trước khi gỡ
-                chrome.runtime.onMessage.removeListener(listener);
-            }
-            reject(new Error(`Timeout (${timeoutMs/1000}s) waiting for '${expectedResponseMessage}' for order ${expectedOrderId || 'any'} from tab ${tabId}`));
-        }, timeoutMs);
-
-        listener = (request, senderDetails, sendResponseFunc) => {
-            if (senderDetails.tab && senderDetails.tab.id === tabId && request.message === expectedResponseMessage) {
-                if (expectedOrderId && (!request.data || request.data.orderId !== expectedOrderId)) {
-                    // console.log(`[BG - promise] Ignored '${expectedResponseMessage}' for wrong orderId. Expected: ${expectedOrderId}, Got: ${request.data?.orderId}`);
-                    return false;
-                }
-
-                clearTimeout(timeoutId);
-                chrome.runtime.onMessage.removeListener(listener);
-                console.log(`[BG - promise] Received '${expectedResponseMessage}' for order ${expectedOrderId || 'any'} from tab ${tabId}:`, request.data);
-                resolve(request.data);
-                return false;
-            }
-            return false;
-        };
-
-        chrome.runtime.onMessage.addListener(listener);
-
-        console.log(`[BG - promise] Sending '${messageToSend}' to tab ${tabId} for order ${dataToSend?.orderId || expectedOrderId || 'any'}`);
-        // Giả sử hàm sendMessage của mày đã tồn tại và hoạt động đúng
-        // Nó cần đảm bảo message được gửi tới content script trên tabId đó.
-        sendMessage(tabId, messageToSend, dataToSend);
-    });
-}
-
-// Hàm chính để xử lý update tracking cho nhiều đơn hàng
-async function runUpdateTrackingMain(ordersFromApi, initialSenderTabId, autoMode, domainToUse, apiKey) {
-    // apiKey có thể chưa dùng trực tiếp ở đây nhưng vẫn truyền vào cho giống handleSyncOrders
-    // và có thể dùng sau này nếu cần tương tác API MB bên trong vòng lặp mà không muốn gọi getMBApiKey() nhiều lần.
-
-    const UnshippedOrders = await new Promise(resolve => chrome.storage.local.get("UnshippedOrders", r => resolve(r.UnshippedOrders || [])));
-    let overallErrorMessage = null;
-
-    console.log(`[BG] Bắt đầu runUpdateTrackingMain với ${ordersFromApi.length} đơn hàng. Domain sử dụng: ${domainToUse}`);
-
-    for (const order of ordersFromApi) {
-        console.log(`[BG] Đang xử lý đơn hàng: ${order.orderId}`);
-        try {
-            // Bước 1: Chuẩn bị thông tin và gửi lệnh cho content script xử lý form
-            const isUnshipped = UnshippedOrders.includes(order.orderId);
-            const actionUrl = isUnshipped ?
-                `${domainToUse}/orders-v3/order/${order.orderId}/confirm-shipment` :
-                `${domainToUse}/orders-v3/order/${order.orderId}/edit-shipment`;
-            const formFillMessageType = isUnshipped ? "forceAddTracking" : "forceEditTracking";
-
-            console.log(`[BG] Order ${order.orderId} - Action URL: ${actionUrl}, Message Type: ${formFillMessageType}`);
-
-            let actionTab = await openAndEnsureTabReady(actionUrl);
-
-            const addedTrackingData = await sendMessageAndPromiseResponse(
-                actionTab.id,
-                formFillMessageType,
-                order,
-                "addedTrackingCode",
-                order.orderId
-            );
-
-            console.log(`[BG] Order ${order.orderId} - Form đã xử lý. Tracking code: '${addedTrackingData.trackingCode}'`);
-
-            // Bước 2: Mở tab chi tiết đơn hàng để xác minh
-            const verifyUrl = `${domainToUse}/orders-v3/order/${order.orderId}`;
-            console.log(`[BG] Order ${order.orderId} - Verify URL: ${verifyUrl}`);
-            let verifyTab = await openAndEnsureTabReady(verifyUrl, actionTab.id); // Có thể update tab cũ
-
-            // Bước 3: Gửi lệnh cho content script xác minh và chờ kết quả
-            const verificationResult = await sendMessageAndPromiseResponse(
-                verifyTab.id,
-                "verifyAddTracking",
-                { orderId: order.orderId, trackingCode: addedTrackingData.trackingCode },
-                "verifyAddTracking",
-                order.orderId
-            );
-
-            console.log(`[BG] Order ${order.orderId} - Kết quả xác minh:`, verificationResult);
-
-            // >>>>>>>>> ĐÓNG TAB verifyTab SAU KHI BƯỚC 3 HOÀN TẤT <<<<<<<<<<
-            if (verifyTab && verifyTab.id) {
-                const tabIdToClose = verifyTab.id; // Lưu ID lạiเผื่อ `verifyTab` bị thay đổi
-                console.log(`[BG] Order ${order.orderId} - Chuẩn bị đóng verifyTab (ID: ${tabIdToClose}).`);
-                try {
-                    await chrome.tabs.remove(tabIdToClose);
-                    console.log(`[BG] Order ${order.orderId} - Đã đóng verifyTab (ID: ${tabIdToClose}) thành công.`);
-                } catch (closeTabError) {
-                    console.warn(`[BG] Order ${order.orderId} - Lỗi khi đóng verifyTab (ID: ${tabIdToClose}): ${closeTabError.message}`);
-                } finally {
-                    // Đánh dấu là đã xử lý (hoặc cố gắng xử lý) việc đóng tab này
-                    // để khối catch lớn không cố đóng lại một tab không còn tồn tại hoặc đã được xử lý.
-                    if (actionTab && actionTab.id === tabIdToClose) {
-                        actionTab = null; // Nếu actionTab và verifyTab là một, actionTab cũng coi như đã xử lý.
-                    }
-                    verifyTab = null; // Quan trọng: set verifyTab về null.
-                }
-            }
-            // >>>>>>>>> KẾT THÚC PHẦN ĐÓNG TAB <<<<<<<<<<
-
-            // Bước 4: Xử lý kết quả xác minh
-            if (verificationResult && verificationResult.status === "success") {
-                const query = JSON.stringify({ orderId: order.orderId, trackingCode: addedTrackingData.trackingCode });
-                // Giả sử sendRequestToMB tự lấy apiKey nếu không được truyền
-                await sendRequestToMB("addedTrackingCode", null, query);
-                console.log(`[BG] Order ${order.orderId} - Đã cập nhật tracking lên MB thành công.`);
-                saveLog("trackingVerificationLog", {
-                    type: "Tracking Verification Success (Refactored)",
-                    date: new Date().toISOString(),
-                    orderId: order.orderId,
-                    trackingCode: addedTrackingData.trackingCode,
-                    verificationMessage: verificationResult.message
-                });
-            } else {
-                const errorMessage = verificationResult ? verificationResult.message : "Không có phản hồi xác minh hoặc phản hồi không hợp lệ.";
-                console.warn(`[BG] Order ${order.orderId} - Xác minh thất bại hoặc có lỗi: ${errorMessage}`);
-                saveLog("trackingVerificationLog", {
-                    type: "Tracking Verification Failed (Refactored)",
-                    date: new Date().toISOString(),
-                    orderId: order.orderId,
-                    trackingCode: addedTrackingData.trackingCode,
-                    error: errorMessage
-                });
-            }
-
-            await sleep(2000 + Math.random() * 1000);
-
-        } catch (error) {
-            console.error(`[BG] Lỗi nghiêm trọng khi xử lý đơn hàng ${order.orderId}: ${error.message}`, error.stack);
-            overallErrorMessage = error.message;
-            saveLog("trackingProcessingError", {
-                orderId: order.orderId,
-                error: error.message,
-                stack: error.stack // Log cả stack trace để dễ debug
-            });
-            // Cân nhắc có nên `break;` vòng lặp ở đây không nếu lỗi quá nghiêm trọng
-            await sleep(3000);
-        }
-    }
-
-    console.log("[BG] Đã xử lý xong tất cả đơn hàng trong runUpdateTrackingMain.");
-    if (initialSenderTabId) {
-        try {
-            // Kiểm tra xem tab có còn tồn tại không
-            const tabExists = await new Promise(resolve => {
-                chrome.tabs.get(initialSenderTabId, (tab) => {
-                    if (chrome.runtime.lastError || !tab) {
-                        resolve(false);
-                    } else {
-                        resolve(true);
-                    }
-                });
-            });
-
-            if (tabExists) {
-                await chrome.tabs.update(initialSenderTabId, { active: true });
-                console.log(`[BG] Đã quay lại tab ban đầu: ${initialSenderTabId}`);
-            } else {
-                console.warn(`[BG] Tab ban đầu ${initialSenderTabId} không còn tồn tại, không thể quay lại.`);
-            }
-        } catch (e) {
-            console.warn(`[BG] Lỗi khi cố gắng quay lại tab ban đầu ${initialSenderTabId}:`, e);
-        }
-
-        // Gửi message kết quả về cho tab gốc
-        // Hàm sendMessage tùy chỉnh của mày đã đóng gói đúng cấu trúc { message: "tên", data: payload } rồi.
-        console.log(`[BG] Gửi 'updateTracking' về tab ${initialSenderTabId} với data:`, { error: overallErrorMessage, autoMode });
-        sendMessage(initialSenderTabId, "updateTracking", { error: overallErrorMessage, autoMode: autoMode });
-        //                                                                                      ^^^^^^^^
-        //                                                                                      Đảm bảo biến autoMode này có giá trị đúng
-        //                                                                                      (nó được truyền vào runUpdateTrackingMain)
-    } else {
-        console.warn("[BG] Không có initialSenderTabId để gửi thông báo hoàn tất updateTracking.");
-    }
-}
 
 const handleSyncOrders = async (orders, options, apiKey, domain) => {
   const results = [];
@@ -3241,6 +3163,9 @@ async function* handleUpdateGrandTotalGen(orderIds, domain, apiKey) {
       countTemporaryStop,
       apiKey,
     });
+    // Reset OrderGrandTotal.locked after each iteration 
+    // to allow processing of the next order
+    resetOrderGrandTotal();
   }
 }
 
@@ -3359,9 +3284,8 @@ chrome.runtime.onMessage.addListener(async (req) => {
   }
 });
 
-// Note: A duplicate onInstalled listener was removed from here to fix "Service worker registration failed" error.
-// Commenting out this onInstalled listener to fix "Service worker registration failed" error.
-// 
+chrome.runtime.onInstalled.addListener(openHomePage);
+
 function getRealTime(dateStr) {
   const myDate = new Date(parseInt(dateStr));
   var pstDate = myDate.toLocaleString("en-US", {
@@ -3438,24 +3362,14 @@ function getRealTime(dateStr) {
       };
 
       await chrome.scripting
-        .registerContentScripts([script])
-        .catch((e) => chrome.scripting.unregisterContentScripts());
+        .unregisterContentScripts({ ids: [script.id] })
+        .catch(() => {});
 
-      chrome.storage.local.get({uninstall:false}, function (value) {
-        if (value.uninstall === false) {
-          chrome.tabs.create({ url: "/welcome/index.html" }, (newTab) => {});
-        }
-      });
-      
-      // Thiết lập alarm cho tự động sync và update tracking
-      setupDailyAlarm();
-      
-      // Mở trang orders
-      openHomePage();
+      await chrome.scripting.registerContentScripts([script]).catch(() => {});
+      await chrome.storage.local.set({ omgActive: true });
     });
   } catch (e) {}
 })({ chrome });
-
 // Remove this line since we're calling openHomePage in the onInstalled listener above
 // chrome.runtime.onInstalled.addListener(openHomePage);
 
@@ -3566,12 +3480,344 @@ const detectCarrier = (carrierCode = "") => {
     case "xyex":
       return "XYEX";
     default:
-      break;
   }
-  return null;
-};
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.message === "runDownloadAdsReports") {
+    console.log("Nhận yêu cầu tải báo cáo quảng cáo thủ công từ UI");
+    globalDomain = request.domain || "https://sellercentral.amazon.com";
+    
+    try {
+      if (extendedLogSystem) {
+        extendedLogSystem.info('AdsReports', 'Bắt đầu quá trình tải báo cáo quảng cáo theo yêu cầu thủ công');
+      }
+    } catch (logError) {
+      console.error("Logging error:", logError);
+    }
+    
+    // Gửi thông báo đang tải đến tab hiện tại
+    if (sender.tab && sender.tab.id) {
+      sendMessage(sender.tab.id, "downloadingAdsReports", {
+        label: `Đang tải báo cáo quảng cáo...`,
+      });
+    }
+    
+    // Sử dụng Promise để đảm bảo các thao tác bất đồng bộ được thực hiện đúng thứ tự
+    (async () => {
+      try {
+        // Lấy API key để dùng trong URL
+        const merchantId = await getMBApiKey();
+        console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
+        
+        try {
+          if (extendedLogSystem) {
+            extendedLogSystem.info('AdsReports', 'Sử dụng merchantId cho URL báo cáo', { merchantId });
+          }
+        } catch (logError) {
+          console.error("Logging error:", logError);
+        }
+        
+        // URL đến trang báo cáo quảng cáo
+        const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
+        
+        // Tạo tab mới thay vì cập nhật tab hiện tại
+        chrome.tabs.create({ url: reportsUrl, active: true }, async (newTab) => {
+          if (!newTab || !newTab.id) {
+            const errorMsg = "Không thể tạo tab mới cho báo cáo quảng cáo";
+            console.error(errorMsg);
+            
+            try {
+              if (extendedLogSystem) {
+                extendedLogSystem.error('AdsReports', errorMsg);
+              }
+            } catch (logError) {
+              console.error("Logging error:", logError);
+            }
+            
+            // Thông báo lỗi trên tab hiện tại
+            if (sender.tab && sender.tab.id) {
+              sendMessage(sender.tab.id, "downloadAdsReports", { 
+                error: errorMsg
+              });
+            }
+            return;
+          }
+          
+          // Lưu ID của tab báo cáo
+          const reportTabId = newTab.id;
+          
+          // Đợi trang báo cáo tải hoàn tất
+          await new Promise(resolve => {
+            let listener = function(tabId, changeInfo) {
+              if (tabId === reportTabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+            
+            // Thêm timeout phòng trường hợp tab không tải hoàn tất
+            setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }, 30000); // 30 giây timeout
+          });
+          
+          // Thêm độ trễ ngắn để đảm bảo nội dung đã tải
+          await sleep(3000);
+          
+          // Thực hiện script để tìm và tải xuống báo cáo
+          chrome.scripting.executeScript({
+            target: { tabId: reportTabId },
+            function: async () => {
+              // Hàm đợi ngắn hơn
+              const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+              
+              // Tạo tên thư mục dựa trên ngày hiện tại (DD-MM-YYYY)
+              const today = new Date();
+              const day = String(today.getDate()).padStart(2, '0');
+              const month = String(today.getMonth() + 1).padStart(2, '0');
+              const year = today.getFullYear();
+              const folderName = `${day}-${month}-${year}`;
+              
+              // Phương pháp tìm nút tải xuống hiệu quả hơn
+              const findDownloadButtons = () => {
+                // Trực tiếp tìm các liên kết tải xuống dựa trên URL
+                const buttons = Array.from(document.querySelectorAll('a[href*="/download-report/"]'));
+                console.log(`Tìm thấy ${buttons.length} nút tải xuống`);
+                return buttons;
+              };
+              
+              // Tìm tất cả các nút tải xuống
+              let downloadButtons = findDownloadButtons();
+              
+              // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thời gian ngắn
+              if (downloadButtons.length === 0) {
+                await wait(2000);
+                downloadButtons = findDownloadButtons();
+              }
+              
+              console.log(`Tìm thấy ${downloadButtons.length} nút tải xuống để xử lý`);
+              
+              let successCount = 0;
+              const reportNames = [];
+              const downloadUrls = [];
+              
+              // Thu thập URL tải xuống và tên báo cáo
+              downloadButtons.forEach((button, index) => {
+                try {
+                  // Tìm tên báo cáo từ cùng hàng
+                  let reportName = "Báo cáo " + (index + 1);
+                  try {
+                    // Tìm kiếm theo nhiều selector để tăng khả năng tìm thấy tên báo cáo
+                    const parentRow = button.closest('.ag-row, tr, [role="row"]');
+                    if (parentRow) {
+                      const reportLink = parentRow.querySelector('a.sc-fqkvVR, a, .cell-value, td');
+                      if (reportLink) {
+                        reportName = reportLink.textContent.trim();
+                      }
+                    }
+                  } catch (e) {
+                    console.error("Lỗi lấy tên báo cáo:", e);
+                  }
+                  
+                  reportNames.push(reportName);
+                  // Lưu URL tải xuống để gửi về background script xử lý
+                  downloadUrls.push({
+                    url: button.href,
+                    reportName: reportName
+                  });
+                } catch (error) {
+                  console.error(`Lỗi xử lý nút ${index + 1}:`, error);
+                }
+              });
+              
+              // Trả về dữ liệu URL và tên báo cáo để background script xử lý
+              return { 
+                downloadUrls,
+                reportNames,
+                folderName
+              };
+            }
+          }, async (results) => {
+            if (!results || results.length === 0 || !results[0].result) {
+              // Thông báo lỗi nếu không tìm thấy kết quả
+              if (sender.tab && sender.tab.id) {
+                sendMessage(sender.tab.id, "downloadAdsReports", { 
+                  error: "Không thể tìm thấy báo cáo để tải xuống" 
+                });
+              }
+              
+              // Đóng tab báo cáo
+              try {
+                chrome.tabs.remove(reportTabId);
+              } catch (err) {
+                console.error("Lỗi khi đóng tab báo cáo:", err);
+              }
+              return;
+            }
+            
+            const { downloadUrls, reportNames, folderName } = results[0].result;
+            let successCount = 0;
+            
+            // Tải xuống từng báo cáo sử dụng chrome.downloads.download API
+            for (let i = 0; i < downloadUrls.length; i++) {
+              try {
+                const { url, reportName } = downloadUrls[i];
+                // Làm sạch tên báo cáo để dùng làm tên file
+                const safeReportName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                
+                // Kiểm tra xem chrome.downloads API có sẵn không
+                if (chrome.downloads && typeof chrome.downloads.download === 'function') {
+                  // Lấy phần mở rộng của file từ URL
+                  let fileExtension = '.csv'; // Mặc định là .csv
+                  
+                  // Thử lấy phần mở rộng từ URL
+                  try {
+                    const urlPath = new URL(url).pathname;
+                    // Nếu URL chứa phần mở rộng, lấy phần mở rộng đó
+                    if (urlPath.includes('.')) {
+                      const urlExt = urlPath.split('.').pop().toLowerCase();
+                      // Kiểm tra phần mở rộng hợp lệ
+                      if (['csv', 'xlsx', 'xls', 'txt', 'pdf'].includes(urlExt)) {
+                        fileExtension = '.' + urlExt;
+                      }
+                    }
+                  } catch (e) {
+                    console.log("Không thể lấy phần mở rộng từ URL:", e);
+                  }
+                  
+                  // Tạo tên file với đường dẫn thư mục và phần mở rộng đúng
+                  const filename = `reports/${folderName}/${safeReportName}${fileExtension}`;
+                  
+                  // Tạo thư mục nếu chưa tồn tại bằng cách lưu một file nhỏ làm đánh dấu
+                  if (i === 0) {
+                    try {
+                      // Tạo một file .keep để đảm bảo thư mục tồn tại
+                      chrome.downloads.download({
+                        url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
+                        filename: `reports/${folderName}/.keep`,
+                        conflictAction: 'uniquify',
+                        saveAs: false
+                      }, () => {
+                        console.log(`Đã tạo thư mục ${folderName}`);
+                      });
+                    } catch (err) {
+                      console.error("Lỗi khi tạo thư mục:", err);
+                    }
+                  }
+                  
+                  // Sử dụng chrome.downloads.download để tải xuống file
+                  chrome.downloads.download({
+                    url: url,
+                    filename: filename,
+                    conflictAction: 'uniquify',
+                    saveAs: false
+                  }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                      console.error("Lỗi tải xuống:", chrome.runtime.lastError);
+                    } else {
+                      successCount++;
+                      console.log(`Đã bắt đầu tải báo cáo ${i+1}/${downloadUrls.length} vào thư mục ${folderName}`);
+                    }
+                  });
+                } else {
+                  // Phương pháp thay thế: Mở URL trong tab mới (phương pháp cũ)
+                  console.log(`Sử dụng phương pháp thay thế để tải báo cáo #${i+1}: ${reportName}`);
+                  const newTab = window.open(url, '_blank');
+                  
+                  // Đóng tab sau khi đã bắt đầu tải xuống
+                  setTimeout(() => {
+                    try {
+                      if (newTab && !newTab.closed) {
+                        newTab.close();
+                      }
+                    } catch (e) {
+                      // Bỏ qua lỗi khi đóng tab
+                    }
+                  }, 3000);
+                  
+                  successCount++;
+                }
+                
+                // Đợi một chút giữa các lần tải để tránh quá tải
+                await sleep(1000);
+              } catch (error) {
+                console.error(`Lỗi khi tải báo cáo #${i+1}:`, error);
+              }
+            }
+            
+            // Thông báo kết quả
+            let data = { 
+              successCount: downloadUrls.length, 
+              reportNames,
+              folderPath: `reports/${folderName}/`
+            };
+            
+            // Nếu có báo cáo được tải xuống, hiển thị chi tiết tên các báo cáo
+            if (data.reportNames && data.reportNames.length > 0) {
+              // Chỉ hiển thị 3 báo cáo đầu tiên và số lượng còn lại
+              if (data.reportNames.length > 3) {
+                const firstThree = data.reportNames.slice(0, 3).join(", ");
+                data.reportDetails = `${firstThree} và ${data.reportNames.length - 3} báo cáo khác`;
+              } else {
+                data.reportDetails = data.reportNames.join(", ");
+              }
+            }
+            
+            // Thông báo kết quả cho người dùng
+            if (sender.tab && sender.tab.id) {
+              sendMessage(sender.tab.id, "downloadAdsReports", {
+                ...data,
+                message: `Đã tải ${downloadUrls.length} báo cáo vào thư mục: ${data.folderPath}`
+              });
+            }
+            
+            // Lưu thông tin về thư mục tải xuống vào storage để có thể sử dụng sau này
+            chrome.storage.local.set({ 
+              lastReportDownload: {
+                date: new Date().toISOString(),
+                folderPath: `reports/${folderName}/`,
+                count: downloadUrls.length
+              }
+            });
+            
+            // Đóng tab báo cáo và quay lại trang orders
+            try {
+              chrome.tabs.remove(reportTabId, () => {
+                // Quay lại trang orders sau khi hoàn tất
+                setTimeout(() => {
+                  chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
+                }, 1000);
+              });
+            } catch (err) {
+              console.error("Lỗi khi đóng tab báo cáo:", err);
+              // Tạo tab trang orders mới nếu không thể đóng tab báo cáo
+              chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
+            }
+          });
+        });
+        
+        // Lưu log hoạt động
+        saveLog("adsReportsLog", { 
+          type: "Manual Ads Reports Download", 
+          date: new Date().toISOString(),
+          folderPath: `reports/${new Date().getDate()}-${new Date().getMonth()+1}-${new Date().getFullYear()}/`
+        });
+      } catch (error) {
+        console.error("Lỗi trong quá trình tải báo cáo quảng cáo:", error);
+        if (sender.tab && sender.tab.id) {
+          sendMessage(sender.tab.id, "downloadAdsReports", { 
+            error: `Lỗi khi tải báo cáo quảng cáo: ${error.message || "Lỗi không xác định"}` 
+          });
+        }
+      }
+    })();
+    
+    return true; // Đảm bảo sendResponse được gọi bất đồng bộ
+  }
+  
   if (request.message === "getFeedbackData") {
     // Mở tab ẩn với URL Feedback Manager
     chrome.tabs.create({ url: "https://sellercentral.amazon.com/feedback-manager/index.html", active: false }, function(tab) {
@@ -3642,6 +3888,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   // Xử lý message lấy thông tin Payment
+  if (request.message === "autoUpdateTrackingFinished") {
+    console.log("Tự động update tracking đã hoàn thành");
+    // Xử lý sau khi update tracking tự động hoàn tất
+    try {
+      // Lưu log hoạt động
+      saveLog("updateTrackingLog", { 
+        type: "Auto Update Tracking", 
+        date: new Date().toISOString(),
+        status: "Completed"
+      });
+      
+      // Các xử lý khác nếu cần
+    } catch (error) {
+      console.error("Lỗi khi xử lý sau update tracking:", error);
+    }
+    
+    return true;
+  }
+  
   if (request.message === "getPaymentData") {
     console.log('getPaymentData');
     chrome.tabs.create({ 
@@ -3738,21 +4003,52 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
-  
 });
 
-// Mở trang order details để update tracking
+// Mở trang Performance Dashboard (Account Health)
+const openPerformanceDashboardPage = () => {
+  if (!globalDomain.includes("sellercentral")) {
+    return;
+  }
+  const url = `${globalDomain}/performance/dashboard`;
+  chrome.tabs.query({}, (tabs) => {
+    let found = false;
+    for (let tab of tabs) {
+      if (found) break;
+      // Check if the tab is already on the performance dashboard
+      if (tab?.url?.includes("/performance/dashboard")) {
+        found = tab.id;
+        break;
+      }
+    }
+
+    if (found) {
+      chrome.tabs.update(found, {
+        active: true,
+        url, // Ensure it navigates to the base dashboard URL if already on a sub-page
+      });
+    } else {
+      chrome.tabs.create({
+        active: true,
+        url,
+      });
+    }
+  });
+  console.log("Đã mở trang Performance Dashboard (Account Health)");
+};
+
+// Mở trang Update Tracking với URL đúng format
 const openOrderDetailPage = () => {
   if (!globalDomain.includes("sellercentral")) {
     return;
   }
-  const url = `${globalDomain}/orders-v3/order`;
+  const url = `${globalDomain}/orders-v3?statuses=Update%20Tracking`;
   chrome.tabs.query({}, (tabs) => {
     let found = false;
 
     for (let tab of tabs) {
       if (found) break;
-      if (tab?.url?.includes("/orders-v3/order")) {
+      if (tab?.url?.includes("/orders-v3") && tab?.url?.includes("Update%20Tracking")) {
         found = tab.id;
         break;
       }
@@ -3770,6 +4066,7 @@ const openOrderDetailPage = () => {
       });
     }
   });
+  console.log("Đã mở trang Update Tracking");
 };
 
 // Thiết lập alarm khi trình duyệt khởi động
@@ -3777,4 +4074,3 @@ chrome.runtime.onStartup.addListener(() => {
   console.log("Extension starting up - setting up daily alarms");
   setupDailyAlarm();
 });
-

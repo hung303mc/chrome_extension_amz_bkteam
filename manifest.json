@@ -24,7 +24,35 @@
         "https://sellercentral-europe.amazon.com/*",
         "https://sellercentral.amazon.de/*",
         "https://sellercentral.amazon.co.uk/*",
-        "https://advertising.amazon.com/*"
+        "https://sellercentral.amazon.fr/*",
+        "https://sellercentral.amazon.it/*",
+        "https://sellercentral.amazon.es/*",
+        "https://sellercentral.amazon.co.jp/*",
+        "https://sellercentral.amazon.ca/*",
+        "https://sellercentral.amazon.com.au/*",
+        "https://sellercentral.amazon.com.mx/*",
+        "https://advertising.amazon.com/*",
+        "https://*/gestalt/fulfillment/*",
+        "https://*.amazon.com/orders-v3/order/*",
+        "https://*.amazon.com/orders-v3/*",
+        "https://*.amazon.co.uk/orders-v3/order/*",
+        "https://*.amazon.co.uk/orders-v3/*",
+        "https://*.amazon.de/orders-v3/order/*",
+        "https://*.amazon.de/orders-v3/*",
+        "https://*.amazon.fr/orders-v3/order/*",
+        "https://*.amazon.fr/orders-v3/*",
+        "https://*.amazon.it/orders-v3/order/*",
+        "https://*.amazon.it/orders-v3/*",
+        "https://*.amazon.es/orders-v3/order/*",
+        "https://*.amazon.es/orders-v3/*",
+        "https://*.amazon.co.jp/orders-v3/order/*",
+        "https://*.amazon.co.jp/orders-v3/*",
+        "https://*.amazon.ca/orders-v3/order/*",
+        "https://*.amazon.ca/orders-v3/*",
+        "https://*.amazon.com.au/orders-v3/order/*",
+        "https://*.amazon.com.au/orders-v3/*",
+        "https://*.amazon.com.mx/orders-v3/order/*",
+        "https://*.amazon.com.mx/orders-v3/*"
       ],
       "js": [
         "assets/libs/jquery.min.js",
@@ -43,7 +71,7 @@
         "assets/styles/jquery.toast.css",
         "assets/styles/content.css"
       ],
-      "run_at": "document_end"
+      "run_at": "document_start"
     },
     {
       "matches": [

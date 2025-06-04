@@ -101,3 +101,44 @@ label {
       transform: rotate(360deg);
    }
 }
+
+/* Styles for the features section */
+.wrap-features {
+   margin-top: 20px;
+   border-top: 1px solid #e1e3e5;
+   padding-top: 15px;
+}
+
+.wrap-features h3 {
+   color: #202223;
+   margin-bottom: 15px;
+   text-align: center;
+}
+
+.feature-buttons {
+   display: flex;
+   flex-direction: column;
+   gap: 10px;
+}
+
+.feature-btn {
+   position: relative;
+   background-color: #5c6ac4;
+   border-width: 0;
+   border-color: transparent;
+   box-shadow: var(0 0.0625rem 0 rgba(0, 0, 0, 0.05)),
+      var(inset 0 -0.0625rem 0 rgba(0, 0, 0, 0.2));
+   cursor: pointer;
+   color: #fff;
+   padding: 0.5rem 1rem;
+   border-radius: 0.25rem;
+   transition: background-color 0.2s ease;
+}
+
+.feature-btn:hover {
+   background-color: #4959bd;
+}
+
+.feature-btn:active {
+   background-color: #3f4eae;
+}
