@@ -226,7 +226,7 @@ const syncOrderComponent = `
          </div>
       </div>
       <div id="account_health" class="tabcontent">
-         <div class="om-fl-center btn-updatetracking-wrap">
+         <div class="om-fl-center btn-accounthealth-wrap">
             <button id="account-health" class="om-btn">Get account health</button>
          </div>
       </div>
@@ -251,7 +251,8 @@ const initAddon = async () => {
       !window.location.href.includes("/payments") &&
       !window.location.href.includes("/gestalt/fulfillment") &&
       !window.location.href.includes("/home") &&
-      !window.location.href.includes("advertising.amazon.com/reports")
+      !window.location.href.includes("advertising.amazon.com/reports") &&
+      !window.location.href.includes("/performance/dashboard")
    )
       return;
    if ($(".om-addon").length) return;
@@ -433,81 +434,63 @@ document.addEventListener('scroll', function() {
 notifyServiceWorkerActivity();
 
 // Periodic check to ensure service worker is active
-setInterval(notifyServiceWorkerActivity, 60000); // Every minute
+setInterval(notifyServiceWorkerActivity, 60000); 
 
-// Lắng nghe các message từ background script
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
   if (req.message === "triggerGetAccountHealth") {
-    console.log(`[AH Automation CS] Received trigger. Document readyState: ${document.readyState}. Attempting to switch to Account Health tab and click button.`);
-    try {
-        const accountHealthTabElement = document.querySelector('button[data-name="account_health"]');
-        console.log("[AH Automation CS] Query for 'Account Health' tab (button[data-name='account_health']):", accountHealthTabElement);
+    // Send an immediate response to the sender.
+    res({ status: "triggerGetAccountHealth_received_and_processing" });
+    console.log(`[AH Automation CS - Trigger] Received trigger. Document readyState: ${document.readyState}. Attempting to switch to Account Health tab and click button.`);
 
-        if (accountHealthTabElement) {
-            console.log(`[AH Automation CS] 'Account Health' tab found. Visible (offsetHeight > 0): ${accountHealthTabElement.offsetHeight > 0}. Classes: ${accountHealthTabElement.className}`);
-            if (accountHealthTabElement.classList.contains('om-active-tab') || accountHealthTabElement.classList.contains('om-active')) {
-                console.log("[AH Automation CS] 'Account Health' tab appears to be already active. Skipping click on tab.");
-            } else if (typeof accountHealthTabElement.click === 'function') {
-                console.log("[AH Automation CS] Clicking 'Account Health' tab element.");
+    setTimeout(() => {
+        const accountHealthTabElement = $('button[data-name="account_health"]');
+        console.log("[AH Automation CS - Trigger] Query for 'Account Health' tab (button[data-name='account_health']):", accountHealthTabElement.length > 0 ? accountHealthTabElement[0] : 'Not Found');
+
+        if (accountHealthTabElement.length > 0) {
+            if (accountHealthTabElement.hasClass('om-active-tab') || accountHealthTabElement.hasClass('om-active')) {
+                console.log("[AH Automation CS - Trigger] 'Account Health' tab appears to be already active. Skipping click on tab.");
+            } else {
+                console.log("[AH Automation CS - Trigger] Clicking 'Account Health' tab element.");
                 accountHealthTabElement.click();
-            } else {
-                console.warn("[AH Automation CS] 'Account Health' tab element found, but no click method or not deemed necessary to click.");
             }
         } else {
-            console.error(`[AH Automation CS] Could not find the 'Account Health' tab element using selector 'button[data-name="account_health"]'.`);
-            if (typeof notifyError === 'function') notifyError("Failed to find 'Account Health' tab for automation.");
-            res({status: "error", reason: "accountHealthTabNotFound"});
-            return true;
+            console.error(`[AH Automation CS - Trigger] Could not find the 'Account Health' tab element using selector 'button[data-name="account_health"]'.`);
+            if (typeof notifyError === 'function') notifyError("Trigger mode: Failed to find 'Account Health' tab for automation.");
+            return; // Stop further processing if tab not found
         }
 
-        let accountHealthContentDiv = document.getElementById("account_health");
-        let retries = 10; // Try for up to 10 seconds
-        while (retries > 0 && (!accountHealthContentDiv || accountHealthContentDiv.style.display !== 'block')) {
-            console.warn(`[AH Automation CS] Account Health content div not visible or not found. Retrying... (${retries})`);
-            await sleep(1000);
-            if (accountHealthTabElement && typeof accountHealthTabElement.click === 'function' &&
-                !accountHealthTabElement.classList.contains('om-active-tab') &&
-                !accountHealthTabElement.classList.contains('om-active')) {
-                 console.log("[AH Automation CS] Re-clicking 'Account Health' tab element as content not visible.");
-                 accountHealthTabElement.click();
-                 await sleep(500);
-            }
-            accountHealthContentDiv = document.getElementById("account_health");
-            retries--;
-        }
-
-        if (!accountHealthContentDiv || accountHealthContentDiv.style.display !== 'block') {
-            console.error("[AH Automation CS] Account Health content div did not become visible after retries.");
-            if (typeof notifyError === 'function') notifyError("Account Health content did not become visible for automation.");
-            res({status: "error", reason: "accountHealthContentNotVisible"});
-            return true;
-        }
-
-        const getAccountHealthButton = document.getElementById("account-health");
-        console.log("[AH Automation CS] Query for 'Get account health' button (#account-health):", getAccountHealthButton);
-
-        if (getAccountHealthButton) {
-            console.log(`[AH Automation CS] 'Get account health' button found. Visible (offsetHeight > 0): ${getAccountHealthButton.offsetHeight > 0}`);
-            if (typeof getAccountHealthButton.click === 'function'){
-                console.log("[AH Automation CS] Clicking 'Get account health' button.");
-                getAccountHealthButton.click();
-                if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated.");
-                res({status: "success", action: "getAccountHealthButtonProgrammaticallyClicked"});
+        setTimeout(() => {
+            const accountHealthContentDiv = $("#account_health");
+            if (accountHealthContentDiv.length > 0 && accountHealthContentDiv.css('display') === 'block') {
+                 console.log("[AH Automation CS - Trigger] Account Health content div is already visible.");
+            } else if (accountHealthContentDiv.length > 0) {
+                console.log("[AH Automation CS - Trigger] Ensuring Account Health content div is visible.");
+                accountHealthContentDiv.css("display", "block");
             } else {
-                console.error("[AH Automation CS] 'Get account health' button found, but no click method.");
-                res({status: "error", reason: "getAccountHealthButtonNotClickable"});
+                console.error("[AH Automation CS - Trigger] Account Health content div #account_health not found.");
+                if (typeof notifyError === 'function') notifyError("Trigger mode: Account Health content did not become visible for automation.");
+                return; // Stop further processing
             }
-        } else {
-            console.error("[AH Automation CS] Could not find the 'Get account health' button with ID '#account-health'.");
-            if (typeof notifyError === 'function') notifyError("Failed to find 'Get account health' button for automation.");
-            res({status: "error", reason: "getAccountHealthButtonNotFound"});
-        }
-    } catch (err) {
-        console.error("[AH Automation CS] Error during automated Account Health tab switch/button click:", err);
-        if (typeof notifyError === 'function') notifyError("Error automating account health check.");
-        res({status: "error", details: err.toString()});
-    }
-    return true; // Indicates you wish to send a response asynchronously
+
+            const getAccountHealthButton = document.querySelector("#account-health");
+            console.log("[AH Automation CS - Trigger] Query for 'Get account health' button (#account-health):", getAccountHealthButton);
+
+            if (getAccountHealthButton) {
+                console.log(`[AH Automation CS - Trigger] 'Get account health' button found. Clicking with dispatchEvent.`);
+                getAccountHealthButton.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                }));
+                if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (trigger mode).");
+            } else {
+                console.error("[AH Automation CS - Trigger] Could not find the 'Get account health' button with ID '#account-health'.");
+                if (typeof notifyError === 'function') notifyError("Trigger mode: Failed to find 'Get account health' button for automation.");
+            }
+        }, 4000); // Delay for content to load/become visible
+    }, 2000); // Delay for tab switch
+
+    return true; // Indicates response will be sent asynchronously
   }
   // Make sure this is an else if if there are other message handlers
   else if (req.message === "triggerAutoRunUpdateTracking") {
@@ -527,6 +510,57 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     });
     res({ status: "runUpdateTracking_initiated_from_cs" });
     return true; // Indicate async response
+  }
+  else if (req.message === "autoGetAccountHealth") {
+    res({ message: "received" });
+    console.log("[CS] Đang thực hiện auto get account health...");
+    
+    // Đợi để đảm bảo giao diện đã load
+    setTimeout(() => {
+      // Kích hoạt tab Account Health
+      const accountHealthTabButton = $('button[data-name="account_health"]');
+      if (accountHealthTabButton.length > 0) {
+        accountHealthTabButton.click();
+        console.log("[CS] Kích hoạt tab Account Health");
+      } else {
+        console.error("[CS] Không tìm thấy tab Account Health button[data-name='account_health']");
+        if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health tab.");
+        return; 
+      }
+      
+      // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
+      setTimeout(() => {
+        // Đảm bảo tab content đã hiển thị đúng
+        const accountHealthContentDiv = $("#account_health");
+        if (accountHealthContentDiv.length > 0) {
+          accountHealthContentDiv.css("display", "block");
+          console.log("[CS] Đảm bảo nội dung tab Account Health hiển thị.");
+        } else {
+          console.error("[CS] Không tìm thấy div nội dung Account Health #account_health");
+          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health content div.");
+          return;
+        }
+        
+        console.log("[CS] Tìm kiếm nút Get account health...");
+        const getAccountHealthButtonElement = document.querySelector('#account-health'); // Using pure JS selector
+        
+        if (getAccountHealthButtonElement) {
+            console.log("[CS] Nút 'Get account health' (#account-health) tìm thấy. Click bằng dispatchEvent.");
+            getAccountHealthButtonElement.dispatchEvent(new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window
+            }));
+            if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (auto mode).");
+        } else {
+          console.error("[CS] Không tìm thấy nút Get account health bằng selector '#account-health'.");
+          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find 'Get account health' button.");
+        }
+        
+      }, 4000); // Tăng thời gian chờ lên 4 giây
+    }, 2000); // Tăng thời gian chờ lên 2 giây
+    
+    return true;
   }
 
   const { message, data } = req || {};
