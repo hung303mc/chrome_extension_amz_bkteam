@@ -1240,39 +1240,41 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
             for (const order of orders) {
                 try {
                     console.log(`[BG] Đang xử lý đơn hàng: ${order.orderId} trên tab ${workerTab.id}`);
-                    // =================================================================Add commentMore actions
+
+                    // =================================================================
                     // LOGIC MỚI: XỬ LÝ ĐƠN CÓ TRACKING RỖNG - Confirm đơn
                     // =================================================================
                     // Nếu tracking rỗng, thử xác minh trực tiếp xem đơn đã được ship chưa.
                     if (!order.tracking || String(order.tracking).trim() === '') {
-                      console.log(`[BG] Tracking rỗng cho đơn ${order.orderId}. Thử xác minh trạng thái 'Shipped' trước.`);
+                        console.log(`[BG] Tracking rỗng cho đơn ${order.orderId}. Thử xác minh trạng thái 'Shipped' trước.`);
 
-                      // Thao tác 2 (Xác minh): Điều hướng và kiểm tra trạng thái
-                      const verifyUrl = `${globalDomain}/orders-v3/order/${order.orderId}`;
-                      await openAndEnsureTabReady(verifyUrl, workerTab.id);
+                        // Thao tác 2 (Xác minh): Điều hướng và kiểm tra trạng thái
+                        const verifyUrl = `${globalDomain}/orders-v3/order/${order.orderId}`;
+                        await openAndEnsureTabReady(verifyUrl, workerTab.id);
 
-                      // Gửi yêu cầu xác minh với tracking rỗng. Content script sẽ hiểu là cần check status "Shipped".
-                      const verificationResult = await sendMessageAndPromiseResponse(workerTab.id, "verifyAddTracking", { orderId: order.orderId, trackingCode: "" }, "verifyAddTracking", order.orderId);
+                        // Gửi yêu cầu xác minh với tracking rỗng. Content script sẽ hiểu là cần check status "Shipped".
+                        const verificationResult = await sendMessageAndPromiseResponse(workerTab.id, "verifyAddTracking", { orderId: order.orderId, trackingCode: "" }, "verifyAddTracking", order.orderId);
 
-                      // Nếu xác minh thành công (tức là đã "Shipped")
-                      if (verificationResult.status === "success") {
-                          console.log(`[BG] Đơn ${order.orderId} đã ở trạng thái "Shipped". Bỏ qua bước điền form.`);
+                        // Nếu xác minh thành công (tức là đã "Shipped")
+                        if (verificationResult.status === "success") {
+                            console.log(`[BG] Đơn ${order.orderId} đã ở trạng thái "Shipped". Bỏ qua bước điền form.`);
 
-                          // Thao tác 3 (Gửi kết quả về server): Báo cho server là đã xong
-                          const queryUpdate = JSON.stringify({ orderId: order.orderId, trackingCode: "" });
-                          await sendRequestToMB("addedTrackingCode", apiKey, queryUpdate);
-                          console.log(`[BG] Order ${order.orderId} - Cập nhật trạng thái (đã ship, không tracking) lên MB thành công.`);
+                            // Thao tác 3 (Gửi kết quả về server): Báo cho server là đã xong
+                            const queryUpdate = JSON.stringify({ orderId: order.orderId, trackingCode: "" });
+                            await sendRequestToMB("addedTrackingCode", apiKey, queryUpdate);
+                            console.log(`[BG] Order ${order.orderId} - Cập nhật trạng thái (đã ship, không tracking) lên MB thành công.`);
 
-                          // Chuyển sang xử lý đơn hàng tiếp theo
-                          continue;
-                      } else {
-                          // Nếu xác minh thất bại (chưa "Shipped"), sẽ tiếp tục quy trình điền form như bình thường bên dưới
-                          console.log(`[BG] Xác minh trực tiếp thất bại cho đơn ${order.orderId}. Tiến hành quy trình điền form để confirm.`);
-                      }
-                  }
-                  // =================================================================
-                  // KẾT THÚC LOGIC MỚI
-                  // =================================================================
+                            // Chuyển sang xử lý đơn hàng tiếp theo
+                            continue;
+                        } else {
+                            // Nếu xác minh thất bại (chưa "Shipped"), sẽ tiếp tục quy trình điền form như bình thường bên dưới
+                            console.log(`[BG] Xác minh trực tiếp thất bại cho đơn ${order.orderId}. Tiến hành quy trình điền form để confirm.`);
+                        }
+                    }
+                    // =================================================================
+                    // KẾT THÚC LOGIC MỚI
+                    // =================================================================
+
                     // Chuẩn bị thông tin
                     order.carrier = detectCarrier(order.carrier?.toLowerCase()) || detectCarrier(detectCarrierCode(order.tracking));
                     const isUnshipped = UnshippedOrders.includes(order.orderId);
