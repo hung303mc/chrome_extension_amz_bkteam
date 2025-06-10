@@ -25,19 +25,19 @@ const setupDailyAlarm = () => {
   // Tính toán thời gian cho 9h sáng hôm nay
   const now = new Date();
   const syncTime = new Date();
-  syncTime.setHours(7, 0, 0, 0); // 7:00:00 AM
+  syncTime.setHours(11, 45, 0, 0); // 7:00:00 AM
 
   // Tính toán thời gian cho 9h10 sáng
   const updateTrackingTime = new Date();
-  updateTrackingTime.setHours(8, 0, 0, 0); // 8:00:00 AM
+  updateTrackingTime.setHours(11, 50, 0, 0); // 8:00:00 AM
 
   // Tính toán thời gian cho 9h20 sáng (get_account_health)
   const accountHealthTime = new Date();
-  accountHealthTime.setHours(8, 30, 0, 0); // 8:30:00 AM
+  accountHealthTime.setHours(12, 0, 0, 0); // 8:30:00 AM
   
   // Tính toán thời gian cho 9h40 sáng (download_ads_reports)
   const adsReportsTime = new Date();
-  adsReportsTime.setHours(9, 51, 0, 0); // 9:40:00 AM
+  adsReportsTime.setHours(12, 5, 0, 0); // 9:40:00 AM
 
   // Nếu đã qua 9h sáng, đặt cho ngày mai
   if (now > syncTime) {

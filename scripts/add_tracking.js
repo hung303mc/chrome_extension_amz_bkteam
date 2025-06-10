@@ -673,10 +673,13 @@ const handleTracking = async (trackingInfo, confirmType) => {
       let finalStatus = "error";
       let statusMessage = "Không tìm thấy thông báo xác nhận từ Amazon.";
       const successSelectors = [
+         // Selector chính xác nhất dựa trên HTML bạn cung cấp
+         '.a-alert-success h4.a-alert-heading:contains("Shipment Updated")',
+         '.a-alert-success .a-alert-content:contains("Your shipment has been updated")',
+         
+         // Các selector cũ giữ lại làm phương án dự phòng
          '.a-alert-heading:contains("Shipment has been confirmed")',
-         'h4:contains("Shipment has been confirmed")',
-         '.a-alert-heading:contains("Shipment updated")',
-         'h4:contains("Shipment updated")'
+         'h4:contains("Shipment has been confirmed")'
      ];
       for (const selector of successSelectors) {
          if ($(selector).length > 0) {
@@ -706,8 +709,16 @@ const handleTracking = async (trackingInfo, confirmType) => {
    } catch (error) {
       console.error("Error in handleTracking:", error.message, error.stack);
       err = error.message;
+      chrome.runtime.sendMessage({
+         message: "addedTrackingCode",
+         data: {
+             status: "error",
+             message: `Lỗi content script: ${error.message}`,
+             orderId: trackingInfo.orderId,
+             trackingCode: trackingInfo.tracking || ""
+         }
+     });
    }
-   return err;
 };
 
 // Sử dụng hàm handleTracking cho từng trường hợp
