@@ -90,6 +90,8 @@ const detectCarrierCode = (tracking = "") => {
 
 const detectCarrier = (carrierCode = "") => {
    switch (carrierCode) {
+      case "4px":
+         return "4PX";
       case "yanwen":
          return "Yanwen";
       case "sfb2c":
@@ -113,6 +115,10 @@ const detectCarrier = (carrierCode = "") => {
          return "DHL Express";
       case "xyex":
          return "XYEX";
+      case "deutsche-post":
+         return "DHL";
+      case "royal-mail":
+         return "Royal Mail";
       default:
          break;
    }
@@ -390,24 +396,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
 const handleTracking = async (trackingInfo, confirmType) => {
    let err = "";
 
-   // try {
-   //    if (!trackingInfo) throw Error("Invalid tracking info");
-   //    const {orderId, isFakeTracking, tracking, carrier, shippingService } = trackingInfo;
-
-   //    // Nếu trackingCode rỗng thì tick checkbox, nếu không thì bỏ tick checkbox
-   //    const checkboxSelector = '#missing-tracking-id-checkbox';
-   //    if (tracking === "") {
-   //       // Nếu chưa được tick, thì tick vào
-   //       if (!$(checkboxSelector).attr('checked')) {
-   //          $(checkboxSelector).attr('checked', 'checked');
-   //       }
-   //    } else {
-   //       // Nếu đã tick, thì bỏ tick
-   //       if ($(checkboxSelector).attr('checked')) {
-   //          $(checkboxSelector).removeAttr('checked');
-   //       }
-   //    }
-         // Helper function to wait for an element to appear
    const _waitForElement = async (selector, timeout = 10000, interval = 500) => {
       const startTime = Date.now();
       while (Date.now() - startTime < timeout) {
@@ -418,12 +406,6 @@ const handleTracking = async (trackingInfo, confirmType) => {
       throw new Error(`Element ${selector} not found within ${timeout}ms`);
    };
 
-      // select carrier
-      // const carrierXpath = '[data-test-id="tvs-carrier-dropdown"]>select';
-      // while (true) {
-         // if ($(carrierXpath).length) break;
-         // await sleep(500);
-      // Helper function to scroll to element and click
    const _scrollToAndClick = async ($element) => {
       if ($element && $element.length && $element[0]) {
          $element[0].scrollIntoView({ behavior: "smooth", block: "center" });
@@ -433,36 +415,7 @@ const handleTracking = async (trackingInfo, confirmType) => {
          throw new Error("Element not valid for scrolling and clicking.");
       }
       };
-      // const carrierElem = document.querySelector(carrierXpath);
-      // carrierElem.value = carrier;
-      
-      // update
-      // select carrier
-      //    + check carrier in options
-      //    + else, set value = "Other"
-      // const carrierOptions = Array.from(carrierElem?.options)
-      // let isOtherCarrier = false;
 
-      // if (carrierOptions?.length > 0) {
-      //    // carrier code include list options.
-      //    if ( carrier && carrierOptions.some((opt) => compareValues(opt?.value, carrier) )) {
-      //       let matchVal = carrier;
-      //       for (let opt of carrierOptions) {
-      //          if (!opt || typeof opt !== "object") continue;
-      //          let selected = compareValues(opt.value, carrier);
-
-      //          opt.selected = selected;
-      //          if (selected) matchVal = opt.value;
-      //       }
-      //       carrierElem.value = matchVal;
-      //    } else {
-      //       // set `others`
-      //       carrierElem.value = "Other";
-      //       isOtherCarrier = true; // Đánh dấu nếu carrier là "Other"
-      //       console.log("isOtherCarrier = true")
-      //    }
-      // }
-      // SelectorsAdd commentMore actions
    const CHECKBOX_SELECTOR = '#missing-tracking-id-checkbox';
    const CARRIER_XPATH = '[data-test-id="tvs-carrier-dropdown"]>select';
    const CUSTOM_CARRIER_XPATH = 'input[data-test-id="text-input-carrier"]';
@@ -532,19 +485,7 @@ const handleTracking = async (trackingInfo, confirmType) => {
             console.log(`[handleTracking] Checkbox state is already correct (Should be: ${shouldBeChecked}). No change needed.`);
          }
          await sleep(700); // Wait for UI to potentially update after property change and event dispatch
-      // const carrierEvent = document.createEvent("HTMLEvents");
-      // carrierEvent.initEvent("change", true, true);
-      // carrierElem.dispatchEvent(carrierEvent);
-      // await sleep(1000);
 
-      // Chỉ điền tên carrier manually nếu carrier là "Other"
-      // if (isOtherCarrier) {
-      //    // set custom carrier name if 'Other' is selected
-      //    const customCarrierXpath = 'input[data-test-id="text-input-carrier"]';
-      //    while (true) {
-      //       if ($(customCarrierXpath).length) break;
-      //       await sleep(500);
-      // Re-check state for logging after potential interaction
       let finalStateChecked = false;
       if (typeof katCheckboxElement.checked === 'boolean') {
          finalStateChecked = katCheckboxElement.checked;
@@ -557,96 +498,12 @@ const handleTracking = async (trackingInfo, confirmType) => {
          if (finalStateChecked !== shouldBeChecked) {
             console.warn(`[handleTracking] Checkbox state MISMATCH after attempt. Expected: ${shouldBeChecked}, Got: ${finalStateChecked}`);
          }
-         // const customCarrierElem = $(customCarrierXpath);
-         // customCarrierElem.focus();
-         // customCarrierElem.val("");
-         // document.execCommand(
-         //     "insertText",
-         //     false,
-         //     carrier // Điền tên carrier vào đây
-         // );
-         // customCarrierElem.blur();
-         // await sleep(2000);
+
       }else {
          console.warn(`[handleTracking] Checkbox ${CHECKBOX_SELECTOR} not found. Proceeding without interacting with it.`);
       }
 
-      // // select shipping option
-      // const shippingXpath = ".shipping-service-dropdown select";
-      // while (true) {
-      //    if ($(shippingXpath).length) break;
-      //    await sleep(500);
-      // }
-      // const shippingElem = document.querySelector(shippingXpath);
-      // // shippingElem.value = "Other";
-      //
-      // // set shipping service
-      // let validShippingService = false;
-      // const shippingServiceOptions = Array.from(shippingElem?.options);
-      // if (shippingServiceOptions?.length > 0) {
-      //    // check `shippingSerive` include
-      //    if (shippingService && shippingServiceOptions.some((opt) => compareValues(opt?.value, shippingService))) {
-      //       let matchVal = shippingService;
-      //       for (let opt of shippingServiceOptions) {
-      //          if (!opt || typeof opt !== "object") continue;
-      //          let selected = compareValues(opt.value, shippingService);
-      //
-      //          opt.selected = selected;
-      //          if (selected) matchVal = opt.value;
-      //       }
-      //       shippingElem.value = matchVal;
-      //       validShippingService = true;
-      //    } else {
-      //       shippingElem.value = "Other";
-      //    }
-      // }
-      //
-      //
-      // const shippingEvent = document.createEvent("HTMLEvents");
-      // shippingEvent.initEvent("change", true, true);
-      // shippingElem.dispatchEvent(shippingEvent);
-      // await sleep(1000);
-      //
-      // // case: validShippingService = false => set shipping name
-      // if (!validShippingService) {
-      //    // set shipping name
-      //    const shippingNameXpath = 'input[data-test-id="shipping-service"]';
-      //    let attempts = 0;
-      //    let err = null;
-      //
-      //    while (attempts < 3) {
-      //       if ($(shippingNameXpath).length) {
-      //          const shippingNameElem = $(shippingNameXpath);
-      //          shippingNameElem.focus();
-      //          shippingNameElem.val("");
-      //          document.execCommand(
-      //              "insertText",
-      //              false,
-      //              isFakeTracking ? "Standard Shipping" : carrier
-      //          );
-      //          shippingNameElem.blur();
-      //
-      //          await sleep(2000);
-      //          break;
-      //       } else {
-      //          // Nếu không tìm thấy, chờ 5 giây và kiểm tra lại
-      //          await sleep(5000);
-      //          shippingElem.dispatchEvent(shippingEvent);
-      //          attempts++;
-      //       }
-      //    }
-      //
-      //    // Nếu sau 3 lần vẫn không tìm thấy, return error
-      //    if (attempts === 3) {
-      //       err = "Không thể tìm thấy phần tử shipping name sau 3 lần thử.";
-      //       chrome.runtime.sendMessage({
-      //          message: "addedTrackingCode",
-      //          error: err,
-      //          domain: window.location.origin,
-      //       });
-      //       return err;
-      //    }
-      // }
+
 
       // Conditional execution for steps 2 and 3
       if (trackingCode !== "") {
@@ -811,10 +668,34 @@ const handleTracking = async (trackingInfo, confirmType) => {
             console.warn("Shipment Updated message not found after edit confirmation retries. The update might have failed or the confirmation message is different.");
          }
       }
-
+      await sleep(3000);
+      // --- BƯỚC QUAN TRỌNG: KIỂM TRA THÔNG BÁO THÀNH CÔNG CỦA AMAZON ---
+      let finalStatus = "error";
+      let statusMessage = "Không tìm thấy thông báo xác nhận từ Amazon.";
+      const successSelectors = [
+         '.a-alert-heading:contains("Shipment has been confirmed")',
+         'h4:contains("Shipment has been confirmed")',
+         '.a-alert-heading:contains("Shipment updated")',
+         'h4:contains("Shipment updated")'
+     ];
+      for (const selector of successSelectors) {
+         if ($(selector).length > 0) {
+            finalStatus = "success";
+            statusMessage = `Phát hiện thông báo thành công: "${$(selector).text()}"`;
+            break;
+         }
+      }
+      console.log(`[CS] Order ${orderId} - Verification Result: ${finalStatus}. Message: ${statusMessage}`);
+      // Gửi kết quả cuối cùng về cho background
       chrome.runtime.sendMessage({
          message: "addedTrackingCode",
-         data: { isFakeTracking, orderId, trackingCode }, // Gửi trackingCode đã dùng
+         data: { 
+            status: finalStatus,
+            message: statusMessage,
+            isFakeTracking, 
+            orderId: orderId,
+            trackingCode: trackingCode
+         }, // Gửi trackingCode đã dùng
          domain: window.location.origin,
       });
       // 6. Wait for alert heading (final confirmation of page state)Add commentMore actions

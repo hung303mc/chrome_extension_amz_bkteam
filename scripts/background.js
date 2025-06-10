@@ -9,6 +9,7 @@ const AMZDomains = [
   "https://sellercentral.amazon.co.uk/",
 ];
 let isUpdateTrackingRunning = false;
+let isDownloadingAdsReport = false;
 let doingAuto = false;
 let globalDomain = AMZDomain;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -36,7 +37,7 @@ const setupDailyAlarm = () => {
   
   // Tính toán thời gian cho 9h40 sáng (download_ads_reports)
   const adsReportsTime = new Date();
-  adsReportsTime.setHours(9, 0, 0, 0); // 9:00:00 AM
+  adsReportsTime.setHours(9, 51, 0, 0); // 9:40:00 AM
 
   // Nếu đã qua 9h sáng, đặt cho ngày mai
   if (now > syncTime) {
@@ -189,7 +190,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
   else if (alarm.name === "dailyDownloadAdsReports") {
     console.log("Đang chạy tự động tải báo cáo quảng cáo theo lịch lúc 9h40 sáng...");
-    
+    //1 kiểm tra isDownloadingAdsReport
+    if (isDownloadingAdsReport) {
+      console.log("Đã có quá trình tải báo cáo quảng cáo đang chạy, bỏ qua.");
+      return;
+    }
+    // 2 đặt khóa và bắt đầu
+    isDownloadingAdsReport = true;
+    console.log("Đã khóa isDownloadingAdsReport.");
     try {
         console.log("Bắt đầu quá trình tải báo cáo quảng cáo...");
         
@@ -541,6 +549,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
             });
           }
         });
+    }finally {
+      // // 3. Mở khóa sau khi hoàn tất
+      isDownloadingAdsReport = false;
+      console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
     }
   }
   else if (alarm.name === "testSyncOrder") {
@@ -1461,6 +1473,18 @@ return true;
 
 
   if (message === "runDownloadAdsReports") {
+    //1. kiểm tra khóa 
+    if (isDownloadingAdsReport){
+      console.warn("[Ads Report] Tiến trình đang chạy. Yêu cầu mới bị từ chối.");
+        sendMessage(sender.tab.id, "downloadAdsReports", { 
+            error: "A download process is already running. Please wait." 
+        });
+        return true;
+    }
+     // 2. Đặt khóa và bắt đầu
+    isDownloadingAdsReport = true;
+    console.log("[Ads Report] Đặt khóa isDownloadingAdsReport = true.");
+    (async () => {
     try {
         console.log("Bắt đầu quá trình tải báo cáo quảng cáo...");
         
@@ -1807,8 +1831,13 @@ return true;
             });
           }
         });
+    }finally {
+      isDownloadingAdsReport = false;
+      console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
     }
-  }
+  })();
+  return true; // Giữ message port mở
+}
   
   if (message === "getProductImage") {
     productImg = data;
@@ -3632,6 +3661,8 @@ const detectCarrierCode = (tracking = "") => {
 
 const detectCarrier = (carrierCode = "") => {
   switch (carrierCode) {
+    case "4px":
+      return "4PX";
     case "yanwen":
       return "Yanwen";
     case "sfb2c":
