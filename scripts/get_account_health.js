@@ -48,19 +48,22 @@
                 // Lấy thêm các chỉ số liên quan đến KPI (ví dụ: balance, buybox,…)
                 getKpi(KPIData, accountAmazon);
             }
-    
+            console.log('[AH Script] Bước 1: Hoàn thành.');
+            console.log('[AH Script] Bước 2: Lấy số lượng đơn trả cần xác nhận...');
             // 2. Lấy số lượng đơn trả cần xác nhận (authorization required)
             let html = await loadPage("https://sellercentral.amazon.com/returns/list?pageSize=25&returnRequestState=authorizationRequired&useDefaultReturnRequestState=false&orderBy=CreatedDateDesc&pendingActionsFilterBy=pendingActions&isOnPendingActionsTab=false&pageNumber=1&scrollId=&previousPageScrollId=&isOrderBySelected=undefined&selectedDateRange=365&keyword=&dmCode=close-return-request-success&dmType=success");
             await sleep(3000);
             let doc = new DOMParser().parseFromString(html, "text/html");
             accountAmazon["return_authorize_num"] = doc.getElementsByClassName("returnRequest").length;
-    
+            
             // 3. Lấy số lượng đơn trả đang chờ xử lý (pending actions)
             html = await loadPage("https://sellercentral.amazon.com/returns/list?pageSize=25&returnRequestState=pendingActions&orderBy=CreatedDateAsc&pageNumber=1&selectedDateRange=50&cardType=pendingRefunds&pendingActionsFilterBy=pendingRefund&isOnPendingActionsTab=true");
             await sleep(3000);
             doc = new DOMParser().parseFromString(html, "text/html");
             accountAmazon["return_pending_action_num"] = doc.getElementsByClassName("returnRequest").length;
-    
+            console.log('[AH Script] Bước 2: Hoàn thành.');
+            console.log('[AH Script] Bước 3: Lấy thông tin Payment...');
+
             // 4. Lấy thông tin Payment từ Payments Dashboard qua background
             try {
                 const paymentData = await getPaymentData();
@@ -69,7 +72,7 @@
                 console.error("Error retrieving Payment data:", err);
             }
     
-    
+            console.log('[AH Script] Bước 3: Hoàn thành.');
             // 5. Lấy thông tin Performance Dashboard (chỉ số khách hàng, feedback, AHR, policies, shipping, …)
             html = await loadPage("https://sellercentral.amazon.com/performance/dashboard");
             await sleep(3000);
@@ -97,6 +100,7 @@
                     }
                 }
             }
+            console.log('[AH Script] Bước 4:Trích xuất fb,AHR...');
             // Các chỉ số khác như feedback, AHR, payment review, policies, shipping… cũng được trích xuất tương tự
             const odrSection = doc.getElementById("odr-breakdown-section");
             if (odrSection) {
@@ -269,6 +273,7 @@
             const jsonData = JSON.stringify(accountAmazon);
             console.log('accountAmazon :>> ', accountAmazon);
             console.log("Account Health Data to be sent:", jsonData);
+            console.log('[AH Script] Bước cuối: Gửi dữ liệu về server...');
             await sendPostRequest("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=getAccountHealth", jsonData);
             
             console.log("[AH Script] Successfully collected and sent data.");

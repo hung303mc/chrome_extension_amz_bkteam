@@ -435,203 +435,216 @@ notifyServiceWorkerActivity();
 
 // Periodic check to ensure service worker is active
 setInterval(notifyServiceWorkerActivity, 60000); 
+// Thêm hàm này vào gần đầu tệp content_script.js
+function waitForElement(selector, maxTime = 15000) {
+   return new Promise((resolve, reject) => {
+       const intervalTime = 500;
+       let timeElapsed = 0;
+       const interval = setInterval(() => {
+           const element = document.querySelector(selector);
+           // Quan trọng: Kiểm tra xem phần tử có thực sự hiển thị không
+           if (element && element.offsetParent !== null) {
+               clearInterval(interval);
+               resolve(element);
+           } else {
+               timeElapsed += intervalTime;
+               if (timeElapsed >= maxTime) {
+                   clearInterval(interval);
+                   reject(new Error(`Không tìm thấy hoặc không hiển thị phần tử: "${selector}"`));
+               }
+           }
+       }, intervalTime);
+   });
+}
+chrome.runtime.onMessage.addListener(async (req, sender, res) => {   
+   // if (req.message === "autoGetAccountHealth") {
+   //    res({ message: "received" });
+   //    console.log("[CS] Đang thực hiện auto get account health...");
+      
+   //    // Đợi để đảm bảo giao diện đã load
+   //    setTimeout(() => {
+   //      // Kích hoạt tab Account Health
+   //      const accountHealthTabButton = $('button[data-name="account_health"]');
+   //      if (accountHealthTabButton.length > 0) {
+   //        accountHealthTabButton.click();
+   //        console.log("[CS] Kích hoạt tab Account Health");
+   //      } else {
+   //        console.error("[CS] Không tìm thấy tab Account Health button[data-name='account_health']");
+   //        if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health tab.");
+   //        return; 
+   //      }
+        
+   //      // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
+   //      setTimeout(() => {
+   //        // Đảm bảo tab content đã hiển thị đúng
+   //        const accountHealthContentDiv = $("#account-health");
+   //        if (accountHealthContentDiv.length > 0) {
+   //          accountHealthContentDiv.css("display", "block");
+   //          console.log("[CS] Đảm bảo nội dung tab Account Health hiển thị.");
+   //        } else {
+   //          console.error("[CS] Không tìm thấy div nội dung Account Health #account_health");
+   //          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health content div.");
+   //          return;
+   //        }
+          
+   //        console.log("[CS] Tìm kiếm nút Get account health...");
+   //        const getAccountHealthButtonElement = document.querySelector('.btn-accounthealth-wrap button'); // Using pure JS selector
+          
+   //        if (getAccountHealthButtonElement) {
+   //            console.log("[CS] Nút 'Get account health' (#account-health) tìm thấy. Click bằng dispatchEvent.");
+   //            getAccountHealthButtonElement.dispatchEvent(new MouseEvent('click', {
+   //              bubbles: true,
+   //              cancelable: true,
+   //              view: window
+   //            }));
+   //            if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (auto mode).");
+   //        } else {
+   //          console.error("[CS] Không tìm thấy nút Get account health bằng selector '#account-health'.");
+   //          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find 'Get account health' button.");
+   //        }
+          
+   //      }, 5000); // Tăng thời gian chờ lên 4 giây
+   //    }, 4000); // Tăng thời gian chờ lên 2 giây
+      
+   //    return true;
+   //  }
+// Thay thế case "autoGetAccountHealth" cũ bằng case này
+if (req.message === "autoGetAccountHealth") {
+   res({ message: "received" });
+   console.log("[CS] Bắt đầu quy trình tự động Get Account Health...");
 
-chrome.runtime.onMessage.addListener(async (req, sender, res) => {
-  if (req.message === "triggerGetAccountHealth") {
-    // Send an immediate response to the sender.
-    res({ status: "triggerGetAccountHealth_received_and_processing" });
-    console.log(`[AH Automation CS - Trigger] Received trigger. Document readyState: ${document.readyState}. Attempting to switch to Account Health tab and click button.`);
+   (async () => {
+       try {
+           // Bước 1: Chờ và nhấn vào tab "Account Health"
+           const tabButton = await waitForElement('button[data-name="account_health"]');
+           console.log("[CS] Đã tìm thấy tab Account Health. Đang nhấn...");
+           tabButton.click();
 
-    setTimeout(() => {
-        const accountHealthTabElement = $('button[data-name="account_health"]');
-        console.log("[AH Automation CS - Trigger] Query for 'Account Health' tab (button[data-name='account_health']):", accountHealthTabElement.length > 0 ? accountHealthTabElement[0] : 'Not Found');
+           // Bước 2: Chờ và nhấn vào nút "Get account health" bên trong tab đó
+           const actionButton = await waitForElement('.btn-accounthealth-wrap button');
+           console.log("[CS] Đã tìm thấy nút 'Get account health'. Đang nhấn...");
+           actionButton.dispatchEvent(new MouseEvent('click', {
+               bubbles: true,
+               cancelable: true,
+               view: window
+           }));
 
-        if (accountHealthTabElement.length > 0) {
-            if (accountHealthTabElement.hasClass('om-active-tab') || accountHealthTabElement.hasClass('om-active')) {
-                console.log("[AH Automation CS - Trigger] 'Account Health' tab appears to be already active. Skipping click on tab.");
-            } else {
-                console.log("[AH Automation CS - Trigger] Clicking 'Account Health' tab element.");
-                accountHealthTabElement.click();
-            }
-        } else {
-            console.error(`[AH Automation CS - Trigger] Could not find the 'Account Health' tab element using selector 'button[data-name="account_health"]'.`);
-            if (typeof notifyError === 'function') notifyError("Trigger mode: Failed to find 'Account Health' tab for automation.");
-            return; // Stop further processing if tab not found
-        }
+       } catch (error) {
+           console.error("[CS] Lỗi trong quá trình tự động nhấn nút:", error);
+           if (typeof notifyError === 'function') {
+               notifyError("Lỗi tự động nhấn nút: " + error.message);
+           }
+       }
+   })();
 
+   return true; // Giữ message port mở cho xử lý bất đồng bộ
+}
+    const { message, data } = req || {};
+    
+    // Xử lý message tự động update tracking
+    if (message === "autoUpdateTracking") {
+      res({ message: "received" });
+      console.log("[CS] Đang thực hiện auto update tracking...");
+      
+      // Đợi để đảm bảo giao diện đã load
+      setTimeout(() => {
+        // Kích hoạt tab Update Tracking
+        $('[data-name="update_tracking"]').click();
+        console.log("[CS] Kích hoạt tab Update Tracking");
+        
+        // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
         setTimeout(() => {
-            const accountHealthContentDiv = $("#account_health");
-            if (accountHealthContentDiv.length > 0 && accountHealthContentDiv.css('display') === 'block') {
-                 console.log("[AH Automation CS - Trigger] Account Health content div is already visible.");
-            } else if (accountHealthContentDiv.length > 0) {
-                console.log("[AH Automation CS - Trigger] Ensuring Account Health content div is visible.");
-                accountHealthContentDiv.css("display", "block");
-            } else {
-                console.error("[AH Automation CS - Trigger] Account Health content div #account_health not found.");
-                if (typeof notifyError === 'function') notifyError("Trigger mode: Account Health content did not become visible for automation.");
-                return; // Stop further processing
+          // Đảm bảo tab content đã hiển thị đúng
+          $("#update_tracking").css("display", "block");
+          
+          console.log("Tìm kiếm nút Start Update...");
+          console.log("Selector 1 - #update-tracking: ", $("#update-tracking").length);
+          console.log("Selector 2 - button#update-tracking: ", $("button#update-tracking").length);
+          console.log("Selector 3 - .btn-updatetracking-wrap button: ", $(".btn-updatetracking-wrap button").length);
+          console.log("Selector 4 - .om-btn: ", $(".om-btn").length);
+          
+          // Thử tất cả các selector có thể
+          const btn1 = $("#update-tracking");
+          if (btn1.length > 0) {
+            console.log("Click nút bằng selector #update-tracking");
+            btn1.click();
+          }
+          
+          const btn2 = $("button#update-tracking");
+          if (btn2.length > 0) {
+            console.log("Click nút bằng selector button#update-tracking");
+            btn2.click();
+          }
+          
+          const btn3 = $(".btn-updatetracking-wrap button");
+          if (btn3.length > 0) {
+            console.log("Click nút bằng selector .btn-updatetracking-wrap button");
+            btn3.click();
+          }
+          
+          // Thử bằng cách lộ trình khác - click trực tiếp vào nút dựa trên text
+          $(".om-btn").each(function() {
+            if ($(this).text().trim() === "Start Update") {
+              console.log("Tìm thấy nút Start Update dựa vào text content");
+              $(this).click();
             }
-
-            const getAccountHealthButton = document.querySelector("#account-health");
-            console.log("[AH Automation CS - Trigger] Query for 'Get account health' button (#account-health):", getAccountHealthButton);
-
-            if (getAccountHealthButton) {
-                console.log(`[AH Automation CS - Trigger] 'Get account health' button found. Clicking with dispatchEvent.`);
-                getAccountHealthButton.dispatchEvent(new MouseEvent('click', {
-                    bubbles: true,
-                    cancelable: true,
-                    view: window
-                }));
-                if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (trigger mode).");
-            } else {
-                console.error("[AH Automation CS - Trigger] Could not find the 'Get account health' button with ID '#account-health'.");
-                if (typeof notifyError === 'function') notifyError("Trigger mode: Failed to find 'Get account health' button for automation.");
+          });
+          
+          // Thử cách cuối cùng - dùng JavaScript thuần
+          document.querySelectorAll('#update-tracking, .btn-updatetracking-wrap button, .om-btn').forEach(btn => {
+            if (btn.innerText.trim() === 'Start Update') {
+              console.log("Click bằng querySelector và dispatchEvent");
+              btn.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window
+              }));
             }
-        }, 4000); // Delay for content to load/become visible
-    }, 2000); // Delay for tab switch
-
-    return true; // Indicates response will be sent asynchronously
-  }
-  // Make sure this is an else if if there are other message handlers
-  else if (req.message === "triggerAutoRunUpdateTracking") {
-    console.log("[CS] Received triggerAutoRunUpdateTracking from background. Data:", req.data);
-    chrome.runtime.sendMessage({
-      message: "runUpdateTracking",
-      data: {
-        autoMode: req.data.autoMode,
-        domain: window.location.origin // Pass current domain, background will use sender.tab.url anyway
-      }
-    }, (bgResponse) => {
-      if (chrome.runtime.lastError) {
-        console.warn("[CS] Error sending runUpdateTracking to background:", chrome.runtime.lastError.message);
-      } else {
-        console.log("[CS] runUpdateTracking message sent to background. Response:", bgResponse);
-      }
-    });
-    res({ status: "runUpdateTracking_initiated_from_cs" });
-    return true; // Indicate async response
-  }
-  else if (req.message === "autoGetAccountHealth") {
-    res({ message: "received" });
-    console.log("[CS] Đang thực hiện auto get account health...");
-    
-    // Đợi để đảm bảo giao diện đã load
-    setTimeout(() => {
-      // Kích hoạt tab Account Health
-      const accountHealthTabButton = $('button[data-name="account_health"]');
-      if (accountHealthTabButton.length > 0) {
-        accountHealthTabButton.click();
-        console.log("[CS] Kích hoạt tab Account Health");
-      } else {
-        console.error("[CS] Không tìm thấy tab Account Health button[data-name='account_health']");
-        if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health tab.");
-        return; 
-      }
+          });
+          
+          // Lưu thông tin để đánh dấu đang trong chế độ tự động
+          setStorage("_mb_auto_tracking", true);
+          console.log("Đã đặt _mb_auto_tracking = true");
+        }, 4000); // Tăng thời gian chờ lên 4 giây để đảm bảo tab đã hoàn toàn load xong
+      }, 2000);
       
-      // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
-      setTimeout(() => {
-        // Đảm bảo tab content đã hiển thị đúng
-        const accountHealthContentDiv = $("#account_health");
-        if (accountHealthContentDiv.length > 0) {
-          accountHealthContentDiv.css("display", "block");
-          console.log("[CS] Đảm bảo nội dung tab Account Health hiển thị.");
-        } else {
-          console.error("[CS] Không tìm thấy div nội dung Account Health #account_health");
-          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health content div.");
-          return;
-        }
-        
-        console.log("[CS] Tìm kiếm nút Get account health...");
-        const getAccountHealthButtonElement = document.querySelector('#account-health'); // Using pure JS selector
-        
-        if (getAccountHealthButtonElement) {
-            console.log("[CS] Nút 'Get account health' (#account-health) tìm thấy. Click bằng dispatchEvent.");
-            getAccountHealthButtonElement.dispatchEvent(new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              view: window
-            }));
-            if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (auto mode).");
-        } else {
-          console.error("[CS] Không tìm thấy nút Get account health bằng selector '#account-health'.");
-          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find 'Get account health' button.");
-        }
-        
-      }, 4000); // Tăng thời gian chờ lên 4 giây
-    }, 2000); // Tăng thời gian chờ lên 2 giây
-    
-    return true;
-  }
-
-  const { message, data } = req || {};
+      return true;
+    }
+    console.log(`[Content] Nhận tin nhắn từ background.js: ${message}`, { url: window.location.href });
   
-  // Xử lý message tự động update tracking
-  if (message === "autoUpdateTracking") {
-    res({ message: "received" });
-    console.log("[CS] Đang thực hiện auto update tracking...");
+    // Phản hồi ping từ background script để xác nhận content script đã được tiêm
+    if (message === "ping") {
+      console.log("[Content] Nhận ping từ background script, phản hồi để xác nhận đã tiêm");
+      res({ injected: true });
+      return true;
+    }
     
-    // Đợi để đảm bảo giao diện đã load
-    setTimeout(() => {
-      // Kích hoạt tab Update Tracking
-      $('[data-name="update_tracking"]').click();
-      console.log("[CS] Kích hoạt tab Update Tracking");
+    // Xử lý message autoSyncOrders để tự động chọn tất cả đơn hàng và nhấn nút sync
+    if (message === "autoSyncOrders") {
+      console.log("[Content] Xử lý yêu cầu autoSyncOrders:", data);
+      res({ message: "received" });
       
-      // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
-      setTimeout(() => {
-        // Đảm bảo tab content đã hiển thị đúng
-        $("#update_tracking").css("display", "block");
+      try {
+        // Chờ một chút để đảm bảo UI đã được tải hoàn toàn
+        await sleep(3000);
         
-        console.log("Tìm kiếm nút Start Update...");
-        console.log("Selector 1 - #update-tracking: ", $("#update-tracking").length);
-        console.log("Selector 2 - button#update-tracking: ", $("button#update-tracking").length);
-        console.log("Selector 3 - .btn-updatetracking-wrap button: ", $(".btn-updatetracking-wrap button").length);
-        console.log("Selector 4 - .om-btn: ", $(".om-btn").length);
-        
-        // Thử tất cả các selector có thể
-        const btn1 = $("#update-tracking");
-        if (btn1.length > 0) {
-          console.log("Click nút bằng selector #update-tracking");
-          btn1.click();
+        // Nếu có useSelectAllSync, chọn tất cả các đơn hàng
+        if (data?.useSelectAllSync) {
+          console.log("[Content] Tự động chọn tất cả đơn hàng");
+          $(".force-sync-all-item .om-checkbox").prop("checked", true).trigger("click");
+          await sleep(1000);
         }
         
-        const btn2 = $("button#update-tracking");
-        if (btn2.length > 0) {
-          console.log("Click nút bằng selector button#update-tracking");
-          btn2.click();
-        }
+        // Click nút "Sync Orders"
+        console.log("[Content] Tự động nhấn nút Sync Orders");
+        $(".om-addon #not_synced #sync-order").trigger("click");
         
-        const btn3 = $(".btn-updatetracking-wrap button");
-        if (btn3.length > 0) {
-          console.log("Click nút bằng selector .btn-updatetracking-wrap button");
-          btn3.click();
-        }
-        
-        // Thử bằng cách lộ trình khác - click trực tiếp vào nút dựa trên text
-        $(".om-btn").each(function() {
-          if ($(this).text().trim() === "Start Update") {
-            console.log("Tìm thấy nút Start Update dựa vào text content");
-            $(this).click();
-          }
-        });
-        
-        // Thử cách cuối cùng - dùng JavaScript thuần
-        document.querySelectorAll('#update-tracking, .btn-updatetracking-wrap button, .om-btn').forEach(btn => {
-          if (btn.innerText.trim() === 'Start Update') {
-            console.log("Click bằng querySelector và dispatchEvent");
-            btn.dispatchEvent(new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              view: window
-            }));
-          }
-        });
-        
-        // Lưu thông tin để đánh dấu đang trong chế độ tự động
-        setStorage("_mb_auto_tracking", true);
-        console.log("Đã đặt _mb_auto_tracking = true");
-      }, 4000); // Tăng thời gian chờ lên 4 giây để đảm bảo tab đã hoàn toàn load xong
-    }, 2000);
-    
-    return true;
-  }
-});
+        notifySuccess("Tự động đồng bộ đơn hàng đang được thực hiện");
+      } catch (error) {
+        console.error("[Content] Lỗi khi tự động đồng bộ đơn hàng:", error);
+        notifyError("Không thể tự động đồng bộ đơn hàng: " + error.message);
+      }
+      
+      return true;
+    }
+  });
