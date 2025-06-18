@@ -326,18 +326,12 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                const statusSelector = '.main-status';
                let retries = 20;
                let shippedStatusConfirmed = false;
-               console.log(`[CS] Verifying empty tracking for order ${orderId}, checking for "Shipped" or "Unshipped" status.`);
-               
+               console.log(`[CS] Verifying empty tracking for order ${orderId}, checking for "Shipped" status.`);
                while (retries > 0) {
-                  const $statusElement = $(statusSelector);
+                  const $statusElement = $(shippedStatusSelector);
                   if ($statusElement.length) {
                      const statusText = $statusElement.text().trim().toLowerCase();
-                     // SỬA LỖI: Check "unshipped" TRƯỚC
-                     if (statusText.includes("unshipped")) {
-                        // Thấy "unshipped" là thất bại, thoát luôn
-                        break;
-                     } else if (statusText.includes("shipped")) {
-                        // Nếu không phải "unshipped" thì mới check "shipped"
+                     if (statusText.includes("shipped")) {
                         shippedStatusConfirmed = true;
                         break;
                      }
@@ -345,12 +339,13 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                   await sleep(500);
                   retries--;
                }
+
                if (shippedStatusConfirmed) {
                   status = "success";
                   verificationMessage = `[CS] Order ${orderId}: Tracking is empty and status is "Shipped", as expected.`;
                } else {
                   status = "error"; // Explicitly set status
-                  const $statusElementForLog = $(statusSelector);
+                  const $statusElementForLog = $(shippedStatusSelector);
                   if ($statusElementForLog.length) {
                      verificationMessage = `[CS] Order ${orderId}: Tracking is empty, status is not "Shipped". Found: "${$statusElementForLog.text().trim()}".`;
                   } else {
@@ -678,6 +673,9 @@ const handleTracking = async (trackingInfo, confirmType) => {
       let finalStatus = "error";
       let statusMessage = "Không tìm thấy thông báo xác nhận từ Amazon.";
       const successSelectors = [
+         // Selector MỚI để bắt tiêu đề "Shipment confirmed"
+         '.a-alert-success h4.a-alert-heading:contains("Shipment confirmed")',
+
          // Selector chính xác nhất dựa trên HTML bạn cung cấp
          '.a-alert-success h4.a-alert-heading:contains("Shipment confirmed")',
          '.a-alert-success .a-alert-content:contains("Your shipment has been updated")',
