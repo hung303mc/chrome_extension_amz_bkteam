@@ -326,12 +326,17 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                const statusSelector = '.main-status';
                let retries = 20;
                let shippedStatusConfirmed = false;
-               console.log(`[CS] Verifying empty tracking for order ${orderId}, checking for "Shipped" status.`);
+               console.log(`[CS] Verifying empty tracking for order ${orderId}, checking for "Shipped" or "Unshipped" status.`);
                while (retries > 0) {
-                  const $statusElement = $(shippedStatusSelector);
+                  const $statusElement = $(statusSelector);
                   if ($statusElement.length) {
                      const statusText = $statusElement.text().trim().toLowerCase();
-                     if (statusText.includes("shipped")) {
+                     // SỬA LỖI: Check "unshipped" TRƯỚCAdd commentMore actions
+                     if (statusText.includes("unshipped")) {
+                        // Thấy "unshipped" là thất bại, thoát luôn
+                        break;
+                     } else if (statusText.includes("shipped")) {
+                        // Nếu không phải "unshipped" thì mới check "shipped"
                         shippedStatusConfirmed = true;
                         break;
                      }
@@ -345,7 +350,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                   verificationMessage = `[CS] Order ${orderId}: Tracking is empty and status is "Shipped", as expected.`;
                } else {
                   status = "error"; // Explicitly set status
-                  const $statusElementForLog = $(shippedStatusSelector);
+                  const $statusElementForLog = $(statusSelector);
                   if ($statusElementForLog.length) {
                      verificationMessage = `[CS] Order ${orderId}: Tracking is empty, status is not "Shipped". Found: "${$statusElementForLog.text().trim()}".`;
                   } else {
