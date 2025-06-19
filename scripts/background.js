@@ -108,7 +108,33 @@ const setupDailyAlarm = () => {
     console.log("Danh sách tất cả alarm:", alarms);
   });
 };
-
+/**
+ * Lấy danh sách (dưới dạng Set) các URL báo cáo đã được xử lý trong ngày hôm nay.
+ * Một Set được sử dụng để kiểm tra sự tồn tại của phần tử nhanh hơn.
+ * @returns {Promise<Set<string>>}
+ */
+const getProcessedReportsForToday = async () => {
+  const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  const key = `processed_ads_reports_${today}`;
+  const result = await chrome.storage.local.get([key]);
+  return new Set(result[key] || []);
+};
+/**
+ * Thêm một URL báo cáo vào danh sách đã xử lý của ngày hôm nay.
+ * @param {string} reportUrl - URL duy nhất của báo cáo đã được xử lý thành công.
+ */
+const addReportToProcessedList = async (reportUrl) => {
+  const today = new Date().toISOString().split('T')[0];
+  const key = `processed_ads_reports_${today}`;
+  const processedReportsSet = await getProcessedReportsForToday();
+  processedReportsSet.add(reportUrl);
+  await chrome.storage.local.set({ [key]: Array.from(processedReportsSet) });
+  console.log(`[Ads Report] Đã ghi nhận báo cáo đã xử lý: ${reportUrl}`);
+};
+/**
+ * Hàm xử lý chính: Mở trang báo cáo, lấy link, lọc, tải và upload lên server.
+ * @param {number|null} initiatingTabId - ID của tab đã khởi tạo hành động (để gửi thông báo).
+ */
 // Xử lý alarm khi kích hoạt
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -699,7 +725,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
                     // 3. Gửi file đến server Python của bạn
                     // !!! THAY ĐỔI URL NÀY thành địa chỉ IP/tên miền và cổng của server bạn !!!
-                    const serverUrl = 'http://162.55.3.103:5000/upload_ads_report';
+                    const serverUrl = 'http://upload.bkteam.top/upload_ads_report';;
                     
                     const uploadResponse = await fetch(serverUrl, {
                         method: 'POST',
@@ -3260,62 +3286,62 @@ const detectCarrier = (carrierCode = "") => {
     default:
   }
 }
-// Thêm hàm này vào đầu file background.js hoặc gần các hàm tiện ích khác
-/**
- * Tải nội dung báo cáo từ URL của Amazon và gửi nó đến API server của bạn.
- * @param {string} reportUrl - URL để tải báo cáo từ Amazon.
- * @param {string} reportName - Tên của báo cáo.
- * @param {string} folderName - Tên thư mục (ví dụ: '25-12-2023').
- * @param {string} merchantId - Merchant ID của người dùng.
- * @param {string} apiKey - API key để xác thực với server của bạn.
- * @returns {Promise<boolean>} - True nếu upload thành công, false nếu thất bại.
- */
-async function uploadReportToServer(reportUrl, reportName, folderName, merchantId, apiKey) {
-  try {
-      // 1. Dùng fetch để lấy nội dung của file báo cáo dưới dạng Blob
-      const response = await fetch(reportUrl);
-      if (!response.ok) {
-          throw new Error(`Lỗi tải báo cáo từ Amazon: ${response.status} ${response.statusText}`);
-      }
-      const fileBlob = await response.blob();
+// // Thêm hàm này vào đầu file background.js hoặc gần các hàm tiện ích khác
+// /**
+//  * Tải nội dung báo cáo từ URL của Amazon và gửi nó đến API server của bạn.
+//  * @param {string} reportUrl - URL để tải báo cáo từ Amazon.
+//  * @param {string} reportName - Tên của báo cáo.
+//  * @param {string} folderName - Tên thư mục (ví dụ: '25-12-2023').
+//  * @param {string} merchantId - Merchant ID của người dùng.
+//  * @param {string} apiKey - API key để xác thực với server của bạn.
+//  * @returns {Promise<boolean>} - True nếu upload thành công, false nếu thất bại.
+//  */
+// async function uploadReportToServer(reportUrl, reportName, folderName, merchantId, apiKey) {
+//   try {
+//       // 1. Dùng fetch để lấy nội dung của file báo cáo dưới dạng Blob
+//       const response = await fetch(reportUrl);
+//       if (!response.ok) {
+//           throw new Error(`Lỗi tải báo cáo từ Amazon: ${response.status} ${response.statusText}`);
+//       }
+//       const fileBlob = await response.blob();
 
-      // 2. Chuẩn bị dữ liệu FormData để gửi đi
-      const formData = new FormData();
-      formData.append('reportFile', fileBlob, reportName); // Key là 'reportFile', PHP sẽ nhận qua $_FILES['reportFile']
-      formData.append('merchant_id', merchantId);
-      formData.append('folderName', folderName); // Gửi tên thư mục theo ngày tháng
+//       // 2. Chuẩn bị dữ liệu FormData để gửi đi
+//       const formData = new FormData();
+//       formData.append('reportFile', fileBlob, reportName); // Key là 'reportFile', PHP sẽ nhận qua $_FILES['reportFile']
+//       formData.append('merchant_id', merchantId);
+//       formData.append('folderName', folderName); // Gửi tên thư mục theo ngày tháng
 
-      // !!! QUAN TRỌNG: Thay thế URL này bằng URL thực tế của API trên server của bạn
-      const apiEndpoint = "https://bkteam.top/dungvuong-admin/upload_ads_report.php";// sửa lại 
+//       // !!! QUAN TRỌNG: Thay thế URL này bằng URL thực tế của API trên server của bạn
+//       const apiEndpoint = "https://bkteam.top/dungvuong-admin/upload_ads_report.php";// sửa lại 
 
-      // 3. Gửi yêu cầu POST chứa file đến API server
-      const uploadResponse = await fetch(apiEndpoint, {
-          method: 'POST',
-          headers: {
-              // Gửi merchantId qua header để xác thực phía server nếu cần
-              'merchantId': apiKey,
-          },
-          body: formData,
-      });
+//       // 3. Gửi yêu cầu POST chứa file đến API server
+//       const uploadResponse = await fetch(apiEndpoint, {
+//           method: 'POST',
+//           headers: {
+//               // Gửi merchantId qua header để xác thực phía server nếu cần
+//               'merchantId': apiKey,
+//           },
+//           body: formData,
+//       });
 
-      if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text();
-          throw new Error(`Lỗi từ API server: ${uploadResponse.status} - ${errorText}`);
-      }
+//       if (!uploadResponse.ok) {
+//           const errorText = await uploadResponse.text();
+//           throw new Error(`Lỗi từ API server: ${uploadResponse.status} - ${errorText}`);
+//       }
 
-      const result = await uploadResponse.json();
-      if (result.status !== 'success') {
-          throw new Error(result.message || 'Lỗi không xác định từ API');
-      }
+//       const result = await uploadResponse.json();
+//       if (result.status !== 'success') {
+//           throw new Error(result.message || 'Lỗi không xác định từ API');
+//       }
 
-      console.log(`[BG] Upload thành công file ${reportName} lên server.`);
-      return true;
+//       console.log(`[BG] Upload thành công file ${reportName} lên server.`);
+//       return true;
 
-  } catch (error) {
-      console.error(`[BG] Lỗi khi upload file ${reportName}:`, error);
-      return false;
-  }
-}
+//   } catch (error) {
+//       console.error(`[BG] Lỗi khi upload file ${reportName}:`, error);
+//       return false;
+//   }
+// }
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.message === "runDownloadAdsReports") {
     console.log("Nhận yêu cầu tải báo cáo quảng cáo thủ công từ UI");
@@ -3510,98 +3536,152 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const apiKey = await getMBApiKey(); 
             const merchantId = apiKey; 
             // Tải xuống từng báo cáo sử dụng chrome.downloads.download API
+            // for (let i = 0; i < downloadUrls.length; i++) {
+            //   try {
+            //     const { url, reportName } = downloadUrls[i];
+            //     // Làm sạch tên báo cáo để dùng làm tên file
+            //     const safeReportName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                
+            //     // Kiểm tra xem chrome.downloads API có sẵn không
+            //     if (chrome.downloads && typeof chrome.downloads.download === 'function') {
+            //       // Lấy phần mở rộng của file từ URL
+            //       let fileExtension = '.csv'; // Mặc định là .csv
+                  
+            //       // Thử lấy phần mở rộng từ URL
+            //       try {
+            //         const urlPath = new URL(url).pathname;
+            //         // Nếu URL chứa phần mở rộng, lấy phần mở rộng đó
+            //         if (urlPath.includes('.')) {
+            //           const urlExt = urlPath.split('.').pop().toLowerCase();
+            //           // Kiểm tra phần mở rộng hợp lệ
+            //           if (['csv', 'xlsx', 'xls', 'txt', 'pdf'].includes(urlExt)) {
+            //             fileExtension = '.' + urlExt;
+            //           }
+            //         }
+            //       } catch (e) {
+            //         console.log("Không thể lấy phần mở rộng từ URL:", e);
+            //       }
+                  
+            //       // Tạo tên file với đường dẫn thư mục và phần mở rộng đúng
+            //       const filename = `reports/${folderName}/${safeReportName}${fileExtension}`;
+                  
+            //       // Tạo thư mục nếu chưa tồn tại bằng cách lưu một file nhỏ làm đánh dấu
+            //       if (i === 0) {
+            //         try {
+            //           // Tạo một file .keep để đảm bảo thư mục tồn tại
+            //           chrome.downloads.download({
+            //             url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
+            //             filename: `reports/${folderName}/.keep`,
+            //             conflictAction: 'uniquify',
+            //             saveAs: false
+            //           }, () => {
+            //             console.log(`Đã tạo thư mục ${folderName}`);
+            //           });
+            //         } catch (err) {
+            //           console.error("Lỗi khi tạo thư mục:", err);
+            //         }
+            //       }
+                  
+            //       // Sử dụng chrome.downloads.download để tải xuống file
+            //       chrome.downloads.download({
+            //         url: url,
+            //         filename: filename,
+            //         conflictAction: 'uniquify',
+            //         saveAs: false
+            //       }, (downloadId) => {
+            //         if (chrome.runtime.lastError) {
+            //           console.error("Lỗi tải xuống:", chrome.runtime.lastError);
+            //         } else {
+            //           successCount++;
+            //           console.log(`Đã bắt đầu tải báo cáo ${i+1}/${downloadUrls.length} vào thư mục ${folderName}`);
+            //         }
+            //       });
+            //     } else {
+            //       // Phương pháp thay thế: Mở URL trong tab mới (phương pháp cũ)
+            //       console.log(`Sử dụng phương pháp thay thế để tải báo cáo #${i+1}: ${reportName}`);
+            //       const newTab = window.open(url, '_blank');
+                  
+            //       // Đóng tab sau khi đã bắt đầu tải xuống
+            //       setTimeout(() => {
+            //         try {
+            //           if (newTab && !newTab.closed) {
+            //             newTab.close();
+            //           }
+            //         } catch (e) {
+            //           // Bỏ qua lỗi khi đóng tab
+            //         }
+            //       }, 3000);
+                  
+            //       successCount++;
+            //     }
+                
+            //     // Đợi một chút giữa các lần tải để tránh quá tải
+            //     await sleep(1000);
+            //   } catch (error) {
+            //     console.error(`Lỗi khi tải báo cáo #${i+1}:`, error);
+            //   }
+            // }
+            // tải các file lên server http://162.55.3.103:5000/upload_ads_report
             for (let i = 0; i < downloadUrls.length; i++) {
               try {
-                const { url, reportName } = downloadUrls[i];
-                // Làm sạch tên báo cáo để dùng làm tên file
-                const safeReportName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                
-                // Kiểm tra xem chrome.downloads API có sẵn không
-                if (chrome.downloads && typeof chrome.downloads.download === 'function') {
-                  // Lấy phần mở rộng của file từ URL
-                  let fileExtension = '.csv'; // Mặc định là .csv
-                  
-                  // Thử lấy phần mở rộng từ URL
-                  try {
-                    const urlPath = new URL(url).pathname;
-                    // Nếu URL chứa phần mở rộng, lấy phần mở rộng đó
-                    if (urlPath.includes('.')) {
-                      const urlExt = urlPath.split('.').pop().toLowerCase();
-                      // Kiểm tra phần mở rộng hợp lệ
-                      if (['csv', 'xlsx', 'xls', 'txt', 'pdf'].includes(urlExt)) {
-                        fileExtension = '.' + urlExt;
-                      }
-                    }
-                  } catch (e) {
-                    console.log("Không thể lấy phần mở rộng từ URL:", e);
+                  const { url, reportName } = downloadUrls[i];
+                  console.log(`Đang xử lý báo cáo: ${reportName} (${url})`);
+          
+                  // 1. Dùng fetch để lấy nội dung file từ Amazon dưới dạng Blob
+                  const fileResponse = await fetch(url);
+                  if (!fileResponse.ok) {
+                      console.error(`Lỗi khi tải file từ Amazon: ${fileResponse.statusText}`);
+                      continue; // Bỏ qua file này và tiếp tục với file tiếp theo
                   }
-                  
-                  // Tạo tên file với đường dẫn thư mục và phần mở rộng đúng
-                  const filename = `reports/${folderName}/${safeReportName}${fileExtension}`;
-                  
-                  // Tạo thư mục nếu chưa tồn tại bằng cách lưu một file nhỏ làm đánh dấu
-                  if (i === 0) {
-                    try {
-                      // Tạo một file .keep để đảm bảo thư mục tồn tại
-                      chrome.downloads.download({
-                        url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
-                        filename: `reports/${folderName}/.keep`,
-                        conflictAction: 'uniquify',
-                        saveAs: false
-                      }, () => {
-                        console.log(`Đã tạo thư mục ${folderName}`);
-                      });
-                    } catch (err) {
-                      console.error("Lỗi khi tạo thư mục:", err);
-                    }
-                  }
-                  
-                  // Sử dụng chrome.downloads.download để tải xuống file
-                  chrome.downloads.download({
-                    url: url,
-                    filename: filename,
-                    conflictAction: 'uniquify',
-                    saveAs: false
-                  }, (downloadId) => {
-                    if (chrome.runtime.lastError) {
-                      console.error("Lỗi tải xuống:", chrome.runtime.lastError);
-                    } else {
-                      successCount++;
-                      console.log(`Đã bắt đầu tải báo cáo ${i+1}/${downloadUrls.length} vào thư mục ${folderName}`);
-                    }
+                  const fileBlob = await fileResponse.blob();
+          
+                  // 2. Chuẩn bị FormData để gửi đi, khớp với yêu cầu của server Python
+                  const formData = new FormData();
+                  // 'reportFile' là key cho file, 'reportName' là tên file sẽ được gửi đi
+                  formData.append('reportFile', fileBlob, reportName);
+                  // 'merchant_id' là key cho mã merchant
+                  formData.append('merchant_id', merchantId);
+          
+                  // 3. Gửi file đến server của bạn
+                  const serverUrl = 'http://162.55.3.103:5000//home/amazon-ads-system/upload_ads_report';
+                  const uploadResponse = await fetch(serverUrl, {
+                      method: 'POST',
+                      body: formData
+                      // Khi dùng FormData, không cần đặt header 'Content-Type', trình duyệt sẽ tự động làm
                   });
-                } else {
-                  // Phương pháp thay thế: Mở URL trong tab mới (phương pháp cũ)
-                  console.log(`Sử dụng phương pháp thay thế để tải báo cáo #${i+1}: ${reportName}`);
-                  const newTab = window.open(url, '_blank');
-                  
-                  // Đóng tab sau khi đã bắt đầu tải xuống
-                  setTimeout(() => {
-                    try {
-                      if (newTab && !newTab.closed) {
-                        newTab.close();
+          
+                  // 4. Xử lý phản hồi từ server
+                  if (uploadResponse.ok) {
+                      const result = await uploadResponse.json();
+                      if (result.status === 'success') {
+                          console.log(`Gửi thành công file ${reportName} lên server.`);
+                          successCount++;
+                      } else {
+                          // Ghi lại lỗi từ server nếu có
+                          console.error(`Server báo lỗi khi xử lý file ${reportName}:`, result.message);
                       }
-                    } catch (e) {
-                      // Bỏ qua lỗi khi đóng tab
-                    }
-                  }, 3000);
-                  
-                  successCount++;
-                }
-                
-                // Đợi một chút giữa các lần tải để tránh quá tải
-                await sleep(1000);
+                  } else {
+                      // Ghi lại lỗi kết nối HTTP
+                      console.error(`Lỗi HTTP khi gửi file ${reportName} lên server: ${uploadResponse.statusText}`);
+                  }
+          
               } catch (error) {
-                console.error(`Lỗi khi tải báo cáo #${i+1}:`, error);
+                  console.error(`Lỗi nghiêm trọng khi xử lý báo cáo #${i + 1} (${downloadUrls[i].reportName}):`, error);
               }
-            }
+              // Đợi một chút giữa các lần gửi để tránh làm quá tải server hoặc mạng
+              await sleep(1000);
+          }
             
             // Thông báo kết quả
-            let data = { 
-              successCount: downloadUrls.length, 
-              reportNames,
-              folderPath: `reports/${folderName}/`
-            };
+            // let data = { 
+            //   successCount: downloadUrls.length, 
+            //   reportNames,
+            //   folderPath: `reports/${folderName}/`
+            // };
+            let data = {
+              successCount: successCount, // successCount bây giờ là số file đã upload thành công
+              reportNames: reportNames,
+          };
             
             // Nếu có báo cáo được tải xuống, hiển thị chi tiết tên các báo cáo
             if (data.reportNames && data.reportNames.length > 0) {
@@ -3618,18 +3698,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (sender.tab && sender.tab.id) {
               sendMessage(sender.tab.id, "downloadAdsReports", {
                 ...data,
-                message: `Đã tải ${downloadUrls.length} báo cáo vào thư mục: ${data.folderPath}`
+                // message: `Đã tải ${downloadUrls.length} báo cáo vào thư mục: ${data.folderPath}`
+                message: `Đã gửi thành công ${successCount} báo cáo lên server.`
               });
             }
             
             // Lưu thông tin về thư mục tải xuống vào storage để có thể sử dụng sau này
-            chrome.storage.local.set({ 
-              lastReportDownload: {
-                date: new Date().toISOString(),
-                folderPath: `reports/${folderName}/`,
-                count: downloadUrls.length
-              }
-            });
+            // chrome.storage.local.set({ 
+            //   lastReportDownload: {
+            //     date: new Date().toISOString(),
+            //     folderPath: `reports/${folderName}/`,
+            //     count: downloadUrls.length
+            //   }
+            // });
+            chrome.storage.local.remove('lastReportDownload');
             try {
               console.log(`[Ads Report] Tác vụ hoàn tất, đang đóng tab báo cáo ID: ${reportTabId}`);
               chrome.tabs.remove(reportTabId);

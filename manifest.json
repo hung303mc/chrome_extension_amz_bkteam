@@ -109,7 +109,8 @@
     "https://advertising.amazon.com/*",
     "https://bkteam.top/dungvuong-admin/*",
     "http://bkteam.top/dungvuong-admin/*",
-    "http://127.0.0.1:8080/*"
+    "http://127.0.0.1:8080/*",
+    "http://162.55.3.103:5000/*" 
   ],
   "web_accessible_resources": [
     {
