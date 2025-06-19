@@ -435,110 +435,60 @@ notifyServiceWorkerActivity();
 
 // Periodic check to ensure service worker is active
 setInterval(notifyServiceWorkerActivity, 60000); 
-// Thêm hàm này vào gần đầu tệp content_script.js
-function waitForElement(selector, maxTime = 15000) {
-   return new Promise((resolve, reject) => {
-       const intervalTime = 500;
-       let timeElapsed = 0;
-       const interval = setInterval(() => {
-           const element = document.querySelector(selector);
-           // Quan trọng: Kiểm tra xem phần tử có thực sự hiển thị không
-           if (element && element.offsetParent !== null) {
-               clearInterval(interval);
-               resolve(element);
-           } else {
-               timeElapsed += intervalTime;
-               if (timeElapsed >= maxTime) {
-                   clearInterval(interval);
-                   reject(new Error(`Không tìm thấy hoặc không hiển thị phần tử: "${selector}"`));
-               }
-           }
-       }, intervalTime);
-   });
-}
-chrome.runtime.onMessage.addListener(async (req, sender, res) => {   
-   // if (req.message === "autoGetAccountHealth") {
-   //    res({ message: "received" });
-   //    console.log("[CS] Đang thực hiện auto get account health...");
+
+chrome.runtime.onMessage.addListener(async (req, sender, res) => {
+   if (req.message === "autoGetAccountHealth") {
+      res({ message: "received" });
+      console.log("[CS] Đang thực hiện auto get account health...");
       
-   //    // Đợi để đảm bảo giao diện đã load
-   //    setTimeout(() => {
-   //      // Kích hoạt tab Account Health
-   //      const accountHealthTabButton = $('button[data-name="account_health"]');
-   //      if (accountHealthTabButton.length > 0) {
-   //        accountHealthTabButton.click();
-   //        console.log("[CS] Kích hoạt tab Account Health");
-   //      } else {
-   //        console.error("[CS] Không tìm thấy tab Account Health button[data-name='account_health']");
-   //        if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health tab.");
-   //        return; 
-   //      }
+      // Đợi để đảm bảo giao diện đã load
+      setTimeout(() => {
+        // Kích hoạt tab Account Health
+        const accountHealthTabButton = $('button[data-name="account_health"]');
+        if (accountHealthTabButton.length > 0) {
+          accountHealthTabButton.click();
+          console.log("[CS] Kích hoạt tab Account Health");
+        } else {
+          console.error("[CS] Không tìm thấy tab Account Health button[data-name='account_health']");
+          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health tab.");
+          return; 
+        }
         
-   //      // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
-   //      setTimeout(() => {
-   //        // Đảm bảo tab content đã hiển thị đúng
-   //        const accountHealthContentDiv = $("#account-health");
-   //        if (accountHealthContentDiv.length > 0) {
-   //          accountHealthContentDiv.css("display", "block");
-   //          console.log("[CS] Đảm bảo nội dung tab Account Health hiển thị.");
-   //        } else {
-   //          console.error("[CS] Không tìm thấy div nội dung Account Health #account_health");
-   //          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health content div.");
-   //          return;
-   //        }
+        // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
+        setTimeout(() => {
+          // Đảm bảo tab content đã hiển thị đúng
+          const accountHealthContentDiv = $("#account_health");
+          if (accountHealthContentDiv.length > 0) {
+            accountHealthContentDiv.css("display", "block");
+            console.log("[CS] Đảm bảo nội dung tab Account Health hiển thị.");
+          } else {
+            console.error("[CS] Không tìm thấy div nội dung Account Health #account_health");
+            if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health content div.");
+            return;
+          }
           
-   //        console.log("[CS] Tìm kiếm nút Get account health...");
-   //        const getAccountHealthButtonElement = document.querySelector('.btn-accounthealth-wrap button'); // Using pure JS selector
+          console.log("[CS] Tìm kiếm nút Get account health...");
+          const getAccountHealthButtonElement = document.querySelector('#account-health'); // Using pure JS selector
           
-   //        if (getAccountHealthButtonElement) {
-   //            console.log("[CS] Nút 'Get account health' (#account-health) tìm thấy. Click bằng dispatchEvent.");
-   //            getAccountHealthButtonElement.dispatchEvent(new MouseEvent('click', {
-   //              bubbles: true,
-   //              cancelable: true,
-   //              view: window
-   //            }));
-   //            if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (auto mode).");
-   //        } else {
-   //          console.error("[CS] Không tìm thấy nút Get account health bằng selector '#account-health'.");
-   //          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find 'Get account health' button.");
-   //        }
+          if (getAccountHealthButtonElement) {
+              console.log("[CS] Nút 'Get account health' (#account-health) tìm thấy. Click bằng dispatchEvent.");
+              getAccountHealthButtonElement.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window
+              }));
+              if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (auto mode).");
+          } else {
+            console.error("[CS] Không tìm thấy nút Get account health bằng selector '#account-health'.");
+            if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find 'Get account health' button.");
+          }
           
-   //      }, 5000); // Tăng thời gian chờ lên 4 giây
-   //    }, 4000); // Tăng thời gian chờ lên 2 giây
+        }, 4000); // Tăng thời gian chờ lên 4 giây
+      }, 2000); // Tăng thời gian chờ lên 2 giây
       
-   //    return true;
-   //  }
-// Thay thế case "autoGetAccountHealth" cũ bằng case này
-if (req.message === "autoGetAccountHealth") {
-   res({ message: "received" });
-   console.log("[CS] Bắt đầu quy trình tự động Get Account Health...");
-
-   (async () => {
-       try {
-           // Bước 1: Chờ và nhấn vào tab "Account Health"
-           const tabButton = await waitForElement('button[data-name="account_health"]');
-           console.log("[CS] Đã tìm thấy tab Account Health. Đang nhấn...");
-           tabButton.click();
-
-           // Bước 2: Chờ và nhấn vào nút "Get account health" bên trong tab đó
-           const actionButton = await waitForElement('.btn-accounthealth-wrap button');
-           console.log("[CS] Đã tìm thấy nút 'Get account health'. Đang nhấn...");
-           actionButton.dispatchEvent(new MouseEvent('click', {
-               bubbles: true,
-               cancelable: true,
-               view: window
-           }));
-
-       } catch (error) {
-           console.error("[CS] Lỗi trong quá trình tự động nhấn nút:", error);
-           if (typeof notifyError === 'function') {
-               notifyError("Lỗi tự động nhấn nút: " + error.message);
-           }
-       }
-   })();
-
-   return true; // Giữ message port mở cho xử lý bất đồng bộ
-}
+      return true;
+    }
+  
     const { message, data } = req || {};
     
     // Xử lý message tự động update tracking

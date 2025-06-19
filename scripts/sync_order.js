@@ -682,7 +682,6 @@ const handleDeleteIgnoreOrderResponse = (data) => {
 // Xử lý tin nhắn getProductImage
 const handleGetProductImage = (data, res) => {
   res({ message: "received" });
-  const { html, url } = data; // Nhận cả html và url
   const doc = new DOMParser().parseFromString(data, "text/html");
   // get mockups
   let image = "";
@@ -693,12 +692,8 @@ const handleGetProductImage = (data, res) => {
     image = image.split("._")[0] + "." + image.split(".").pop();
   }
   chrome.runtime.sendMessage({
-    // message: "getProductImage",
-    message: "productImageResponse",
-    data: {
-      image: image || "",
-      url: url, // Gửi lại URL gốc
-    },
+    message: "getProductImage",
+    data: image ? image : "", 
     domain: window.location.origin,
   });
 };
