@@ -1,3 +1,38 @@
+/**
+ * Gửi một chuỗi log lên server thông qua background script.
+ * Đây là cách thay thế an toàn cho việc override console.log.
+ * @param {...any} args - Các đối số bạn muốn ghi log, tương tự như console.log.
+ */
+function sendToServerLog(...args) {
+   // Chuyển đổi tất cả các đối số thành một chuỗi duy nhất.
+   let logString = '';
+   try {
+       logString = args.map(arg => {
+           if (typeof arg === 'object' && arg !== null) {
+               try {
+                   return JSON.stringify(arg);
+               } catch (e) {
+                   return '[Circular Object]';
+               }
+           }
+           return String(arg);
+       }).join(' ');
+   } catch (e) {
+       logString = 'Error converting log arguments to string.';
+   }
+
+   // Gửi chuỗi log đến background script.
+   try {
+       chrome.runtime.sendMessage({
+           message: "log_to_server", // Giữ nguyên message name này
+           data: logString
+       });
+   } catch (error) {
+       // Nếu có lỗi, chỉ ghi ra console của trình duyệt.
+       console.error('Could not send log to background script:', error);
+   }
+}
+
 var mbApi = "MBApi";
 const addonCollapsible = "AddonCollapsible";
 
@@ -394,47 +429,7 @@ window.addEventListener("message", function (evt = {}) {
  });
 
 // Add user interaction detection to keep service worker alive
-function notifyServiceWorkerActivity() {
-  try {
-    chrome.runtime.sendMessage({ action: "userInteraction" }, (response) => {
-      // Response not required, just keep service worker active
-      if (chrome.runtime.lastError) {
-        console.log("Service worker might be inactive, error:", chrome.runtime.lastError.message);
-        // Only retry if it's not a permanent error like context invalidation
-        if (!chrome.runtime.lastError.message.includes("Extension context invalidated")) {
-          setTimeout(notifyServiceWorkerActivity, 1000);
-        } else {
-          console.log("Extension context invalidated, reloading page to reconnect...");
-          // Reload page to re-establish connection
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-        }
-      }
-    });
-  } catch (error) {
-    console.error("Error in notifyServiceWorkerActivity:", error);
-    // If we hit an exception, the extension is likely in a bad state
-    setTimeout(() => {
-      window.location.reload();
-    }, 3000);
-  }
-}
 
-// Listen for user interactions on the page
-document.addEventListener('click', notifyServiceWorkerActivity);
-document.addEventListener('keydown', notifyServiceWorkerActivity);
-document.addEventListener('scroll', function() {
-  // Debounce scroll events to avoid excessive messages
-  if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
-  this.scrollTimeout = setTimeout(notifyServiceWorkerActivity, 500);
-});
-
-// Initial notification when content script loads
-notifyServiceWorkerActivity();
-
-// Periodic check to ensure service worker is active
-setInterval(notifyServiceWorkerActivity, 60000); 
 
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
    if (req.message === "autoGetAccountHealth") {

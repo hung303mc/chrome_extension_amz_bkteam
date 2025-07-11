@@ -68,19 +68,19 @@ const setupDailyAlarm = () => {
   // Tạo alarm cho sync order
   chrome.alarms.create("dailySyncOrder", {
     delayInMinutes: minutesUntilSync,
-    periodInMinutes: 8 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
   });
 
   // Tạo alarm cho update tracking
   chrome.alarms.create("dailyUpdateTracking", {
     delayInMinutes: minutesUntilUpdateTracking,
-    periodInMinutes: 8 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
   });
 
   // Tạo alarm cho account health
   chrome.alarms.create("dailyAccountHealth", {
     delayInMinutes: minutesUntilAccountHealth,
-    periodInMinutes: 8 * 60 // Lặp lại mỗi 24 giờ
+    periodInMinutes: 12 * 60 // Lặp lại mỗi 24 giờ
   });
 
   // Tạo alarm cho download ads reports
@@ -210,373 +210,153 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         });
     }, 5000); // A 5-second delay to allow the page to load. This can be adjusted if needed.
 }
-  else if (alarm.name === "dailyDownloadAdsReports") {
-    console.log("Đang chạy tự động tải báo cáo quảng cáo theo lịch lúc 9h40 sáng...");
-    //1 kiểm tra isDownloadingAdsReport
-    if (isDownloadingAdsReport) {
-      console.log("Đã có quá trình tải báo cáo quảng cáo đang chạy, bỏ qua.");
+
+else if (alarm.name === "dailyDownloadAdsReports") {
+  console.log("Đang chạy tự động tải và tải lên báo cáo quảng cáo theo lịch...");
+  // 1. Kiểm tra khóa
+  if (isDownloadingAdsReport) {
+      console.log("Đã có quá trình tải báo cáo đang chạy, bỏ qua.");
       return;
-    }
-    // 2 đặt khóa và bắt đầu
-    isDownloadingAdsReport = true;
-    console.log("Đã khóa isDownloadingAdsReport.");
-    try {
-        console.log("Bắt đầu quá trình tải báo cáo quảng cáo...");
-        
-        try {
-            if (extendedLogSystem) {
-                extendedLogSystem.info('AdsReports', 'Bắt đầu quá trình tải báo cáo quảng cáo theo lịch tự động');
-            }
-        } catch (logError) {
-            console.error("Logging error:", logError);
-        }
-        
-        // Gửi thông báo đang tải đến tab hiện tại (nếu có)
-        chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-          if (tabs && tabs.length > 0) {
-            sendMessage(tabs[0].id, "downloadingAdsReports", {
-              label: `Đang tải báo cáo quảng cáo...`,
-            });
-          }
-        });
-        
-        // Lấy API key để dùng trong URL
-        const merchantId = await getMBApiKey();
-        console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
-        
-        try {
-            if (extendedLogSystem) {
-                extendedLogSystem.info('AdsReports', 'Sử dụng merchantId cho URL báo cáo', { merchantId });
-            }
-        } catch (logError) {
-            console.error("Logging error:", logError);
-        }
-        
-        // URL đến trang báo cáo quảng cáo
-        const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
-        
-        // Tạo tab mới thay vì cập nhật tab hiện tại
-        chrome.tabs.create({ url: reportsUrl, active: true }, async (newTab) => {
-            if (!newTab || !newTab.id) {
-                const errorMsg = "Không thể tạo tab mới cho báo cáo quảng cáo";
-                console.error(errorMsg);
-                
-                try {
-                    if (extendedLogSystem) {
-                        extendedLogSystem.error('AdsReports', errorMsg);
-                    }
-                } catch (logError) {
-                    console.error("Logging error:", logError);
-                }
-                
-                // Thông báo lỗi trên tab hiện tại
-                chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                  if (tabs && tabs.length > 0) {
-                    sendMessage(tabs[0].id, "downloadAdsReports", { 
-                      error: errorMsg
-                    });
-                  }
-                });
-                return;
-            }
-            
-            // Lưu ID của tab báo cáo
-            const reportTabId = newTab.id;
-            
-            // Đợi trang báo cáo tải hoàn tất
-            await new Promise(resolve => {
-                let listener = function(tabId, changeInfo) {
-                    if (tabId === reportTabId && changeInfo.status === 'complete') {
-                        chrome.tabs.onUpdated.removeListener(listener);
-                        resolve();
-                    }
-                };
-                chrome.tabs.onUpdated.addListener(listener);
-                
-                // Thêm timeout phòng trường hợp tab không tải hoàn tất
-                setTimeout(() => {
-                    chrome.tabs.onUpdated.removeListener(listener);
-                    resolve();
-                }, 30000); // 30 giây timeout
-            });
-            
-            // Thêm độ trễ ngắn để đảm bảo nội dung đã tải
-            await sleep(3000);
-            
-            // Kiểm tra xem tab còn tồn tại không
-            let tabExists = true;
-            try {
-                await chrome.tabs.get(reportTabId);
-            } catch (err) {
-                console.error("Tab báo cáo không còn tồn tại");
-                tabExists = false;
-                
-                // Thông báo lỗi
-                sendMessage(sender.tab.id, "downloadAdsReports", { 
-                  error: "Tab báo cáo đã bị đóng" 
-                });
-                return;
-            }
-            
-            if (!tabExists) return;
-            
-            // Thực hiện script để tìm và tải xuống báo cáo
-            chrome.scripting.executeScript({
-                target: { tabId: reportTabId },
-                function: async () => {
-                    // Hàm đợi ngắn hơn
-                    const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-                    
-                    // Tạo tên thư mục dựa trên ngày hiện tại (DD-MM-YYYY)
-                    const today = new Date();
-                    const day = String(today.getDate()).padStart(2, '0');
-                    const month = String(today.getMonth() + 1).padStart(2, '0');
-                    const year = today.getFullYear();
-                    const folderName = `${day}-${month}-${year}`;
-                    
-                    // Phương pháp tìm nút tải xuống hiệu quả hơn
-                    const findDownloadButtons = () => {
-                        // Trực tiếp tìm các liên kết tải xuống dựa trên URL
-                        const buttons = Array.from(document.querySelectorAll('a[href*="/download-report/"]'));
-                        console.log(`Tìm thấy ${buttons.length} nút tải xuống`);
-                        return buttons;
-                    };
-                    
-                    // Tìm tất cả các nút tải xuống
-                    let downloadButtons = findDownloadButtons();
-                    
-                    // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thời gian ngắn
-                    if (downloadButtons.length === 0) {
-                        await wait(2000);
-                        downloadButtons = findDownloadButtons();
-                    }
-                    
-                    console.log(`Tìm thấy ${downloadButtons.length} nút tải xuống để xử lý`);
-                    
-                    let successCount = 0;
-                    const reportNames = [];
-                    const downloadUrls = [];
-                    
-                    // Thu thập URL tải xuống và tên báo cáo
-                    downloadButtons.forEach((button, index) => {
-                        try {
-                            // Tìm tên báo cáo từ cùng hàng
-                            let reportName = "Báo cáo " + (index + 1);
-                            try {
-                                // Tìm kiếm theo nhiều selector để tăng khả năng tìm thấy tên báo cáo
-                                const parentRow = button.closest('.ag-row, tr, [role="row"]');
-                                if (parentRow) {
-                                    const reportLink = parentRow.querySelector('a.sc-fqkvVR, a, .cell-value, td');
-                                    if (reportLink) {
-                                        reportName = reportLink.textContent.trim();
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("Lỗi lấy tên báo cáo:", e);
-                            }
-                            
-                            reportNames.push(reportName);
-                            // Lưu URL tải xuống để gửi về background script xử lý
-                            downloadUrls.push({
-                                url: button.href,
-                                reportName: reportName
-                            });
-                        } catch (error) {
-                            console.error(`Lỗi xử lý nút ${index + 1}:`, error);
-                        }
-                    });
-                    
-                    // Trả về dữ liệu URL và tên báo cáo để background script xử lý
-                    return { 
-                        downloadUrls,
-                        reportNames,
-                        folderName
-                    };
-                }
-            }, async (results) => {
-                if (!results || results.length === 0 || !results[0].result) {
-                    // Thông báo lỗi nếu không tìm thấy kết quả
-                    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                        if (tabs && tabs.length > 0) {
-                            sendMessage(tabs[0].id, "downloadAdsReports", { 
-                                error: "Không thể tìm thấy báo cáo để tải xuống" 
-                            });
-                        }
-                    });
-                    
-                    // Đóng tab báo cáo
-                    try {
-                        chrome.tabs.remove(reportTabId);
-                    } catch (err) {
-                        console.error("Lỗi khi đóng tab báo cáo:", err);
-                    }
-                    return;
-                }
-                
-                const { downloadUrls, reportNames, folderName } = results[0].result;
-                let successCount = 0;
-                
-                // Tải xuống từng báo cáo sử dụng chrome.downloads.download API
-                for (let i = 0; i < downloadUrls.length; i++) {
-                    try {
-                        const { url, reportName } = downloadUrls[i];
-                        // Làm sạch tên báo cáo để dùng làm tên file
-                        const safeReportName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                        
-                        // Kiểm tra xem chrome.downloads API có sẵn không
-                        if (chrome.downloads && typeof chrome.downloads.download === 'function') {
-                            // Lấy phần mở rộng của file từ URL
-                            let fileExtension = '.csv'; // Mặc định là .csv
-                            
-                            // Thử lấy phần mở rộng từ URL
-                            try {
-                                const urlPath = new URL(url).pathname;
-                                // Nếu URL chứa phần mở rộng, lấy phần mở rộng đó
-                                if (urlPath.includes('.')) {
-                                    const urlExt = urlPath.split('.').pop().toLowerCase();
-                                    // Kiểm tra phần mở rộng hợp lệ
-                                    if (['csv', 'xlsx', 'xls', 'txt', 'pdf'].includes(urlExt)) {
-                                        fileExtension = '.' + urlExt;
-                                    }
-                                }
-                            } catch (e) {
-                                console.log("Không thể lấy phần mở rộng từ URL:", e);
-                            }
-                            
-                            // Tạo tên file với đường dẫn thư mục và phần mở rộng đúng
-                            const filename = `reports/${folderName}/${safeReportName}${fileExtension}`;
-                            
-                            // Tạo thư mục nếu chưa tồn tại bằng cách lưu một file nhỏ làm đánh dấu
-                            if (i === 0) {
-                                try {
-                                    // Tạo một file .keep để đảm bảo thư mục tồn tại
-                                    chrome.downloads.download({
-                                        url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
-                                        filename: `reports/${folderName}/.keep`,
-                                        conflictAction: 'uniquify',
-                                        saveAs: false
-                                    }, () => {
-                                        console.log(`Đã tạo thư mục ${folderName}`);
-                                    });
-                                } catch (err) {
-                                    console.error("Lỗi khi tạo thư mục:", err);
-                                }
-                            }
-                            
-                            // Sử dụng chrome.downloads.download để tải xuống file
-                            chrome.downloads.download({
-                                url: url,
-                                filename: filename,
-                                conflictAction: 'uniquify',
-                                saveAs: false
-                            }, (downloadId) => {
-                                if (chrome.runtime.lastError) {
-                                    console.error("Lỗi tải xuống:", chrome.runtime.lastError);
-                                } else {
-                                    successCount++;
-                                    console.log(`Đã bắt đầu tải báo cáo ${i+1}/${downloadUrls.length} vào thư mục ${folderName}`);
-                                }
-                            });
-                        } else {
-                            // Phương pháp thay thế: Mở URL trong tab mới (phương pháp cũ)
-                            console.log(`Sử dụng phương pháp thay thế để tải báo cáo #${i+1}: ${reportName}`);
-                            const newTab = window.open(url, '_blank');
-                            
-                            // Đóng tab sau khi đã bắt đầu tải xuống
-                            setTimeout(() => {
-                                try {
-                                    if (newTab && !newTab.closed) {
-                                        newTab.close();
-                                    }
-                                } catch (e) {
-                                    // Bỏ qua lỗi khi đóng tab
-                                }
-                            }, 3000);
-                            
-                            successCount++;
-                        }
-                        
-                        // Đợi một chút giữa các lần tải để tránh quá tải
-                        await sleep(1000);
-                    } catch (error) {
-                        console.error(`Lỗi khi tải báo cáo #${i+1}:`, error);
-                    }
-                }
-                
-                // Thông báo kết quả
-                let data = { 
-                    successCount: downloadUrls.length, 
-                    reportNames,
-                    folderPath: `reports/${folderName}/`
-                };
-                
-                // Nếu có báo cáo được tải xuống, hiển thị chi tiết tên các báo cáo
-                if (data.reportNames && data.reportNames.length > 0) {
-                    // Chỉ hiển thị 3 báo cáo đầu tiên và số lượng còn lại
-                    if (data.reportNames.length > 3) {
-                        const firstThree = data.reportNames.slice(0, 3).join(", ");
-                        data.reportDetails = `${firstThree} và ${data.reportNames.length - 3} báo cáo khác`;
-                    } else {
-                        data.reportDetails = data.reportNames.join(", ");
-                    }
-                }
-                
-                // Thông báo kết quả cho người dùng
-                chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                    if (tabs && tabs.length > 0) {
-                        sendMessage(tabs[0].id, "downloadAdsReports", {
-                            ...data,
-                            message: `Đã tải ${downloadUrls.length} báo cáo vào thư mục: ${data.folderPath}`
-                        });
-                    }
-                });
-                
-                // Lưu thông tin về thư mục tải xuống vào storage để có thể sử dụng sau này
-                chrome.storage.local.set({ 
-                    lastReportDownload: {
-                        date: new Date().toISOString(),
-                        folderPath: `reports/${folderName}/`,
-                        count: downloadUrls.length
-                    }
-                });
-                
-                // Đóng tab báo cáo và quay lại trang orders
-                try {
-                    chrome.tabs.remove(reportTabId, () => {
-                        // Quay lại trang orders sau khi hoàn tất
-                        setTimeout(() => {
-                            chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-                        }, 1000);
-                    });
-                } catch (err) {
-                    console.error("Lỗi khi đóng tab báo cáo:", err);
-                    // Tạo tab trang orders mới nếu không thể đóng tab báo cáo
-                    chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-                }
-            });
-        });
-        
-        // Lưu log hoạt động
-        saveLog("adsReportsLog", { 
-            type: "Auto Ads Reports Download", 
-            date: new Date().toISOString(),
-            folderPath: `reports/${new Date().getDate()}-${new Date().getMonth()+1}-${new Date().getFullYear()}/`
-        });
-    } catch (error) {
-        console.error("Lỗi trong quá trình tải báo cáo quảng cáo:", error);
-        chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-          if (tabs && tabs.length > 0) {
-            sendMessage(tabs[0].id, "downloadAdsReports", { 
-              error: `Lỗi khi tải báo cáo quảng cáo: ${error.message || "Lỗi không xác định"}` 
-            });
-          }
-        });
-    }finally {
-      // // 3. Mở khóa sau khi hoàn tất
-      isDownloadingAdsReport = false;
-      console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
-    }
   }
+  // 2. Đặt khóa và bắt đầu
+  isDownloadingAdsReport = true;
+  console.log("Đã khóa isDownloadingAdsReport.");
+
+  (async () => {
+      try {
+          console.log("Bắt đầu quá trình tải và tải lên báo cáo quảng cáo tự động...");
+
+          // Lấy API key (merchantId) và URL của máy chủ
+          const merchantId = await getMBApiKey();
+          if (!merchantId) {
+              throw new Error("Không thể lấy được merchantId để chạy tác vụ tự động.");
+          }
+          const UPLOAD_HANDLER_URL = "https://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
+          console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
+
+          const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
+
+          // Tạo tab mới (không active) để xử lý trong nền
+          chrome.tabs.create({ url: reportsUrl, active: false }, async (newTab) => {
+              if (!newTab || !newTab.id) {
+                  throw new Error("Không thể tạo tab mới cho báo cáo quảng cáo.");
+              }
+
+              const reportTabId = newTab.id;
+
+              await new Promise(resolve => {
+                  let listener = (tabId, changeInfo) => {
+                      if (tabId === reportTabId && changeInfo.status === 'complete') {
+                          chrome.tabs.onUpdated.removeListener(listener);
+                          resolve();
+                      }
+                  };
+                  chrome.tabs.onUpdated.addListener(listener);
+                  setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 30000);
+              });
+
+              await sleep(5000); // Đợi trang render
+
+              // Lấy thông tin URL và tên báo cáo
+              chrome.scripting.executeScript({
+                  target: { tabId: reportTabId },
+                  function: () => {
+                      return Array.from(document.querySelectorAll('a[href*="/download-report/"]')).map(a => {
+                          const row = a.closest('tr') || a.closest('.ag-row');
+                          // Trích xuất tên báo cáo từ thẻ a trong cùng một hàng, đây là cách đáng tin cậy nhất
+                          const reportNameElement = row ? row.querySelector('a.sc-fqkvVR, a.sc-jdAMXn') : null;
+                          const reportName = reportNameElement ? reportNameElement.textContent.trim() : 'sponsored-products-report.csv';
+                          return { url: a.href, reportName: reportName };
+                      });
+                  }
+              }, async (injectionResults) => {
+                  // Đóng tab ngay sau khi có dữ liệu
+                  try { await chrome.tabs.remove(reportTabId); } catch (e) { console.error("Lỗi khi đóng tab báo cáo:", e); }
+
+                  if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
+                      console.error("Tự động: Không thể tìm thấy báo cáo để tải lên.");
+                      return;
+                  }
+
+                  const reportsToUpload = injectionResults[0].result;
+                  if (reportsToUpload.length === 0) {
+                      console.log("Tự động: Không có báo cáo mới nào để tải lên.");
+                      return;
+                  }
+
+                  console.log(`Tự động: Tìm thấy ${reportsToUpload.length} báo cáo để xử lý.`);
+                  let successCount = 0;
+
+                  // Tải lên từng báo cáo
+                  for (const { url, reportName } of reportsToUpload) {
+                      try {
+                          const response = await fetch(url);
+                          if (!response.ok) throw new Error(`Lỗi tải báo cáo ${reportName}: ${response.statusText}`);
+                          console.log("Content-Type:", response.headers.get('Content-Type'));
+                          console.log("Content-Disposition:", response.headers.get('Content-Disposition'));
+                          let finalFilename = reportName; // Tên dự phòng
+                          const disposition = response.headers.get('Content-Disposition');
+                          if (disposition && disposition.includes('attachment')) {
+                              const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                              const matches = filenameRegex.exec(disposition);
+                              let finalFilename = '';
+                              if (matches != null && matches[1]) {
+                                  // Lấy tên tệp và loại bỏ dấu ngoặc kép
+                                  let filenameFromHeader = matches[1].replace(/['"]/g, '');
+                                  // Get the Content-Type from the response headers
+                                  const contentType = response.headers.get('Content-Type'); 
+                                  // Đảm bảo tên tệp có đuôi hợp lệ
+                                  if (contentType.includes('text/csv')) {
+                                    // It's a CSV file, so we ensure it ends with .csv
+                                    finalFilename = filenameFromHeader.endsWith('.csv') ? filenameFromHeader : filenameFromHeader + '.csv';
+                                } else if (contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+                                    // It's an XLSX file, so we ensure it ends with .xlsx
+                                    finalFilename = filenameFromHeader.endsWith('.xlsx') ? filenameFromHeader : filenameFromHeader + '.xlsx';
+                                } else {
+                                    // Default behavior if Content-Type is unknown
+                                    finalFilename = filenameFromHeader.endsWith('.csv') ? filenameFromHeader : filenameFromHeader + '.csv';
+                                }
+                              }
+                          }
+                          
+                          // Nếu tên tệp vẫn không có đuôi, thêm đuôi mặc định là .csv
+                          console.log("Kiểm tra cả CSV và XLSX");
+                          if (!finalFilename.toLowerCase().endsWith('.csv') && !finalFilename.toLowerCase().endsWith('.xlsx')) {
+                              finalFilename += '.csv'; 
+                          }
+                          const fileBlob = await response.blob();
+                          
+                          const formData = new FormData();
+                          // **QUAN TRỌNG: Sử dụng `reportName` để giữ tên tệp gốc**
+                          formData.append('report_file', fileBlob, finalFilename);
+                          formData.append('merchant_id', merchantId);
+
+                          const uploadResponse = await fetch(UPLOAD_HANDLER_URL, { method: 'POST', body: formData });
+                          const uploadResult = await uploadResponse.json();
+
+                          if (uploadResult.status !== 'success') throw new Error(`Lỗi từ máy chủ cho tệp ${reportName}: ${uploadResult.message}`);
+                          
+                          successCount++;
+                          console.log(`Tự động: Tải lên thành công: ${reportName}`);
+                      } catch (error) {
+                          console.error(`Tự động: Lỗi xử lý báo cáo ${reportName}:`, error);
+                      }
+                      await sleep(1000); // Tránh request dồn dập
+                  }
+                  
+                  console.log(`Tự động: Hoàn tất. Đã tải lên thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
+                  saveLog("adsReportsLog", { type: "Auto Ads Reports Upload", date: new Date().toISOString(), successCount: successCount, totalFound: reportsToUpload.length });
+              });
+          });
+      } catch (error) {
+          console.error("Lỗi nghiêm trọng trong quá trình tự động tải báo cáo:", error);
+      } finally {
+          // 3. Mở khóa
+          isDownloadingAdsReport = false;
+          console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
+      }
+  })();
+}
   else if (alarm.name === "testSyncOrder") {
     console.log("Đang chạy test alarm...");
     // Test thông báo
@@ -591,6 +371,61 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
+/**
+ * Lấy hoặc tạo một ID duy nhất cho mỗi máy/lần cài đặt extension.
+ * ID này được lưu trữ trong `chrome.storage.local` để tồn tại lâu dài.
+ * @returns {Promise<string>} - The unique machine ID.
+ */
+const getMachineId = async () => {
+  let result = await chrome.storage.local.get('machineId');
+  if (result.machineId) {
+      return result.machineId;
+  } else {
+      // Tạo một ID ngẫu nhiên và lưu lại
+      const newMachineId = 'machine_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      await chrome.storage.local.set({ machineId: newMachineId });
+      return newMachineId;
+  }
+};
+
+/**
+* Gửi log lên server PHP chuyên dụng.
+* @param {string} logMessage - Nội dung cần ghi log.
+*/
+const sendLogToServer = async (logMessage) => {
+  if (!logMessage) return;
+
+  // Lấy merchantId và machineId
+  const merchantId = await getMBApiKey(); // Sử dụng hàm getMBApiKey bạn đã có
+  const machineId = await getMachineId();
+
+  // Nếu không có merchantId (ví dụ: chưa đăng nhập), ghi là "UNKNOWN"
+  const finalMerchantId = merchantId || 'UNKNOWN_MERCHANT';
+  // Endpoint của file PHP mới
+  const logEndpoint = "http://bkteam.top/dungvuong-admin/api/log_receiver.php";
+
+  try {
+      await fetch(logEndpoint, {
+          method: "POST",
+          headers: {
+              "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+              log: logMessage,
+              merchantId: finalMerchantId,
+              machineId: machineId
+          }),
+      });
+  } catch (error) {
+      // Ghi lỗi ra console của background script nếu gửi log thất bại
+      // Dùng console.error gốc để tránh tạo vòng lặp vô hạn
+      if (originalConsoleError) {
+           originalConsoleError("Failed to send log to server:", error);
+      } else {
+           console.error("Failed to send log to server:", error);
+      }
+  }
+};
 // Helper function to send message after tab loads
 function sendMessageToTabWhenLoaded(tabId, messagePayload) {
     chrome.tabs.onUpdated.addListener(function listener(updatedTabId, changeInfo, tab) {
@@ -946,36 +781,16 @@ const downloadFiles = async (fieldValues, apiKey) => {
   return [];
 };
 
-
-
 let stopProcess = false;
-
-// Tạo một interval để giữ service worker luôn hoạt động
-let keepAliveInterval = null;
-
-// Hàm để giữ service worker không bị Chrome tắt
-function keepServiceWorkerAlive() {
-  if (keepAliveInterval) {
-    clearInterval(keepAliveInterval);
-  }
-  
-  console.log("[BG] Setting up keep-alive mechanism for service worker");
-  
-  // Ping định kỳ mỗi 20 giây để giữ service worker hoạt động
-  keepAliveInterval = setInterval(() => {
-    console.log("[BG] Service worker keep-alive ping");
-    // Tạo một hoạt động nhỏ để service worker không bị tắt
-    chrome.storage.local.get(["lastActivityTime"], (result) => {
-      chrome.storage.local.set({ "lastActivityTime": Date.now() });
-    });
-  }, 20000);
-}
-
-// Bắt đầu giữ service worker hoạt động ngay khi script được tải
-keepServiceWorkerAlive();
 
 // capture event from content script
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
+      // Luôn xử lý log trước tiên
+  if (req.message === "log_to_server") {
+    await sendLogToServer(req.data);
+    res({ status: "log_received" }); // Phản hồi để đóng message port
+    return true; // Báo hiệu sẽ phản hồi bất đồng bộ
+  }
   const { message, data, domain: oldDomain, action } = req || {};
   
   // Xử lý thông báo khi quá trình tự động update tracking hoàn tất
@@ -1373,740 +1188,8 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     res({ message: "received and tab closed" });
     return true;
   }
-//   if (message === "runDownloadAdsReports") {
-//     //1. kiểm tra khóa 
-//     if (isDownloadingAdsReport){
-//       console.warn("[Ads Report] Tiến trình đang chạy. Yêu cầu mới bị từ chối.");
-//         sendMessage(sender.tab.id, "downloadAdsReports", { 
-//             error: "A download process is already running. Please wait." 
-//         });
-//         return true;
-//     }
-//      // 2. Đặt khóa và bắt đầu
-//     isDownloadingAdsReport = true;
-//     console.log("[Ads Report] Đặt khóa isDownloadingAdsReport = true.");
-//     (async () => {
-//     try {
-//         console.log("Bắt đầu quá trình tải báo cáo quảng cáo...");
-        
-//         try {
-//             if (extendedLogSystem) {
-//                 extendedLogSystem.info('AdsReports', 'Bắt đầu quá trình tải báo cáo quảng cáo theo lịch tự động');
-//             }
-//         } catch (logError) {
-//             console.error("Logging error:", logError);
-//         }
-        
-//         sendMessage(sender.tab.id, "downloadingAdsReports", {
-//             label: `Đang tải báo cáo quảng cáo...`,
-//         });
-        
-//         // Lấy API key để dùng trong URL
-//         const merchantId = await getMBApiKey();
-//         console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
-        
-//         try {
-//             if (extendedLogSystem) {
-//                 extendedLogSystem.info('AdsReports', 'Sử dụng merchantId cho URL báo cáo', { merchantId });
-//             }
-//         } catch (logError) {
-//             console.error("Logging error:", logError);
-//         }
-        
-//         // URL đến trang báo cáo quảng cáo
-//         const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
-        
-//         // Tạo tab mới thay vì cập nhật tab hiện tại
-//         chrome.tabs.create({ url: reportsUrl, active: true }, async (newTab) => {
-//             if (!newTab || !newTab.id) {
-//                 const errorMsg = "Không thể tạo tab mới cho báo cáo quảng cáo";
-//                 console.error(errorMsg);
-                
-//                 try {
-//                     if (extendedLogSystem) {
-//                         extendedLogSystem.error('AdsReports', errorMsg);
-//                     }
-//                 } catch (logError) {
-//                     console.error("Logging error:", logError);
-//                 }
-                
-//                 // Thông báo lỗi trên tab hiện tại
-//                 chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-//                   if (tabs && tabs.length > 0) {
-//                     sendMessage(tabs[0].id, "downloadAdsReports", { 
-//                       error: "Không thể tạo tab mới cho báo cáo quảng cáo" 
-//                     });
-//                   }
-//                 });
-//                 return;
-//             }
-            
-//             // Lưu ID của tab báo cáo
-//             const reportTabId = newTab.id;
-            
-//             // Đợi trang báo cáo tải hoàn tất
-//             await new Promise(resolve => {
-//                 let listener = function(tabId, changeInfo) {
-//                     if (tabId === reportTabId && changeInfo.status === 'complete') {
-//                         chrome.tabs.onUpdated.removeListener(listener);
-//                         resolve();
-//                     }
-//                 };
-//                 chrome.tabs.onUpdated.addListener(listener);
-                
-//                 // Thêm timeout phòng trường hợp tab không tải hoàn tất
-//                 setTimeout(() => {
-//                     chrome.tabs.onUpdated.removeListener(listener);
-//                     resolve();
-//                 }, 30000); // 30 giây timeout
-//             });
-            
-//             // Thêm độ trễ ngắn để đảm bảo nội dung đã tải
-//             await sleep(3000);
-            
-//             // Kiểm tra xem tab còn tồn tại không
-//             let tabExists = true;
-//             try {
-//                 await chrome.tabs.get(reportTabId);
-//             } catch (err) {
-//                 console.error("Tab báo cáo không còn tồn tại");
-//                 tabExists = false;
-                
-//                 // Thông báo lỗi
-//                 sendMessage(sender.tab.id, "downloadAdsReports", { 
-//                   error: "Tab báo cáo đã bị đóng" 
-//                 });
-//                 return;
-//             }
-            
-//             if (!tabExists) return;
-            
-//             // Thực hiện script để tìm và tải xuống báo cáo
-//             chrome.scripting.executeScript({
-//                 target: { tabId: reportTabId },
-//                 function: async () => {
-//                     // Hàm đợi ngắn hơn
-//                     const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-                    
-//                     // Tạo tên thư mục dựa trên ngày hiện tại (DD-MM-YYYY)
-//                     const today = new Date();
-//                     const day = String(today.getDate()).padStart(2, '0');
-//                     const month = String(today.getMonth() + 1).padStart(2, '0');
-//                     const year = today.getFullYear();
-//                     const folderName = `${day}-${month}-${year}`;
-                    
-//                     // Phương pháp tìm nút tải xuống hiệu quả hơn
-//                     const findDownloadButtons = () => {
-//                         // Trực tiếp tìm các liên kết tải xuống dựa trên URL
-//                         const buttons = Array.from(document.querySelectorAll('a[href*="/download-report/"]'));
-//                         console.log(`Tìm thấy ${buttons.length} nút tải xuống`);
-//                         return buttons;
-//                     };
-                    
-//                     // Tìm tất cả các nút tải xuống
-//                     let downloadButtons = findDownloadButtons();
-                    
-//                     // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thởi gian ngắn
-//                     if (downloadButtons.length === 0) {
-//                         await wait(2000);
-//                         downloadButtons = findDownloadButtons();
-//                     }
-                    
-//                     console.log(`Tìm thấy ${downloadButtons.length} nút tải xuống để xử lý`);
-                    
-//                     let successCount = 0;
-//                     const reportNames = [];
-//                     const downloadUrls = [];
-                    
-//                     // Thu thập URL tải xuống và tên báo cáo
-//                     downloadButtons.forEach((button, index) => {
-//                         try {
-//                             // Tìm tên báo cáo từ cùng hàng
-//                             let reportName = "Báo cáo " + (index + 1);
-//                             try {
-//                                 // Tìm kiếm theo nhiều selector để tăng khả năng tìm thấy tên báo cáo
-//                                 const parentRow = button.closest('.ag-row, tr, [role="row"]');
-//                                 if (parentRow) {
-//                                     const reportLink = parentRow.querySelector('a.sc-fqkvVR, a, .cell-value, td');
-//                                     if (reportLink) {
-//                                         reportName = reportLink.textContent.trim();
-//                                     }
-//                                 }
-//                             } catch (e) {
-//                                 console.error("Lỗi lấy tên báo cáo:", e);
-//                             }
-                            
-//                             reportNames.push(reportName);
-//                             // Lưu URL tải xuống để gửi về background script xử lý
-//                             downloadUrls.push({
-//                                 url: button.href,
-//                                 reportName: reportName
-//                             });
-//                         } catch (error) {
-//                             console.error(`Lỗi xử lý nút ${index + 1}:`, error);
-//                         }
-//                     });
-                    
-//                     // Trả về dữ liệu URL và tên báo cáo để background script xử lý
-//                     return { 
-//                         downloadUrls,
-//                         reportNames,
-//                         folderName
-//                     };
-//                 }
-//             }, async (results) => {
-//                 if (!results || results.length === 0 || !results[0].result) {
-//                     // Thông báo lỗi nếu không tìm thấy kết quả
-//                     chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-//                         if (tabs && tabs.length > 0) {
-//                             sendMessage(tabs[0].id, "downloadAdsReports", { 
-//                                 error: "Không thể tìm thấy báo cáo để tải xuống" 
-//                             });
-//                         }
-//                     });
-                    
-//                     // Đóng tab báo cáo
-//                     try {
-//                         chrome.tabs.remove(reportTabId);
-//                     } catch (err) {
-//                         console.error("Lỗi khi đóng tab báo cáo:", err);
-//                     }
-//                     return;
-//                 }
-                
-//                 const { downloadUrls, reportNames, folderName } = results[0].result;
-//                 let successCount = 0;
-                
-//                 // Tải xuống từng báo cáo sử dụng chrome.downloads.download API
-//                 for (let i = 0; i < downloadUrls.length; i++) {
-//                     try {
-//                         const { url, reportName } = downloadUrls[i];
-//                         // Làm sạch tên báo cáo để dùng làm tên file
-//                         const safeReportName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                        
-//                         // Kiểm tra xem chrome.downloads API có sẵn không
-//                         if (chrome.downloads && typeof chrome.downloads.download === 'function') {
-//                             // Lấy phần mở rộng của file từ URL
-//                             let fileExtension = '.csv'; // Mặc định là .csv
-                            
-//                             // Thử lấy phần mở rộng từ URL
-//                             try {
-//                                 const urlPath = new URL(url).pathname;
-//                                 // Nếu URL chứa phần mở rộng, lấy phần mở rộng đó
-//                                 if (urlPath.includes('.')) {
-//                                     const urlExt = urlPath.split('.').pop().toLowerCase();
-//                                     // Kiểm tra phần mở rộng hợp lệ
-//                                     if (['csv', 'xlsx', 'xls', 'txt', 'pdf'].includes(urlExt)) {
-//                                         fileExtension = '.' + urlExt;
-//                                     }
-//                                 }
-//                             } catch (e) {
-//                                 console.log("Không thể lấy phần mở rộng từ URL:", e);
-//                             }
-                            
-//                             // Tạo tên file với đường dẫn thư mục và phần mở rộng đúng
-//                             const filename = `reports/${folderName}/${safeReportName}${fileExtension}`;
-                            
-//                             // Tạo thư mục nếu chưa tồn tại bằng cách lưu một file nhỏ làm đánh dấu
-//                             if (i === 0) {
-//                                 try {
-//                                     // Tạo một file .keep để đảm bảo thư mục tồn tại
-//                                     chrome.downloads.download({
-//                                         url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
-//                                         filename: `reports/${folderName}/.keep`,
-//                                         conflictAction: 'uniquify',
-//                                         saveAs: false
-//                                     }, () => {
-//                                         console.log(`Đã tạo thư mục ${folderName}`);
-//                                     });
-//                                 } catch (err) {
-//                                     console.error("Lỗi khi tạo thư mục:", err);
-//                                 }
-//                             }
-                            
-//                             // Sử dụng chrome.downloads.download để tải xuống file
-//                             chrome.downloads.download({
-//                                 url: url,
-//                                 filename: filename,
-//                                 conflictAction: 'uniquify',
-//                                 saveAs: false
-//                             }, (downloadId) => {
-//                                 if (chrome.runtime.lastError) {
-//                                     console.error("Lỗi tải xuống:", chrome.runtime.lastError);
-//                                 } else {
-//                                     successCount++;
-//                                     console.log(`Đã bắt đầu tải báo cáo ${i+1}/${downloadUrls.length} vào thư mục ${folderName}`);
-//                                 }
-//                             });
-//                         } else {
-//                             // Phương pháp thay thế: Mở URL trong tab mới (phương pháp cũ)
-//                             console.log(`Sử dụng phương pháp thay thế để tải báo cáo #${i+1}: ${reportName}`);
-//                             const newTab = window.open(url, '_blank');
-                            
-//                             // Đóng tab sau khi đã bắt đầu tải xuống
-//                             setTimeout(() => {
-//                                 try {
-//                                     if (newTab && !newTab.closed) {
-//                                         newTab.close();
-//                                     }
-//                                 } catch (e) {
-//                                     // Bỏ qua lỗi khi đóng tab
-//                                 }
-//                             }, 3000);
-                            
-//                             successCount++;
-//                         }
-                        
-//                         // Đợi một chút giữa các lần tải để tránh quá tải
-//                         await sleep(1000);
-//                     } catch (error) {
-//                         console.error(`Lỗi khi tải báo cáo #${i+1}:`, error);
-//                     }
-//                 }
-                
-//                 // Thông báo kết quả
-//                 let data = { 
-//                     successCount: downloadUrls.length, 
-//                     reportNames,
-//                     folderPath: `reports/${folderName}/`
-//                 };
-                
-//                 // Nếu có báo cáo được tải xuống, hiển thị chi tiết tên các báo cáo
-//                 if (data.reportNames && data.reportNames.length > 0) {
-//                     // Chỉ hiển thị 3 báo cáo đầu tiên và số lượng còn lại
-//                     if (data.reportNames.length > 3) {
-//                         const firstThree = data.reportNames.slice(0, 3).join(", ");
-//                         data.reportDetails = `${firstThree} và ${data.reportNames.length - 3} báo cáo khác`;
-//                     } else {
-//                         data.reportDetails = data.reportNames.join(", ");
-//                     }
-//                 }
-                
-//                 // Thông báo kết quả cho người dùng
-//                 chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-//                     if (tabs && tabs.length > 0) {
-//                         sendMessage(tabs[0].id, "downloadAdsReports", {
-//                             ...data,
-//                             message: `Đã tải ${downloadUrls.length} báo cáo vào thư mục: ${data.folderPath}`
-//                         });
-//                     }
-//                 });
-                
-//                 // Lưu thông tin về thư mục tải xuống vào storage để có thể sử dụng sau này
-//                 chrome.storage.local.set({ 
-//                     lastReportDownload: {
-//                         date: new Date().toISOString(),
-//                         folderPath: `reports/${folderName}/`,
-//                         count: downloadUrls.length
-//                     }
-//                 });
-                
-//                 // Đóng tab báo cáo và quay lại trang orders
-//                 try {
-//                     chrome.tabs.remove(reportTabId, () => {
-//                         // Quay lại trang orders sau khi hoàn tất
-//                         setTimeout(() => {
-//                             chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-//                         }, 1000);
-//                     });
-//                 } catch (err) {
-//                     console.error("Lỗi khi đóng tab báo cáo:", err);
-//                     // Tạo tab trang orders mới nếu không thể đóng tab báo cáo
-//                     chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-//                 }
-//             });
-//         });
-        
-//         // Lưu log hoạt động
-//         saveLog("adsReportsLog", { 
-//             type: "Auto Ads Reports Download", 
-//             date: new Date().toISOString(),
-//             folderPath: `reports/${new Date().getDate()}-${new Date().getMonth()+1}-${new Date().getFullYear()}/`
-//         });
-//     } catch (error) {
-//         console.error("Lỗi trong quá trình tải báo cáo quảng cáo:", error);
-//         chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-//           if (tabs && tabs.length > 0) {
-//             sendMessage(tabs[0].id, "downloadAdsReports", { 
-//               error: `Lỗi khi tải báo cáo quảng cáo: ${error.message || "Lỗi không xác định"}` 
-//             });
-//           }
-//         });
-//     }finally {
-//       isDownloadingAdsReport = false;
-//       console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
-//     }
-//   })();
-//   return true; // Giữ message port mở
-// }
-// gửi lên server 
-if (message === "runDownloadAdsReports") {
-  //1. kiểm tra khóa 
-  if (isDownloadingAdsReport){
-    console.warn("[Ads Report] Tiến trình đang chạy. Yêu cầu mới bị từ chối.");
-      sendMessage(sender.tab.id, "downloadAdsReports", { 
-          error: "A download process is already running. Please wait." 
-      });
-      return true;
-  }
-   // 2. Đặt khóa và bắt đầu
-  isDownloadingAdsReport = true;
-  console.log("[Ads Report] Đặt khóa isDownloadingAdsReport = true.");
-  (async () => {
-  try {
-      console.log("Bắt đầu quá trình tải báo cáo quảng cáo...");
-      
-      try {
-          if (extendedLogSystem) {
-              extendedLogSystem.info('AdsReports', 'Bắt đầu quá trình tải báo cáo quảng cáo theo lịch tự động');
-          }
-      } catch (logError) {
-          console.error("Logging error:", logError);
-      }
-      
-      sendMessage(sender.tab.id, "downloadingAdsReports", {
-          label: `Đang tải báo cáo quảng cáo...`,
-      });
-      
-      // Lấy API key để dùng trong URL
-      const merchantId = await getMBApiKey();
-      const UPLOAD_HANDLER_URL = "https://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
-      console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
-      
-      try {
-          if (extendedLogSystem) {
-              extendedLogSystem.info('AdsReports', 'Sử dụng merchantId cho URL báo cáo', { merchantId });
-          }
-      } catch (logError) {
-          console.error("Logging error:", logError);
-      }
-      
-      // URL đến trang báo cáo quảng cáo
-      const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
-      
-      // Tạo tab mới thay vì cập nhật tab hiện tại
-      chrome.tabs.create({ url: reportsUrl, active: true }, async (newTab) => {
-          if (!newTab || !newTab.id) {
-              const errorMsg = "Không thể tạo tab mới cho báo cáo quảng cáo";
-              console.error(errorMsg);
-              
-              try {
-                  if (extendedLogSystem) {
-                      extendedLogSystem.error('AdsReports', errorMsg);
-                  }
-              } catch (logError) {
-                  console.error("Logging error:", logError);
-              }
-              
-              // Thông báo lỗi trên tab hiện tại
-              chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                if (tabs && tabs.length > 0) {
-                  sendMessage(tabs[0].id, "downloadAdsReports", { 
-                    error: "Không thể tạo tab mới cho báo cáo quảng cáo" 
-                  });
-                }
-              });
-              return;
-          }
-          
-          // Lưu ID của tab báo cáo
-          const reportTabId = newTab.id;
-          
-          // Đợi trang báo cáo tải hoàn tất
-          await new Promise(resolve => {
-              let listener = function(tabId, changeInfo) {
-                  if (tabId === reportTabId && changeInfo.status === 'complete') {
-                      chrome.tabs.onUpdated.removeListener(listener);
-                      resolve();
-                  }
-              };
-              chrome.tabs.onUpdated.addListener(listener);
-              
-              // Thêm timeout phòng trường hợp tab không tải hoàn tất
-              setTimeout(() => {
-                  chrome.tabs.onUpdated.removeListener(listener);
-                  resolve();
-              }, 30000); // 30 giây timeout
-          });
-          
-          // Thêm độ trễ ngắn để đảm bảo nội dung đã tải
-          await sleep(3000);
-          
-          // Kiểm tra xem tab còn tồn tại không
-          let tabExists = true;
-          try {
-              await chrome.tabs.get(reportTabId);
-          } catch (err) {
-              console.error("Tab báo cáo không còn tồn tại");
-              tabExists = false;
-              
-              // Thông báo lỗi
-              sendMessage(sender.tab.id, "downloadAdsReports", { 
-                error: "Tab báo cáo đã bị đóng" 
-              });
-              return;
-          }
-          
-          if (!tabExists) return;
-          
-          // Thực hiện script để tìm và tải xuống báo cáo
-          chrome.scripting.executeScript({
-              target: { tabId: reportTabId },
-              function: async () => {
-                  // Hàm đợi ngắn hơn
-                  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-                  
-                  // Tạo tên thư mục dựa trên ngày hiện tại (DD-MM-YYYY)
-                  const today = new Date();
-                  const day = String(today.getDate()).padStart(2, '0');
-                  const month = String(today.getMonth() + 1).padStart(2, '0');
-                  const year = today.getFullYear();
-                  const folderName = `${day}-${month}-${year}`;
-                  
-                  // Phương pháp tìm nút tải xuống hiệu quả hơn
-                  const findDownloadButtons = () => {
-                      // Trực tiếp tìm các liên kết tải xuống dựa trên URL
-                      const buttons = Array.from(document.querySelectorAll('a[href*="/download-report/"]'));
-                      console.log(`Tìm thấy ${buttons.length} nút tải xuống`);
-                      return buttons;
-                  };
-                  
-                  // Tìm tất cả các nút tải xuống
-                  let downloadButtons = findDownloadButtons();
-                  
-                  // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thởi gian ngắn
-                  if (downloadButtons.length === 0) {
-                      await wait(2000);
-                      downloadButtons = findDownloadButtons();
-                  }
-                  
-                  console.log(`Tìm thấy ${downloadButtons.length} nút tải xuống để xử lý`);
-                  
-                  let successCount = 0;
-                  const reportNames = [];
-                  const downloadUrls = [];
-                  
-                  // Thu thập URL tải xuống và tên báo cáo
-                  downloadButtons.forEach((button, index) => {
-                      try {
-                          // Tìm tên báo cáo từ cùng hàng
-                          let reportName = "Báo cáo " + (index + 1);
-                          try {
-                              // Tìm kiếm theo nhiều selector để tăng khả năng tìm thấy tên báo cáo
-                              const parentRow = button.closest('.ag-row, tr, [role="row"]');
-                              if (parentRow) {
-                                  const reportLink = parentRow.querySelector('a.sc-fqkvVR, a, .cell-value, td');
-                                  if (reportLink) {
-                                      reportName = reportLink.textContent.trim();
-                                  }
-                              }
-                          } catch (e) {
-                              console.error("Lỗi lấy tên báo cáo:", e);
-                          }
-                          
-                          reportNames.push(reportName);
-                          // Lưu URL tải xuống để gửi về background script xử lý
-                          downloadUrls.push({
-                              url: button.href,
-                              reportName: reportName
-                          });
-                      } catch (error) {
-                          console.error(`Lỗi xử lý nút ${index + 1}:`, error);
-                      }
-                  });
-                  
-                  // Trả về dữ liệu URL và tên báo cáo để background script xử lý
-                  return { 
-                      downloadUrls,
-                      reportNames,
-                      folderName
-                  };
-              }
-          }, async (results) => {
-              if (!results || results.length === 0 || !results[0].result) {
-                  // Thông báo lỗi nếu không tìm thấy kết quả
-                  chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                      if (tabs && tabs.length > 0) {
-                          sendMessage(tabs[0].id, "downloadAdsReports", { 
-                              error: "Không thể tìm thấy báo cáo để tải xuống" 
-                          });
-                      }
-                  });
-                  
-                  // Đóng tab báo cáo
-                  try {
-                      chrome.tabs.remove(reportTabId);
-                  } catch (err) {
-                      console.error("Lỗi khi đóng tab báo cáo:", err);
-                  }
-                  return;
-              }
-              
-              const { downloadUrls, reportNames, folderName } = results[0].result;
-              let successCount = 0;
-              const uploadedReportNames = [];
-              // Tải xuống từng báo cáo sử dụng chrome.downloads.download API
-              for (let i = 0; i < downloadUrls.length; i++) {
-                  try {
-                      const { url, reportName } = downloadUrls[i];
-                      // Làm sạch tên báo cáo để dùng làm tên file
-                      const safeReportName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                      
-                      // Kiểm tra xem chrome.downloads API có sẵn không
-                      if (chrome.downloads && typeof chrome.downloads.download === 'function') {
-                          // Lấy phần mở rộng của file từ URL
-                          let fileExtension = '.csv'; // Mặc định là .csv
-                          
-                          // Thử lấy phần mở rộng từ URL
-                          try {
-                              const urlPath = new URL(url).pathname;
-                              // Nếu URL chứa phần mở rộng, lấy phần mở rộng đó
-                              if (urlPath.includes('.')) {
-                                  const urlExt = urlPath.split('.').pop().toLowerCase();
-                                  // Kiểm tra phần mở rộng hợp lệ
-                                  if (['csv', 'xlsx', 'xls', 'txt', 'pdf'].includes(urlExt)) {
-                                      fileExtension = '.' + urlExt;
-                                  }
-                              }
-                          } catch (e) {
-                              console.log("Không thể lấy phần mở rộng từ URL:", e);
-                          }
-                          
-                          // Tạo tên file với đường dẫn thư mục và phần mở rộng đúng
-                          const filename = `reports/${folderName}/${safeReportName}${fileExtension}`;
-                          
-                          // Tạo thư mục nếu chưa tồn tại bằng cách lưu một file nhỏ làm đánh dấu
-                          if (i === 0) {
-                              try {
-                                  // Tạo một file .keep để đảm bảo thư mục tồn tại
-                                  chrome.downloads.download({
-                                      url: URL.createObjectURL(new Blob([' '], {type: 'text/plain'})),
-                                      filename: `reports/${folderName}/.keep`,
-                                      conflictAction: 'uniquify',
-                                      saveAs: false
-                                  }, () => {
-                                      console.log(`Đã tạo thư mục ${folderName}`);
-                                  });
-                              } catch (err) {
-                                  console.error("Lỗi khi tạo thư mục:", err);
-                              }
-                          }
-                          
-                          // Sử dụng chrome.downloads.download để tải xuống file
-                          chrome.downloads.download({
-                              url: url,
-                              filename: filename,
-                              conflictAction: 'uniquify',
-                              saveAs: false
-                          }, (downloadId) => {
-                              if (chrome.runtime.lastError) {
-                                  console.error("Lỗi tải xuống:", chrome.runtime.lastError);
-                              } else {
-                                  successCount++;
-                                  console.log(`Đã bắt đầu tải báo cáo ${i+1}/${downloadUrls.length} vào thư mục ${folderName}`);
-                              }
-                          });
-                      } else {
-                          // Phương pháp thay thế: Mở URL trong tab mới (phương pháp cũ)
-                          console.log(`Sử dụng phương pháp thay thế để tải báo cáo #${i+1}: ${reportName}`);
-                          const newTab = window.open(url, '_blank');
-                          
-                          // Đóng tab sau khi đã bắt đầu tải xuống
-                          setTimeout(() => {
-                              try {
-                                  if (newTab && !newTab.closed) {
-                                      newTab.close();
-                                  }
-                              } catch (e) {
-                                  // Bỏ qua lỗi khi đóng tab
-                              }
-                          }, 3000);
-                          
-                          successCount++;
-                      }
-                      
-                      // Đợi một chút giữa các lần tải để tránh quá tải
-                      await sleep(1000);
-                  } catch (error) {
-                      console.error(`Lỗi khi tải báo cáo #${i+1}:`, error);
-                  }
-              }
-              
-              // Thông báo kết quả
-              let data = { 
-                  successCount: downloadUrls.length, 
-                  reportNames,
-                  folderPath: `reports/${folderName}/`
-              };
-              
-              // Nếu có báo cáo được tải xuống, hiển thị chi tiết tên các báo cáo
-              if (data.reportNames && data.reportNames.length > 0) {
-                  // Chỉ hiển thị 3 báo cáo đầu tiên và số lượng còn lại
-                  if (data.reportNames.length > 3) {
-                      const firstThree = data.reportNames.slice(0, 3).join(", ");
-                      data.reportDetails = `${firstThree} và ${data.reportNames.length - 3} báo cáo khác`;
-                  } else {
-                      data.reportDetails = data.reportNames.join(", ");
-                  }
-              }
-              
-              // Thông báo kết quả cho người dùng
-              chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-                  if (tabs && tabs.length > 0) {
-                      sendMessage(tabs[0].id, "downloadAdsReports", {
-                          ...data,
-                          message: `Đã tải ${downloadUrls.length} báo cáo vào thư mục: ${data.folderPath}`
-                      });
-                  }
-              });
-              
-              // Lưu thông tin về thư mục tải xuống vào storage để có thể sử dụng sau này
-              chrome.storage.local.set({ 
-                  lastReportDownload: {
-                      date: new Date().toISOString(),
-                      folderPath: `reports/${folderName}/`,
-                      count: downloadUrls.length
-                  }
-              });
-              
-              // Đóng tab báo cáo và quay lại trang orders
-              try {
-                  chrome.tabs.remove(reportTabId, () => {
-                      // Quay lại trang orders sau khi hoàn tất
-                      setTimeout(() => {
-                          chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-                      }, 1000);
-                  });
-              } catch (err) {
-                  console.error("Lỗi khi đóng tab báo cáo:", err);
-                  // Tạo tab trang orders mới nếu không thể đóng tab báo cáo
-                  chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-              }
-          });
-      });
-      
-      // Lưu log hoạt động
-      saveLog("adsReportsLog", { 
-          type: "Auto Ads Reports Download", 
-          date: new Date().toISOString(),
-          folderPath: `reports/${new Date().getDate()}-${new Date().getMonth()+1}-${new Date().getFullYear()}/`
-      });
-  } catch (error) {
-      console.error("Lỗi trong quá trình tải báo cáo quảng cáo:", error);
-      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          sendMessage(tabs[0].id, "downloadAdsReports", { 
-            error: `Lỗi khi tải báo cáo quảng cáo: ${error.message || "Lỗi không xác định"}` 
-          });
-        }
-      });
-  }finally {
-    isDownloadingAdsReport = false;
-    console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
-  }
-})();
-return true; // Giữ message port mở
-}
+
+
   if (message === "getProductImage") {
     productImg = data;
   }
@@ -3961,293 +3044,6 @@ const detectCarrier = (carrierCode = "") => {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.message === "runDownloadAdsReports") {
-    console.log("Nhận yêu cầu tải báo cáo quảng cáo thủ công từ UI");
-    globalDomain = request.domain || "https://sellercentral.amazon.com";
-    
-    try {
-      if (extendedLogSystem) {
-        extendedLogSystem.info('AdsReports', 'Bắt đầu quá trình tải báo cáo quảng cáo theo yêu cầu thủ công');
-      }
-    } catch (logError) {
-      console.error("Logging error:", logError);
-    }
-    
-    // Gửi thông báo đang tải đến tab hiện tại
-    if (sender.tab && sender.tab.id) {
-      sendMessage(sender.tab.id, "downloadingAdsReports", {
-        label: `Đang tải báo cáo quảng cáo...`,
-      });
-    }
-    
-    // Sử dụng Promise để đảm bảo các thao tác bất đồng bộ được thực hiện đúng thứ tự
-    (async () => {
-      try {
-        // Lấy API key để dùng trong URL
-        const merchantId = await getMBApiKey();
-        console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
-        
-        try {
-          if (extendedLogSystem) {
-            extendedLogSystem.info('AdsReports', 'Sử dụng merchantId cho URL báo cáo', { merchantId });
-          }
-        } catch (logError) {
-          console.error("Logging error:", logError);
-        }
-        
-        // URL đến trang báo cáo quảng cáo
-        const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
-        
-        // Tạo tab mới thay vì cập nhật tab hiện tại
-        chrome.tabs.create({ url: reportsUrl, active: true }, async (newTab) => {
-          if (!newTab || !newTab.id) {
-            const errorMsg = "Không thể tạo tab mới cho báo cáo quảng cáo";
-            console.error(errorMsg);
-            
-            try {
-              if (extendedLogSystem) {
-                extendedLogSystem.error('AdsReports', errorMsg);
-              }
-            } catch (logError) {
-              console.error("Logging error:", logError);
-            }
-            
-            // Thông báo lỗi trên tab hiện tại
-            if (sender.tab && sender.tab.id) {
-              sendMessage(sender.tab.id, "downloadAdsReports", { 
-                error: errorMsg
-              });
-            }
-            return;
-          }
-          
-          // Lưu ID của tab báo cáo
-          const reportTabId = newTab.id;
-          
-          // Đợi trang báo cáo tải hoàn tất
-          await new Promise(resolve => {
-            let listener = function(tabId, changeInfo) {
-              if (tabId === reportTabId && changeInfo.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-                resolve();
-              }
-            };
-            chrome.tabs.onUpdated.addListener(listener);
-            
-            // Thêm timeout phòng trường hợp tab không tải hoàn tất
-            setTimeout(() => {
-              chrome.tabs.onUpdated.removeListener(listener);
-              resolve();
-            }, 30000); // 30 giây timeout
-          });
-          
-          // Thêm độ trễ ngắn để đảm bảo nội dung đã tải
-          await sleep(3000);
-          
-          // Thực hiện script để tìm và tải xuống báo cáo
-          chrome.scripting.executeScript({
-            target: { tabId: reportTabId },
-            function: async () => {
-              // Hàm đợi ngắn hơn
-              const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-              
-              // Tạo tên thư mục dựa trên ngày hiện tại (DD-MM-YYYY)
-              const today = new Date();
-              const day = String(today.getDate()).padStart(2, '0');
-              const month = String(today.getMonth() + 1).padStart(2, '0');
-              const year = today.getFullYear();
-              const folderName = `${day}-${month}-${year}`;
-              
-              // Phương pháp tìm nút tải xuống hiệu quả hơn
-              const findDownloadButtons = () => {
-                // Trực tiếp tìm các liên kết tải xuống dựa trên URL
-                const buttons = Array.from(document.querySelectorAll('a[href*="/download-report/"]'));
-                console.log(`Tìm thấy ${buttons.length} nút tải xuống`);
-                return buttons;
-              };
-              
-              // Tìm tất cả các nút tải xuống
-              let downloadButtons = findDownloadButtons();
-              
-              // Nếu không tìm thấy nút tải, thử một lần nữa sau một khoảng thời gian ngắn
-              if (downloadButtons.length === 0) {
-                await wait(2000);
-                downloadButtons = findDownloadButtons();
-              }
-              
-              console.log(`Tìm thấy ${downloadButtons.length} nút tải xuống để xử lý`);
-              
-              let successCount = 0;
-              const reportNames = [];
-              const downloadUrls = [];
-              
-              // Thu thập URL tải xuống và tên báo cáo
-              downloadButtons.forEach((button, index) => {
-                try {
-                  // Tìm tên báo cáo từ cùng hàng
-                  let reportName = "Báo cáo " + (index + 1);
-                  try {
-                    // Tìm kiếm theo nhiều selector để tăng khả năng tìm thấy tên báo cáo
-                    const parentRow = button.closest('.ag-row, tr, [role="row"]');
-                    if (parentRow) {
-                      const reportLink = parentRow.querySelector('a.sc-fqkvVR, a, .cell-value, td');
-                      if (reportLink) {
-                        reportName = reportLink.textContent.trim();
-                      }
-                    }
-                  } catch (e) {
-                    console.error("Lỗi lấy tên báo cáo:", e);
-                  }
-                  
-                  reportNames.push(reportName);
-                  // Lưu URL tải xuống để gửi về background script xử lý
-                  downloadUrls.push({
-                    url: button.href,
-                    reportName: reportName
-                  });
-                } catch (error) {
-                  console.error(`Lỗi xử lý nút ${index + 1}:`, error);
-                }
-              });
-              
-              // Trả về dữ liệu URL và tên báo cáo để background script xử lý
-              return { 
-                downloadUrls,
-                reportNames,
-                folderName
-              };
-            }
-          }, async (results) => {
-            if (!results || results.length === 0 || !results[0].result) {
-              // Thông báo lỗi nếu không tìm thấy kết quả
-              if (sender.tab && sender.tab.id) {
-                sendMessage(sender.tab.id, "downloadAdsReports", { 
-                  error: "Không thể tìm thấy báo cáo để tải xuống" 
-                });
-              }
-              
-              // Đóng tab báo cáo
-              try {
-                chrome.tabs.remove(reportTabId);
-              } catch (err) {
-                console.error("Lỗi khi đóng tab báo cáo:", err);
-              }
-              return;
-            }
-            
-            const { downloadUrls, reportNames, folderName } = results[0].result;
-            let successCount = 0;
-            
-            // Tải xuống từng báo cáo sử dụng chrome.downloads.download API
-            for (let i = 0; i < downloadUrls.length; i++) {
-              const { url, reportName } = downloadUrls[i];
-              try {
-                  // 1. Fetch file content as a Blob
-                  const response = await fetch(url);
-                  if (!response.ok) {
-                      throw new Error(`Failed to fetch report ${reportName}: ${response.statusText}`);
-                  }
-                  const fileBlob = await response.blob();
-
-                  // 2. Create FormData to send
-                  const formData = new FormData();
-                  formData.append('report_file', fileBlob, reportName); // Gửi file với tên gốc
-                  formData.append('merchant_id', merchantId);
-
-                  // 3. Upload to your PHP server
-                  const uploadResponse = await fetch(UPLOAD_HANDLER_URL, {
-                      method: 'POST',
-                      body: formData,
-                  });
-
-                  const uploadResult = await uploadResponse.json();
-
-                  if (uploadResult.status === 'success') {
-                      successCount++;
-                      uploadedReportNames.push(reportName);
-                      console.log(`Successfully uploaded: ${reportName}`);
-                  } else {
-                      throw new Error(`Server error for ${reportName}: ${uploadResult.message}`);
-                  }
-              } catch (error) {
-                  console.error(`Error processing report #${i + 1} (${reportName}):`, error);
-                  // Thông báo lỗi cho file cụ thể nếu cần
-              }
-              await sleep(500); // Thêm độ trễ nhỏ giữa các lần upload
-          }
-            
-            // Thông báo kết quả
-            let data = {
-              successCount: successCount,
-              reportNames: uploadedReportNames,
-              folderPath: `reports/${folderName}/ (trên server)`
-          };
-            
-            // Nếu có báo cáo được tải xuống, hiển thị chi tiết tên các báo cáo
-            if (data.reportNames.length > 0) {
-              if (data.reportNames.length > 3) {
-                 const firstThree = data.reportNames.slice(0, 3).join(", ");
-                 data.reportDetails = `${firstThree} và ${data.reportNames.length - 3} báo cáo khác`;
-             } else {
-                 data.reportDetails = data.reportNames.join(", ");
-             }
-         }
-            
-            // Thông báo kết quả cho người dùng
-            sendMessage(sender.tab.id, "downloadAdsReports", {
-              ...data,
-              message: `Đã tải ${successCount} báo cáo lên server vào thư mục: ${data.folderPath}`
-          });
-            
-            // Lưu thông tin về thư mục tải xuống vào storage để có thể sử dụng sau này
-            chrome.storage.local.set({ 
-              lastReportDownload: {
-                date: new Date().toISOString(),
-                folderPath: `reports/${folderName}/`,
-                count: downloadUrls.length
-              }
-            });
-            try {
-              console.log(`[Ads Report] Tác vụ hoàn tất, đang đóng tab báo cáo ID: ${reportTabId}`);
-              chrome.tabs.remove(reportTabId);
-          } catch (err) {
-              console.error("Lỗi khi đóng tab báo cáo:", err);
-          }
-            // Đóng tab báo cáo và quay lại trang orders
-            // try {
-            //   chrome.tabs.remove(reportTabId, () => {
-            //     // Quay lại trang orders sau khi hoàn tất
-            //     setTimeout(() => {
-            //       chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-            //     }, 1000);
-            //   });
-            // } catch (err) {
-            //   console.error("Lỗi khi đóng tab báo cáo:", err);
-            //   // Tạo tab trang orders mới nếu không thể đóng tab báo cáo
-            //   chrome.tabs.create({ url: `${globalDomain}/orders-v3?page=1`, active: true });
-            // }
-          });
-        });
-        
-        // Lưu log hoạt động
-        saveLog("adsReportsLog", { 
-          type: "Manual Ads Reports Download", 
-          date: new Date().toISOString(),
-          folderPath: `reports/${new Date().getDate()}-${new Date().getMonth()+1}-${new Date().getFullYear()}/`
-        });
-      } catch (error) {
-        console.error("Lỗi trong quá trình tải báo cáo quảng cáo:", error);
-        if (sender.tab && sender.tab.id) {
-          sendMessage(sender.tab.id, "downloadAdsReports", { 
-            error: `Lỗi khi tải báo cáo quảng cáo: ${error.message || "Lỗi không xác định"}` 
-          });
-        }
-      }
-    })();
-    
-    return true; // Đảm bảo sendResponse được gọi bất đồng bộ
-  }
-  
   if (request.message === "getFeedbackData") {
     // Mở tab ẩn với URL Feedback Manager
     chrome.tabs.create({ url: "https://sellercentral.amazon.com/feedback-manager/index.html", active: false }, function(tab) {

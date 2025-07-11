@@ -103,8 +103,8 @@
                         if (smallElem) {
                             let parts = smallElem.textContent.split("of");
                             if(parts.length > 1) {
-                                accountAmazon["total_orders_60days"] = parseInt(parts[1].replace(/[^\\d]/g, ""));
-                                accountAmazon["atoz_neg_fb"] = parseInt(parts[0].replace(/[^\\d]/g, ""));
+                                accountAmazon["total_orders_60days"] = parseInt(parts[1].replace(/[^\d]/g, ""));
+                                accountAmazon["atoz_neg_fb"] = parseInt(parts[0].replace(/[^\d]/g, ""));
                             }
                         }
                     }
@@ -243,8 +243,8 @@
                     let nameElem = option.querySelector("a span");
                     let countElem = option.querySelector("span");
                     if (nameElem && countElem) {
-                        let name = nameElem.textContent.trim().replace(/\\(\\d+\\)/, "").trim();
-                        let countMatch = countElem.textContent.match(/\\((\\d+)\\)/);
+                        let name = nameElem.textContent.trim().replace(/\(\d+\)/, "").trim();
+                        let countMatch = countElem.textContent.match(/\((\d+)\)/);
                         if (countMatch) {
                             resultArray.push(name + "|" + countMatch[1]);
                         }
@@ -280,18 +280,18 @@
     // Hàm trợ giúp để trích xuất text từ một phần tử con theo selector
     function extractText(parent, selector) {
         const el = parent.querySelector(selector);
-        return el ? el.textContent.trim().replace(/\\$/g, "").replace(/,/g, "") : "";
+        return el ? el.textContent.trim().replace(/\$/g, "").replace(/,/g, "") : "";
     }
     
     // Hàm trợ giúp để lấy attribute của phần tử con theo selector
     function extractAttribute(parent, selector, attribute) {
         const el = parent.querySelector(selector);
-        return el ? el.getAttribute(attribute).trim().replace(/\\$/g, "").replace(/,/g, "") : "";
+        return el ? el.getAttribute(attribute).trim().replace(/\$/g, "").replace(/,/g, "") : "";
     }
     
     // Loại bỏ ký tự định dạng tiền tệ
     function cleanCurrency(str) {
-        return str.replace(/\\$/g, "").replace(/,/g, "").trim();
+        return str.replace(/\$/g, "").replace(/,/g, "").trim();
     }
     
     // Hàm lấy merchant id từ KPI data (được parse từ JSON)

@@ -1,3 +1,12 @@
+const blacklistedUrls = [
+  "advertising.amazon.com",
+  "music.amazon.com",
+  "read.amazon.com"
+];
+
+// Kiểm tra xem URL hiện tại có nằm trong danh sách đen không
+const isBlacklisted = blacklistedUrls.some(url => window.location.href.includes(url));
+if (!isBlacklisted) {
 (function (data) {
   const { window } = data;
   const swallow = () => {};
@@ -275,3 +284,4 @@
     }
   } catch (err) {}
 })({ window });
+}
