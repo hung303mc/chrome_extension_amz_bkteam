@@ -396,16 +396,15 @@ const sendLogToServer = async (logMessage) => {
   if (!logMessage) return;
 
   // Lấy merchantId và machineId
-  const merchantId = await getMBApiKey(); // Sử dụng hàm getMBApiKey bạn đã có
+  const merchantId = await getMBApiKey();
   const machineId = await getMachineId();
-
-  // Nếu không có merchantId (ví dụ: chưa đăng nhập), ghi là "UNKNOWN"
   const finalMerchantId = merchantId || 'UNKNOWN_MERCHANT';
-  // Endpoint của file PHP mới
-  const logEndpoint = "http://bkteam.top/dungvuong-admin/api/log_receiver.php";
+
+  
+  const logEndpoint = "https://bkteam.top/dungvuong-admin/api/log_receiver.php";
 
   try {
-      await fetch(logEndpoint, {
+      const response = await fetch(logEndpoint, {
           method: "POST",
           headers: {
               "Content-Type": "application/json",
@@ -416,14 +415,16 @@ const sendLogToServer = async (logMessage) => {
               machineId: machineId
           }),
       });
-  } catch (error) {
-      // Ghi lỗi ra console của background script nếu gửi log thất bại
-      // Dùng console.error gốc để tránh tạo vòng lặp vô hạn
-      if (originalConsoleError) {
-           originalConsoleError("Failed to send log to server:", error);
-      } else {
-           console.error("Failed to send log to server:", error);
+
+      // Kiểm tra nếu server trả về lỗi (ví dụ: 404, 500)
+      if (!response.ok) {
+          console.error(`Log server returned an error! Status: ${response.status}`);
       }
+
+  } catch (error) {
+      // SỬA LỖI: Luôn sử dụng console.error để ghi lại lỗi mạng.
+      // Lỗi Mixed Content sẽ được hiển thị ở đây.
+      console.error("Failed to send log to server. Error:", error);
   }
 };
 // Helper function to send message after tab loads
