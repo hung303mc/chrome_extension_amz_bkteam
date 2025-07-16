@@ -521,9 +521,9 @@ const setTextBtnRevert = () => {
 // Đăng ký message listener trong phạm vi toàn cục để đảm bảo nhận tin nhắn trên mọi trang
 chrome.runtime.onMessage.addListener(async function (req, sender, res) {
   const { message, data } = req || {};
-  
+
   console.log(`[Content] Nhận tin nhắn từ background.js: ${message}`, { url: window.location.href });
-  
+
   // Phản hồi ping từ background script để xác nhận content script đã được tiêm
   if (message === "ping") {
     console.log("[Content] Nhận ping từ background script, phản hồi để xác nhận đã tiêm");
@@ -574,8 +574,9 @@ chrome.runtime.onMessage.addListener(async function (req, sender, res) {
   }
   
   // Xử lý các tin nhắn phổ biến khác trên mọi trang
-  if (message === "syncOrderToMB") {
+  if (message === "syncedOrderToMB") {
     handleSyncOrderToMBResponse(data);
+    res({ message: "received" });
     return true;
   }
   
@@ -611,16 +612,16 @@ chrome.runtime.onMessage.addListener(async function (req, sender, res) {
     
     const hasNotSync = appendOrdersIntoTable(orders, orderInfos);
 
-    if (hasNotSync) {
-      // Auto sync
-      await sleep(3000);
-      const isAuto = await getStorage("_mb_auto");
-      const autoKey = await getStorage("_mb_auto_key");
-      if (isAuto && autoKey) {
-        $(".om-addon #not_synced #sync-order").trigger("click");
-        return true;
-      }
-    }
+    // if (hasNotSync) {
+    //   // Auto sync
+    //   await sleep(3000);
+    //   const isAuto = await getStorage("_mb_auto");
+    //   const autoKey = await getStorage("_mb_auto_key");
+    //   if (isAuto && autoKey) {
+    //     $(".om-addon #not_synced #sync-order").trigger("click");
+    //     return true;
+    //   }
+    // }
   }
   
   return true; // Giữ kết nối message port mở cho các callbacks bất đồng bộ
@@ -791,8 +792,6 @@ $(document).on("click", "#sync-order", async function () {
     $(`.sync-order-item[data-order-id="${order.orderId}"]`).addClass("loader");
   }
 
-  const isAuto = await getStorage("_mb_auto");
-  const autoKey = await getStorage("_mb_auto_key");
   // send order ids to background
   chrome.runtime.sendMessage({
     message: "syncOrderToMB",
@@ -800,7 +799,7 @@ $(document).on("click", "#sync-order", async function () {
     data: {
       apiKey: await getStorage(mbApi),
       orders,
-      markSynced: isAuto && autoKey,
+      markSynced: false,
     },
   });
 });

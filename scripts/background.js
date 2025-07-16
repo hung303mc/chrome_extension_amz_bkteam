@@ -520,6 +520,7 @@ const sendMessage = async (tabId, message, data) => {
                 // Check for errors and handle them
                 if (chrome.runtime.lastError) {
                   console.log(`Error sending message to tab ${tabId}:`, chrome.runtime.lastError);
+                  stopInterval(start);
                 } else if (resp?.message === "received") {
                   stopInterval(start);
                 }
@@ -1051,12 +1052,9 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     sendMessage(sender.tab.id, "checkSyncedOrders", resp);
   }
   if (message === "syncOrderToMB") {
-    const { apiKey, orders, options, markSynced } = data;
+    const { apiKey, orders, options } = data;
     if (!orders || !orders.length) return;
     await handleSyncOrders(orders, options, apiKey, domain);
-    if (markSynced) {
-      sendToContentScript("auto_synced");
-    }
   }
   if (message === "deleteIgnoreOrder") {
     const { apiKey, orders } = data;
@@ -1300,20 +1298,6 @@ chrome.runtime.onMessage.addListener((req, sender, res) => {
   }
 });
 
-// capture event from devtool
-var OrderInfo = {
-  locked: false,
-  orderId: null,
-  order: null,
-  shipping: null,
-};
-const resetOrderInfo = () =>
-  (OrderInfo = {
-    locked: false,
-    orderId: null,
-    order: null,
-    shipping: null,
-  });
 
 var OrderGrandTotal = {
   locked: false,
@@ -1330,78 +1314,6 @@ const resetOrderGrandTotal = () =>
     grandTotal: 0,
     marketplaceFee: 0,
   });
-var CustomOrder = {
-  locked: false,
-  isListed: false,
-  orderId: null,
-  itemId: null,
-  personalizedInfo: null,
-};
-const resetCustomOrder = () =>
-  (CustomOrder = {
-    locked: false,
-    isListed: false,
-    orderId: null,
-    itemId: null,
-    personalizedInfo: null,
-  });
-chrome.runtime.onConnect.addListener((port) => {
-  if (!port || port.name !== "captureRequest") return;
-  port.onMessage.addListener((msg) => {
-    return;
-    const { message, endPoint, data } = msg || {};
-    if (message !== "response" || !data) return;
-    // capture order info
-    if (endPoint.includes("/orders-api/order/")) {
-      const { order } = data;
-      if (!order || order["amazonOrderId"] != OrderInfo.orderId) return;
-      OrderInfo.order = order;
-      saveLog("orderLog - dev tool", { type: "Order Information", data: order });
-    }
-    // capture shipping order info
-    if (endPoint.includes("/orders-st/resolve")) {
-      if (!data || !data[OrderInfo.orderId]) return;
-      OrderInfo.shipping = data[OrderInfo.orderId].address;
-    }
-    // capture order grand totals
-    if (
-      endPoint.includes("payments/api/events-view") &&
-      endPoint.includes(OrderGrandTotal.orderId)
-    ) {
-      OrderGrandTotal.isListed = true;
-      if (!data) return;
-      if (!data.tableRows || !data.tableRows.length) {
-        OrderGrandTotal.grandTotal = -1;
-        OrderGrandTotal.marketplaceFee = -1;
-        return;
-      }
-      for (const row of data.tableRows) {
-        if (row.tableCells?.length) {
-          for (const item of row.tableCells) {
-            if (item.columnIdentifier === "TOTAL") {
-              let grandTotals = item.value.linkBody.currency.amount;
-              if (grandTotals) OrderGrandTotal.grandTotal = grandTotals;
-            }
-            if (item.columnIdentifier === "FEES_TOTAL") {
-              let marketFee = item.value.currency.amount;
-              if (marketFee < 0) marketFee = marketFee * -1;
-              if (marketFee >= 0) OrderGrandTotal.marketplaceFee = marketFee;
-            }
-          }
-        }
-      }
-    }
-    // capture personalized info
-    if (
-      endPoint.includes("/gestalt/ajax/fulfillment/init") &&
-      endPoint.includes(CustomOrder.orderId) &&
-      endPoint.includes(CustomOrder.itemId)
-    ) {
-      if (!data) return;
-      CustomOrder.personalizedInfo = data;
-    }
-  });
-});
 
 // Hàm lưu log vào Chrome Storage
 const saveLog = (key, message) => {
@@ -2090,280 +2002,192 @@ async function runUpdateTrackingMain(ordersFromApi, initialSenderTabId, autoMode
       }
   }
 }
+
+const pendingDataResolvers = {};
+
+/**
+ * Hàm Promise-based để chờ dữ liệu mạng từ inject.js.
+ * @param {string} key - Một key duy nhất để xác định yêu cầu này, ví dụ: `order_113-xxx`.
+ * @param {number} timeout - Thời gian chờ tối đa (ms).
+ * @returns {Promise<any>} - Promise sẽ resolve với dữ liệu tìm thấy hoặc reject khi timeout.
+ */
+const waitForData = (key, timeout = 30000) => {
+    return new Promise((resolve, reject) => {
+        // Hủy yêu cầu cũ nếu có key trùng
+        if (pendingDataResolvers[key]) {
+            pendingDataResolvers[key].reject(new Error(`Yêu cầu mới cho key '${key}' đã được tạo, hủy yêu cầu cũ.`));
+        }
+
+        const timeoutId = setTimeout(() => {
+            delete pendingDataResolvers[key];
+            reject(new Error(`Timeout: Không nhận được dữ liệu cho key '${key}' sau ${timeout / 1000}s.`));
+        }, timeout);
+
+        // Lưu lại hàm resolve và reject để listener onMessage có thể gọi
+        pendingDataResolvers[key] = { resolve, reject, timeoutId };
+    });
+};
+
+/**
+ * Hàm xử lý chính cho việc đồng bộ đơn hàng (ĐÃ REFACTOR).
+ * Loại bỏ hoàn toàn việc sử dụng biến toàn cục OrderInfo và CustomOrder.
+ */
+
 const handleSyncOrders = async (orders, options, apiKey, domain) => {
-  const results = [];
-  resetOrderInfo();
-  if (!apiKey) apiKey = await getMBApiKey();
-  stopProcess = false;
-  const addMockups = {};
-  for (let i = 0; i < orders.length; i++) {
-    if (OrderInfo.locked) break;
-    if (stopProcess) break;
-    const order = orders[i];
-    OrderInfo.orderId = order["id"];
-    OrderInfo.locked = true;
-    // const url = `${AMZDomain}/orders-v3/order/${order["id"]}`;
-    const url = `${domain ? domain : AMZDomain}/orders-v3/order/${order["id"]}`;
-    // chrome.tabs.update({ url }, (tab) => {
-    //    if (tab?.id) {
-    //       sendMessage(tab.id, "getOrderItemInfo", {
-    //          order,
-    //          label: `Syncing orders: ${i + 1}/${orders.length}`,
-    //       });
-    //    } else if (activeTabId) {
-    //       chrome.tabs.get(activeTabId, function (tabInner) {
-    //          if (tabInner) {
-    //             chrome.tabs.update(
-    //                activeTabId || tabInner?.id,
-    //                { url },
-    //                (tab) => {
-    //                   sendMessage(tab.id, "getOrderItemInfo", {
-    //                      order,
-    //                      label: `Syncing orders: ${i + 1}/${orders.length}`,
-    //                   });
-    //                },
-    //             );
-    //          }
-    //       });
-    //    }
-    // });
+    if (!apiKey) apiKey = await getMBApiKey();
+    stopProcess = false;
+    const addMockups = {};
 
-    function redirectToOrderDetail(tabs) {
-      let tab = (tabs || []).find((item) => item?.active);
-      if (tab?.id) {
-        chrome.tabs.update(tab.id, { url }, (tabInner) => {
-          if (tabInner?.id) {
-            sendMessage(tabInner.id, "getOrderItemInfo", {
-              order,
-              label: `Syncing orders: ${i + 1}/${orders.length}`,
-            });
-          }
-        });
-      } else if (activeTabId) {
-        chrome.tabs.get(activeTabId, function (tabInner) {
-          if (tabInner) {
-            chrome.tabs.update(activeTabId || tabInner?.id, { url }, (tab) => {
-              sendMessage(tab.id, "getOrderItemInfo", {
-                order,
-                label: `Syncing orders: ${i + 1}/${orders.length}`,
-              });
-            });
-          }
-        });
-      }
-    }
+    for (let i = 0; i < orders.length; i++) {
+        if (stopProcess) break;
+        const order = orders[i];
+        const orderId = order.id;
 
-    await redirectToNewURL(redirectToOrderDetail);
-    // wait info order
-    let countSleep = 0;
-    while (true) {
-      if ((OrderInfo.order && OrderInfo.shipping) || countSleep == 30) break;
-      countSleep++;
-      await sleep(1000);
-    }
-    if (!OrderInfo.order || !OrderInfo.shipping) {
-      sendToContentScript("syncOrderToMB", {
-        data: false,
-        error: "Could not get order info or shipping info.",
-      });
-      await sleep(1000);
-      resetOrderInfo();
-      continue;
-    }
-    const orderInfo = await getOrderInfo(OrderInfo.order, OrderInfo.shipping);
-    if (!orderInfo) {
-      sendToContentScript("syncOrderToMB", {
-        data: false,
-        error: "Could not get order info.",
-      });
-      await sleep(1000);
-      resetOrderInfo();
-      continue;
-    }
-    // check all item are same product
-    let isSameProduct = orderInfo.items.every(
-      (item, i, items) => item.asin === items[0].asin,
-    );
-    let customItems = [];
-    for (const item of orderInfo.items) {
-      // check has image per order item
-      if (!item.mockup) {
-        if (orderInfo.items.length == 1 || isSameProduct) {
-          item.mockup = [order["img"]];
-        } else {
-          // check the same product that has image
-          if (addMockups[item.asin]) {
-            item.mockup = addMockups[item.asin];
-          } else {
-            item.mockup = [
-              await getProductImg(
-                `https://www.amazon.com/gp/product/${item.asin}`,
-              ),
-            ];
-          }
-        }
-      }
-      addMockups[item.asin] = item.mockup;
-      // check order has custom info
-      if (!item.isPersonalized || item.personalized.length === 0) continue;
-      let isCustomImage = false;
-      for (const personal of item.personalized) {
-        if (!personal || !personal.name) continue;
-        if (isCustomImgLabel(personal.name) || isImage(personal.value)) {
-          isCustomImage = true;
-          break;
-        }
-      }
-      customItems.push({
-        orderId: order.id,
-        itemId: item.lineId,
-        // url: `${AMZDomain}/gestalt/fulfillment/index.html?orderId=${orderInfo.orderId}&orderItemId=${item.lineId}`,
-        url: `${
-          domain ? domain : AMZDomain
-        }/gestalt/fulfillment/index.html?orderId=${
-          orderInfo.orderId
-        }&orderItemId=${item.lineId}`,
-        hasCustomImg: isCustomImage,
-      });
-    }
-    if (customItems.length > 0) {
-      resetCustomOrder();
-      for (const custom of customItems) {
-        if (CustomOrder.locked) break;
-        CustomOrder.locked = true;
-        CustomOrder.orderId = orderInfo.orderId;
-        CustomOrder.itemId = custom.itemId;
+        console.log(`Bắt đầu xử lý đơn hàng ${orderId}`);
+        const url = `${domain ? domain : AMZDomain}/orders-v3/order/${orderId}`;
 
-        chrome.tabs.update({ url: custom.url }, (tab) => {
-          if (tab?.id) {
-            sendMessage(tab.id, "getOrderItemInfo", {
-              order,
-              label: `Syncing orders: ${i + 1}/${orders.length}`,
-            });
-          } else {
-            chrome.tabs.get(activeTabId, function (tabInner) {
-              if (tabInner) {
-                chrome.tabs.update(
-                  activeTabId || tabInner?.id,
-                  { url: custom.url },
-                  (tab) => {
-                    sendMessage(tab?.id, "getOrderItemInfo", {
-                      order,
-                      label: `Syncing orders: ${i + 1}/${orders.length}`,
+        // Điều hướng đến trang chi tiết đơn hàng
+        function redirectToOrderDetail(tabs) {
+            const tab = (tabs || []).find(item => item?.active);
+            const tabId = tab?.id || activeTabId;
+            if (tabId) {
+                chrome.tabs.update(tabId, { url }, (updatedTab) => {
+                    sendMessage(updatedTab.id, "getOrderItemInfo", {
+                        order,
+                        label: `Syncing orders: ${i + 1}/${orders.length}`,
                     });
-                  },
-                );
-              }
-            });
-          }
-        });
-        // wait custom info
-        let countSleep = 0;
-        while (true) {
-          if (CustomOrder.personalizedInfo || countSleep == 30) break;
-          countSleep++;
-          await sleep(1000);
-        }
-        const handelErr = async () => {
-          sendToContentScript("syncOrderToMB", {
-            data: false,
-            error: "Could not get personalized info.",
-          });
-          await sleep(3000);
-          resetCustomOrder();
-        };
-        if (!CustomOrder.personalizedInfo) {
-          handelErr();
-          continue;
-        }
-        if (
-          !CustomOrder.personalizedInfo ||
-          !CustomOrder.personalizedInfo.fulfillmentData
-        ) {
-          handelErr();
-          continue;
-        }
-        const { customizationData, previewSnapshotUrlMap } =
-          CustomOrder.personalizedInfo.fulfillmentData;
-        // get alls custom field
-        const customFiled = [];
-        const { children: customWraps } = JSON.parse(customizationData);
-        let imgPreviewId = null;
-        if (customWraps)
-          for (let c = 0; c < customWraps.length; c++) {
-            const customWrap = customWraps[c];
-            if (
-              customWrap.children &&
-              customWrap.type == "FlatContainerCustomization"
-            ) {
-              for (const field of customWrap.children) {
-                if (field && field.label) customFiled.push(field.label);
-              }
-            }
-            if (customWrap.type === "PreviewContainerCustomization") {
-              if (c == 0) {
-                imgPreviewId = customWrap.identifier;
-              }
-              for (const previewItem of customWrap.children) {
-                if (previewItem.type == "FlatContainerCustomization")
-                  for (const field of customWrap.children) {
-                    if (field && field.label) customFiled.push(field.label);
-                  }
-              }
-            }
-          }
-        // check order miss custom field
-        if (customFiled.length)
-          for (const item of orderInfo.items) {
-            if (item.lineId != custom.itemId) continue;
-            const orderField = [];
-            for (const personal of item.personalized) {
-              orderField.push(personal.name);
-            }
-            for (const field of customFiled)
-              if (!orderField.includes(field))
-                item.personalized.push({
-                  name: field,
-                  value: "",
                 });
-          }
-        // get personalized preview image
-        if (previewSnapshotUrlMap) {
-          for (const item of orderInfo.items) {
-            if (item.lineId != custom.itemId) continue;
-            if (imgPreviewId && previewSnapshotUrlMap[imgPreviewId]) {
-              item.personalizedPreview = previewSnapshotUrlMap[imgPreviewId];
-            } else {
-              const previewImgs = Object.values(previewSnapshotUrlMap);
-              if (previewImgs.length) {
-                item.personalizedPreview = previewImgs[0];
-              }
             }
-          }
         }
-        // get custom image
-        if (custom.hasCustomImg) {
-          const customImages = getCustomImage(
-            CustomOrder.personalizedInfo.fulfillmentData,
+        await redirectToNewURL(redirectToOrderDetail);
+
+        try {
+            // Chờ cả 2 thông tin (order và shipping) về, sử dụng key duy nhất
+            const [orderData, shippingData] = await Promise.all([
+                waitForData(`order_${orderId}`),
+                waitForData(`shipping_${orderId}`)
+            ]);
+
+            const orderDetail = orderData.order;
+            const shippingDetail = shippingData[orderId].address;
+
+            if (!orderDetail || !shippingDetail) {
+                throw new Error("Không lấy được order hoặc shipping info.");
+            }
+
+            const orderInfo = await getOrderInfo(orderDetail, shippingDetail);
+            if (!orderInfo) {
+                throw new Error("Không xử lý được order info.");
+            }
+
+          let isSameProduct = orderInfo.items.every(
+            (item, i, items) => item.asin === items[0].asin,
           );
-          if (customImages.length)
-            // map custom image info into order item
-            for (const item of orderInfo.items) {
-              if (item.lineId != custom.itemId) continue;
-              for (const personal of item.personalized) {
-                for (const customImgItem of customImages) {
-                  if (personal.name === customImgItem.label) {
-                    personal.value = customImgItem.img;
-                    break;
-                  }
+          for (const item of orderInfo.items) {
+            if (!item.mockup) {
+              if (orderInfo.items.length == 1 || isSameProduct) {
+                item.mockup = [order["img"]];
+              } else {
+                if (addMockups[item.asin]) {
+                  item.mockup = addMockups[item.asin];
+                } else {
+                  item.mockup = [
+                    await getProductImg(
+                      `https://www.amazon.com/gp/product/${item.asin}`,
+                    ),
+                  ];
                 }
               }
             }
-        }
-        resetCustomOrder();
-      }
-      resetCustomOrder();
-    }
+            addMockups[item.asin] = item.mockup;
+          }
+
+          // --- Xử lý Customization ---
+            let customItems = [];
+            for (const item of orderInfo.items) {
+                if (!item.isPersonalized || item.personalized.length === 0) continue;
+                let isCustomImage = false;
+                for (const personal of item.personalized) {
+                    if (!personal || !personal.name) continue;
+                    if (isCustomImgLabel(personal.name) || isImage(personal.value)) {
+                        isCustomImage = true;
+                        break;
+                    }
+                }
+                customItems.push({
+                    orderId: orderId,
+                    itemId: item.lineId,
+                    url: `/gestalt/fulfillment/index.html?orderId=${orderInfo.orderId}&orderItemId=${item.lineId}`,
+                    hasCustomImg: isCustomImage,
+                });
+            }
+
+            if (customItems.length > 0) {
+                for (const customItem of customItems) {
+                    const customUrl = `${domain ? domain : AMZDomain}${customItem.url}`;
+                    chrome.tabs.update({ url: customUrl });
+
+                    // Chờ dữ liệu custom về với key duy nhất
+                    const personalizedInfo = await waitForData(`custom_${customItem.itemId}`);
+
+                    if (!personalizedInfo || !personalizedInfo.fulfillmentData) {
+                        console.error(`Bỏ qua item ${customItem.itemId} do không lấy được personalizedInfo.`);
+                        continue;
+                    }
+
+                    // (Logic xử lý `personalizedInfo` giữ nguyên như cũ)
+                    const { customizationData, previewSnapshotUrlMap } = personalizedInfo.fulfillmentData;
+                    const customImages = getCustomImage(personalizedInfo.fulfillmentData);
+
+                  const customDataParsed = JSON.parse(customizationData);
+                  const customFields = [];
+                  let imgPreviewId = null;
+
+                  if (customDataParsed.children) {
+                    for (let c = 0; c < customDataParsed.children.length; c++) {
+                      const customWrap = customDataParsed.children[c];
+                      if (customWrap.children && customWrap.type == "FlatContainerCustomization") {
+                        for (const field of customWrap.children) {
+                          if (field && field.label) customFields.push(field.label);
+                        }
+                      }
+                      if (customWrap.type === "PreviewContainerCustomization") {
+                        if (c == 0) imgPreviewId = customWrap.identifier;
+                        if (previewSnapshotUrlMap && previewSnapshotUrlMap[imgPreviewId]) {
+                          // Gán ảnh preview ngay tại đây
+                          orderInfo.items.find(i => i.lineId === customItem.itemId).personalizedPreview = previewSnapshotUrlMap[imgPreviewId];
+                        }
+                      }
+                    }
+                  }
+
+                  for (const item of orderInfo.items) {
+                    if (item.lineId === customItem.itemId) {
+                      if (customFields.length > 0) {
+                        const existingFields = item.personalized.map(p => p.name);
+                        for (const field of customFields) {
+                          if (!existingFields.includes(field)) {
+                            item.personalized.push({ name: field, value: "" });
+                          }
+                        }
+                      }
+
+                      if (customItem.hasCustomImg && customImages.length > 0) {
+                        for (const personal of item.personalized) {
+                          for (const customImgItem of customImages) {
+                            if (personal.name === customImgItem.label) {
+                              personal.value = customImgItem.img;
+                              break;
+                            }
+                          }
+                        }
+                      }
+                      break;
+                    }
+                  }
+                }
+            }
+
     if (options) {
       const {
         isAlwayMapping,
@@ -2501,18 +2325,22 @@ const handleSyncOrders = async (orders, options, apiKey, domain) => {
       }
     }
 
-    // sync order to MB
-    let query = JSON.stringify({
-        input: orderInfo
-    });
-    const result = await sendRequestToMB("createAmazonOrder", apiKey, query);
-    const messResp = { data: true, error: null };
-    if (result.error) messResp.error = result.error;
-    else if (result.errors?.length) messResp.error = result.errors[0].message;
-    sendToContentScript("syncOrderToMB", messResp);
-    resetOrderInfo();
-    await sleep(200);
-  }
+            // Gửi dữ liệu đã được xử lý chính xác lên server
+            let query = JSON.stringify({ input: orderInfo });
+            const result = await sendRequestToMB("createAmazonOrder", apiKey, query);
+            const messResp = { data: true, error: null };
+            if (result.error) messResp.error = result.error;
+            else if (result.errors?.length) messResp.error = result.errors[0].message;
+            sendToContentScript("syncedOrderToMB", messResp);
+
+        } catch (error) {
+            console.error(`Lỗi khi xử lý đơn hàng ${order.id}:`, error);
+            sendToContentScript("syncedOrderToMB", { data: false, error: error.message });
+        } finally {
+            await sleep(200);
+        }
+    }
+
   stopProcess = false;
   // back to home page
   const url = `${domain ? domain : AMZDomain}/orders-v3?page=1`;
@@ -2784,17 +2612,36 @@ chrome.runtime.onMessage.addListener(async (req) => {
       const mbApiKey = await getMBApiKey();
       if (!mbApiKey) return;
       if (!data) break;
+
+      let resolverKey = null;
+      let orderId = null;
+
+      // Xác định xem message này dành cho resolver nào
       if (endpoint.includes("/orders-api/order/")) {
-        const { order } = data;
-        if (!order || order["amazonOrderId"] != OrderInfo.orderId) return;
-        OrderInfo.order = order;
-        saveLog("orderLog - inject js", { type: "Order Information", data: order });
+          orderId = data?.order?.amazonOrderId;
+          if (orderId) resolverKey = `order_${orderId}`;
+      } else if (endpoint.includes("/orders-st/resolve")) {
+          orderId = Object.keys(data || {})[0];
+          if (orderId) resolverKey = `shipping_${orderId}`;
+      } else if (endpoint.includes("/gestalt/ajax/fulfillment/init")) {
+        if (activeTabId) {
+          sendMessage(activeTabId, "syncFile", "");
+        }
+
+        // Cần một cách để lấy itemId từ endpoint hoặc data
+          const match = endpoint.match(/orderItemId=([^&]+)/);
+          const itemId = match ? match[1] : null;
+          if (itemId) resolverKey = `custom_${itemId}`;
       }
 
-      if (endpoint.includes("/orders-st/resolve")) {
-        if (!data || !data[OrderInfo.orderId]) return;
-        OrderInfo.shipping = data[OrderInfo.orderId].address;
+      // Nếu tìm thấy resolver phù hợp, gọi hàm resolve của nó
+      if (resolverKey && pendingDataResolvers[resolverKey]) {
+        console.log(`Dữ liệu cho key '${resolverKey}' đã nhận được. Hoàn thành Promise.`);
+        clearTimeout(pendingDataResolvers[resolverKey].timeoutId);
+        pendingDataResolvers[resolverKey].resolve(data);
+        delete pendingDataResolvers[resolverKey];
       }
+
       // capture order grand totals
       if (
         endpoint.includes("payments/api/events-view") &&
@@ -2821,19 +2668,6 @@ chrome.runtime.onMessage.addListener(async (req) => {
               }
             }
           }
-        }
-      }
-      // capture personalized info
-      if (endpoint.includes("/gestalt/ajax/fulfillment/init")) {
-        if (activeTabId) {
-          sendMessage(activeTabId, "syncFile", "");
-        }
-        if (
-          endpoint.includes(CustomOrder.orderId) &&
-          endpoint.includes(CustomOrder.itemId)
-        ) {
-          if (!data) return;
-          CustomOrder.personalizedInfo = data;
         }
       }
 
