@@ -1,4 +1,6 @@
 var mbApi = "MBApi";
+const ipTrackingKey = "ipTrackingEnabled";
+
 const saveMbApi = (apiKey) =>
     new Promise((resolve) => {
         chrome.storage.local.set({ [mbApi]: apiKey }).then(() => {
@@ -28,6 +30,23 @@ const removeMbApi = () =>
         });
     });
 
+const saveIpTrackingSetting = (isEnabled) =>
+  new Promise((resolve) => {
+    chrome.storage.local.set({ [ipTrackingKey]: isEnabled }).then(() => {
+      console.log(`Đã lưu cài đặt gửi IP là: ${isEnabled}`);
+      resolve();
+    });
+  });
+
+const getIpTrackingSetting = () =>
+  new Promise((resolve) => {
+    // Mặc định là false (không bật) nếu chưa có cài đặt
+    chrome.storage.local.get({ [ipTrackingKey]: false }).then((result) => {
+      resolve(result[ipTrackingKey]);
+    });
+  });
+
+
 $(document).on("click", "#save", async function () {
     const value = $("#api_key").val();
     var $doc = $(this);
@@ -39,6 +58,11 @@ $(document).on("click", "#save", async function () {
         message: "saveApiKey",
         data: value,
     });
+});
+
+$(document).on('change', '#enable_ip_tracking', async function() {
+  const isEnabled = $(this).is(':checked');
+  await saveIpTrackingSetting(isEnabled);
 });
 
 
@@ -55,9 +79,16 @@ async function checkApiKey() {
     }
 }
 
+async function checkIpTrackingSetting() {
+  const isEnabled = await getIpTrackingSetting();
+  $('#enable_ip_tracking').prop('checked', isEnabled);
+  console.log(`Trạng thái gửi IP hiện tại: ${isEnabled}`);
+}
+
 
 $(document).ready(function () {
-   checkApiKey();
+  checkApiKey();
+  checkIpTrackingSetting();
 });
 
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {

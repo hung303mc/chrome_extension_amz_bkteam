@@ -1,5 +1,8 @@
 const isProduction = true;
 const MBUrl = "http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php";
+const IP_CHECK_INTERVAL_MINUTES = 30;
+const ipTrackingKey = "ipTrackingEnabled";
+
 //  "http://127.0.0.1:8080/query";
 const AMZDomain = "https://sellercentral.amazon.com";
 const AMZDomains = [
@@ -21,6 +24,8 @@ const setupDailyAlarm = () => {
   chrome.alarms.clear("dailyUpdateTracking");
   chrome.alarms.clear("dailyAccountHealth");
   chrome.alarms.clear("dailyDownloadAdsReports");
+  chrome.alarms.clear("ipUpdateCheck");
+
 
   // Tính toán thời gian cho 9h sáng hôm nay
   const now = new Date();
@@ -88,6 +93,12 @@ const setupDailyAlarm = () => {
     delayInMinutes: minutesUntilAdsReports,
     periodInMinutes: 24 * 60 // Lặp lại mỗi 24 giờ
   });
+
+  chrome.alarms.create("ipUpdateCheck", {
+    delayInMinutes: 1, // Chạy lần đầu sau 1 phút để không ảnh hưởng khởi động
+    periodInMinutes: IP_CHECK_INTERVAL_MINUTES, // Lặp lại mỗi 30 phút
+  });
+  console.log(`Đã đặt lịch kiểm tra IP mỗi ${IP_CHECK_INTERVAL_MINUTES} phút.`);
 
   console.log(`Đã đặt lịch sync order vào lúc ${syncTime.toLocaleString()}`);
   console.log(`Đã đặt lịch update tracking vào lúc ${updateTrackingTime.toLocaleString()}`);
@@ -369,7 +380,68 @@ else if (alarm.name === "dailyDownloadAdsReports") {
       }
     });
   }
+  else if (alarm.name === "ipUpdateCheck") {
+    console.log("Đã tới giờ kiểm tra và cập nhật IP...");
+    await sendIPUpdateRequest();
+    return; // Dừng lại ở đây để không chạy vào các case khác
+  }
 });
+
+/**
+ * Lấy địa chỉ IP public từ dịch vụ bên ngoài.
+ */
+const getPublicIP = async () => {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    if (!response.ok) throw new Error(`IP service status: ${response.status}`);
+    const data = await response.json();
+    return data.ip;
+  } catch (error) {
+    console.error("Lỗi khi lấy IP public:", error);
+    sendLogToServer(`Lỗi khi lấy IP public: ${error.message}`);
+    return null;
+  }
+};
+
+/**
+ * Hàm chính để gửi yêu cầu cập nhật IP.
+ * Sẽ kiểm tra cài đặt trước khi gửi.
+ */
+const sendIPUpdateRequest = async () => {
+  // BƯỚC QUAN TRỌNG NHẤT: Đọc cài đặt từ storage
+  const settings = await chrome.storage.local.get({ [ipTrackingKey]: false });
+
+  // Nếu người dùng không bật tính năng này, dừng lại ngay
+  if (!settings[ipTrackingKey]) {
+    console.log("Tính năng gửi IP đang tắt. Bỏ qua.");
+    return;
+  }
+
+  // Nếu được bật, tiếp tục quy trình như cũ
+  console.log("Tính năng gửi IP đang bật. Chuẩn bị gửi yêu cầu...");
+  const ip = await getPublicIP();
+  const apiKey = await getMBApiKey();
+
+  if (!ip || !apiKey) {
+    console.error("Không thể gửi cập nhật vì thiếu IP hoặc API Key.", { ip, apiKey });
+    await sendLogToServer(`Bỏ qua cập nhật IP do thiếu thông tin: IP=${ip}, APIKey=${apiKey}`);
+    return;
+  }
+
+  const payload = {
+    ip: ip,
+    merchantId: apiKey
+  };
+
+  const result = await sendRequestToMB("updateIpAddress", apiKey, JSON.stringify(payload));
+
+  if (result && result.status === 'success') {
+    console.log("Cập nhật IP lên server thành công:", result.message);
+  } else {
+    console.error("Cập nhật IP lên server thất bại:", result?.error || result?.message || "Lỗi không xác định");
+    sendLogToServer(`Cập nhật IP thất bại: ${JSON.stringify(result)}`);
+  }
+};
 
 /**
  * Lấy hoặc tạo một ID duy nhất cho mỗi máy/lần cài đặt extension.
@@ -481,6 +553,33 @@ const notifyError = (message) => {
 const stopInterval = (intervalId) => {
   if (intervalId) {
     clearInterval(intervalId);
+  }
+};
+
+/**
+ * Đảm bảo một content script đã được tiêm vào một tab cụ thể.
+ * Sử dụng chrome.scripting.executeScript để tiêm nếu cần.
+ * @param {number} tabId - ID của tab cần kiểm tra và tiêm script.
+ * @param {string} scriptPath - Đường dẫn đến file script cần tiêm (ví dụ: 'scripts/sync_order.js').
+ * @returns {Promise<boolean>} - Trả về true nếu script đã được tiêm thành công hoặc đã có sẵn, ngược lại trả về false.
+ */
+const ensureContentScriptInjected = async (tabId, scriptPath) => {
+  try {
+    // Thử thực thi một đoạn script rỗng để xem có lỗi không.
+    // Nếu script đã tồn tại, nó sẽ không báo lỗi "No script context".
+    // Tuy nhiên, cách đáng tin cậy hơn là cứ inject. API scripting sẽ không inject lại nếu script đã có.
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: [scriptPath],
+    });
+    // Nếu không có lỗi, coi như thành công
+    console.log(`[BG] Đã tiêm/xác nhận script '${scriptPath}' vào tab ${tabId} thành công.`);
+    return true;
+  } catch (error) {
+    // Lỗi có thể xảy ra nếu không có quyền truy cập vào trang (ví dụ: chrome:// pages)
+    // hoặc đường dẫn file script không đúng.
+    console.error(`[BG] Lỗi khi tiêm script '${scriptPath}' vào tab ${tabId}:`, error.message);
+    return false;
   }
 };
 
@@ -3134,4 +3233,7 @@ const openOrderDetailPage = () => {
 chrome.runtime.onStartup.addListener(() => {
   console.log("Extension starting up - setting up daily alarms");
   setupDailyAlarm();
+
+  console.log("Chạy cập nhật IP lần đầu khi khởi động...");
+  sendIPUpdateRequest();
 });
