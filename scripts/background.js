@@ -64,38 +64,35 @@ const setupTestAlarms = async () => {
 
 // Thiết lập alarm để tự động sync order, lấy cấu hình từ server
 const setupDailyAlarm = async () => {
-  // Đường link tới file JSON của mày
   const SETTINGS_URL = "https://bkteam.top/dungvuong-admin/data_files/alarm_setting/alarm-settings.json";
 
-  // Cài đặt mặc định nếu không lấy được file từ server
-  const DEFAULT_SETTINGS = {
-    settingsRefresher: { periodInMinutes: 60 }, // Default 1 tiếng
+  // Danh sách TẤT CẢ các alarm có thể có trong hệ thống.
+  // Thêm hoặc bớt tên alarm ở đây nếu mày muốn.
+  const ALL_POSSIBLE_ALARMS = [
+    'ipUpdateCheck',
+    'syncOrder_1', 'syncOrder_2', 'syncOrder_3', 'syncOrder_4', 'syncOrder_5',
+    'updateTracking_1', 'updateTracking_2', 'updateTracking_3', 'updateTracking_4', 'updateTracking_5',
+    'accountHealth_1', 'accountHealth_2',
+    'downloadAdsReports_1', 'downloadAdsReports_2'
+  ];
 
-    downloadAdsReports: { hour: 6, minute: 40, periodInMinutes: 1440 }, // 24h
-    updateTracking: { hour: 7, minute: 0, periodInMinutes: 720 },       // 12h
-    syncOrder: { hour: 8, minute: 0, periodInMinutes: 720 },             // 12h
-    accountHealth: { hour: 8, minute: 40, periodInMinutes: 720 },     // 12h
-    ipUpdateCheck: { hour: 0, minute: 5, periodInMinutes: 30 },        // 30 phút
-  };
-
-  let settings = DEFAULT_SETTINGS;
+  let settings = {};
   try {
-    const response = await fetch(SETTINGS_URL, { cache: "no-store" }); // Thêm no-store để luôn lấy file mới nhất
+    const response = await fetch(SETTINGS_URL, { cache: "no-store" });
     if (response.ok) {
       settings = await response.json();
-      console.log("Đã tải cài đặt alarm từ server.");
+      console.log("Đã tải cài đặt alarm từ server.", settings);
     } else {
-      console.error("Lỗi HTTP khi tải cài đặt, sử dụng cài đặt mặc định.");
+      console.error("Lỗi HTTP khi tải cài đặt, sẽ không có alarm nào được đặt.");
     }
   } catch (error) {
-    console.error("Không thể tải cài đặt từ server, sử dụng cài đặt mặc định:", error);
+    console.error("Không thể tải cài đặt từ server, sẽ không có alarm nào được đặt:", error);
   }
 
-  // Thay vì xóa tất cả, ta chỉ xóa các alarm tác vụ, giữ lại alarm 'settingsRefresher'
+  // Xóa TẤT CẢ các alarm tác vụ cũ (trừ settingsRefresher) để đảm bảo sạch sẽ.
   const allAlarms = await chrome.alarms.getAll();
   for (const alarm of allAlarms) {
     if (alarm.name !== 'settingsRefresher') {
-      // Dùng await để chắc chắn nó clear xong trước khi đặt cái mới
       await chrome.alarms.clear(alarm.name);
     }
   }
@@ -104,60 +101,61 @@ const setupDailyAlarm = async () => {
   const now = new Date();
   const GMT7_OFFSET_HOURS = 7;
 
-  // Hàm helper để tính toán và đặt lịch theo giờ UTC
+  // Hàm helper để tính toán và đặt lịch
   const scheduleAlarm = (name, config) => {
-    // Chuyển đổi giờ GMT+7 từ config sang giờ UTC
-    const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
+    // Thêm một khoảng thời gian ngẫu nhiên từ 0 đến 300 giây (5 phút)
+    const randomDelayInSeconds = Math.floor(Math.random() * 301);
 
-    // Tạo đối tượng thời gian cho lần chạy alarm tiếp theo (tính theo UTC)
+    const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
     const alarmTime = new Date();
     alarmTime.setUTCHours(targetHourUTC, config.minute, 0, 0);
 
-    // Nếu giờ hẹn trong ngày đã qua (so với UTC), thì đặt cho ngày mai
     if (alarmTime.getTime() < now.getTime()) {
       alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
     }
 
-    // Tính số phút trễ từ bây giờ đến lúc hẹn
+    // Cộng thêm thời gian ngẫu nhiên vào thời gian báo thức
+    alarmTime.setSeconds(alarmTime.getSeconds() + randomDelayInSeconds);
     const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
 
-    // Tạo alarm
     chrome.alarms.create(name, {
       delayInMinutes: delayInMinutes,
-      periodInMinutes: config.periodInMinutes,
+      periodInMinutes: config.periodInMinutes, // Thường sẽ là 1440 (24h)
     });
 
-    // Log ra thời gian đã đặt theo múi giờ Việt Nam để dễ kiểm tra
-    console.log(`Đã đặt lịch cho '${name}' vào lúc ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })} (GMT+7)`);
+    // Cập nhật log để hiển thị cả giây cho chính xác
+    console.log(`✅ Đã đặt lịch cho '${name}' vào khoảng ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7) với độ trễ ngẫu nhiên.`);
   };
 
-  // Đặt lịch cho các tác vụ chính từ config
-  scheduleAlarm("dailyDownloadAdsReports", settings.downloadAdsReports);
-  scheduleAlarm("dailyUpdateTracking", settings.updateTracking);
-  scheduleAlarm("dailySyncOrder", settings.syncOrder);
-  scheduleAlarm("dailyAccountHealth", settings.accountHealth);
-  scheduleAlarm("ipUpdateCheck", settings.ipUpdateCheck);
+  // --- LOGIC MỚI: Duyệt qua danh sách và đặt lịch ---
+  console.log("--- Bắt đầu kiểm tra và đặt lịch cho các alarm ---");
+  for (const alarmName of ALL_POSSIBLE_ALARMS) {
+    // Kiểm tra xem trong file JSON tải về có định nghĩa cho alarm này không và không phải là null
+    if (settings[alarmName]) {
+      // Nếu có, đặt lịch cho nó
+      scheduleAlarm(alarmName, settings[alarmName]);
+    } else {
+      // Nếu không, chỉ log ra để biết là nó bị bỏ qua (có thể bỏ comment nếu cần debug)
+      // console.log(`❌ Bỏ qua alarm '${alarmName}' vì không được định nghĩa trên server.`);
+    }
+  }
+  console.log("--- Hoàn tất quá trình đặt lịch ---");
 
   // Tạo hoặc cập nhật alarm 'settingsRefresher'
-  // Alarm này sẽ chịu trách nhiệm gọi lại chính hàm setupDailyAlarm
-  const refresherPeriod = settings.settingsRefresher.periodInMinutes;
-  chrome.alarms.create('settingsRefresher', {
-    // Chạy lần đầu tiên sau `refresherPeriod` phút
-    delayInMinutes: refresherPeriod,
-    // Lặp lại mỗi `refresherPeriod` phút
-    periodInMinutes: refresherPeriod
-  });
-  console.log(`Đã đặt lịch tự động cập nhật cài đặt sau mỗi ${refresherPeriod} phút.`);
-
-  // chrome.alarms.create("testSyncOrder", {
-  //   delayInMinutes: 1
-  // });
-  // console.log("Đã đặt alarm test sau 1 phút");
+  if (settings.settingsRefresher) {
+    const refresherPeriod = settings.settingsRefresher.periodInMinutes;
+    chrome.alarms.create('settingsRefresher', {
+      delayInMinutes: refresherPeriod,
+      periodInMinutes: refresherPeriod
+    });
+    console.log(`Đã đặt lịch tự động cập nhật cài đặt sau mỗi ${refresherPeriod} phút.`);
+  }
 
   chrome.alarms.getAll((alarms) => {
-    console.log("Danh sách tất cả alarm:", alarms);
+    console.log("Danh sách tất cả alarm hiện tại:", alarms);
   });
 };
+
 
 // Xử lý alarm khi kích hoạt
 
@@ -194,7 +192,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     sendLogToServer(`Alarm triggered: ${alarm.name}`);
   }
 
-  if (alarm.name === "dailySyncOrder" || alarm.name === "test_syncOrder") {
+  if (alarm.name.startsWith("syncOrder_") || alarm.name === "test_syncOrder") {
     console.log("Đã tới giờ tự động sync order...");
 
     try {
@@ -245,7 +243,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       console.error("[BG] Đã xảy ra lỗi trong quá trình tự động sync order:", error);
     }
   }
-  else if (alarm.name === "dailyUpdateTracking" || alarm.name === "test_updateTracking") {
+  else if (alarm.name.startsWith("updateTracking_") || alarm.name === "test_updateTracking") {
     console.log("Đang chạy tự động update tracking theo lịch lúc 9h10 sáng...");
     // Mở trang order details
     openOrderDetailPage(); // Reverted to correct function call for update tracking
@@ -262,7 +260,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       });
     }, 5000);
   }
-  else if (alarm.name === "dailyAccountHealth" || alarm.name === "test_accountHealth") {
+  else if (alarm.name.startsWith("accountHealth_") || alarm.name === "test_accountHealth") {
     const logPrefix = '[AccHealth]';
     console.log("Đang chạy tự động kiểm tra account health theo lịch.");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình kiểm tra tự động theo lịch.`);
@@ -306,7 +304,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     })();
   }
 
-  else if (alarm.name === "dailyDownloadAdsReports" || alarm.name === "test_downloadAdsReports") {
+  else if (alarm.name.startsWith("downloadAdsReports_") || alarm.name === "test_downloadAdsReports") {
     const logPrefix = '[AdsReport]'; // Tạo prefix cho dễ lọc log
     console.log("Đang chạy tự động tải và tải lên báo cáo quảng cáo theo lịch...");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động theo lịch.`);
@@ -529,18 +527,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       }
   })();
 }
-  // else if (alarm.name === "testSyncOrder") {
-  //   console.log("Đang chạy test alarm...");
-  //   // Test thông báo
-  //   chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-  //     if (tabs && tabs.length > 0) {
-  //       sendMessage(tabs[0].id, "showToast", {
-  //         type: "success",
-  //         message: "Alarm test đã kích hoạt thành công!"
-  //       });
-  //     }
-  //   });
-  // }
 });
 
 /**
