@@ -1,30 +1,65 @@
 <!DOCTYPE html>
 <html lang="en">
-   <head>
-      <meta charset="UTF-8" />
-      <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <link rel="stylesheet" href="../assets/styles/popup.css" />
-      <script src="../assets/libs/jquery.min.js"></script>
-      <title>Document</title>
-   </head>
-   <body>
-      <div class="container" style="width: 400px">
-         <div>
-            <label for="api_key">MB Api key</label>
-            <div class="wrap-apikey">
-               <input type="text" id="api_key" name="api_key" />
-            </div>
+<head>
+   <meta charset="UTF-8" />
+   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+   <link rel="stylesheet" href="../assets/styles/popup.css" />
+   <script src="../assets/libs/jquery.min.js"></script>
+   <title>Document</title>
+</head>
+<body>
+<div class="container" style="width: 400px">
+   <div>
+      <label for="api_key">MB Api key</label>
+      <div class="wrap-apikey">
+         <input type="text" id="api_key" name="api_key" />
+      </div>
+   </div>
+   <div class="setting-item" style="margin-top: 15px; display: flex; align-items: center;">
+      <label for="enable_ip_tracking" style="margin: 0;">Bật tính năng gửi IP về server</label>
+      <input type="checkbox" id="enable_ip_tracking" style="margin-right: 8px;">
+   </div>
+   <div class="wrap-btn">
+      <button id="save" class="om-btn">Save</button>
+   </div>
+
+   <hr style="margin: 20px 0;">
+
+   <fieldset style="border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
+      <legend style="padding: 0 5px;">Chạy Test Tự Động</legend>
+      <div id="test-settings">
+         <p style="margin-top: 0;">Chọn các tác vụ mày muốn test:</p>
+         <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 5px;">
+            <input type="checkbox" id="test_sync_order" style="margin-right: 8px;">
+            <label for="test_sync_order" style="margin: 0;">Test Lấy đơn</label>
          </div>
-         <div class="setting-item" style="margin-top: 15px; display: flex; align-items: center;">
-            <label for="enable_ip_tracking" style="margin: 0;">Bật tính năng gửi IP về server</label>
-            <input type="checkbox" id="enable_ip_tracking" style="margin-right: 8px;">
+         <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 5px;">
+            <input type="checkbox" id="test_update_tracking" style="margin-right: 8px;">
+            <label for="test_update_tracking" style="margin: 0;">Test Update tracking</label>
          </div>
-         <div class="wrap-btn">
-            <button id="save" class="om-btn">Save</button>
+         <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 15px;">
+            <input type="checkbox" id="test_account_health" style="margin-right: 8px;">
+            <label for="test_account_health" style="margin: 0;">Test Get account health</label>
+         </div>
+         <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 15px;">
+            <input type="checkbox" id="test_download_ads" style="margin-right: 8px;">
+            <label for="test_download_ads" style="margin: 0;">Test Download Ads Report</label>
+         </div>
+
+         <div style="display: flex; align-items: center;">
+            <label for="test_delay" style="margin: 0 8px 0 0;">Chạy sau (phút):</label>
+            <input type="number" id="test_delay" value="1" min="1" style="width: 60px;">
+         </div>
+
+         <div class="wrap-btn" style="margin-top: 15px;">
+            <button id="run_test" class="om-btn">Chạy Test</button>
+            <span id="test_status" style="margin-left: 10px; color: green;"></span>
          </div>
       </div>
+   </fieldset>
+</div>
 
-      <script src="./popup.js"></script>
-   </body>
+<script src="./popup.js"></script>
+</body>
 </html>

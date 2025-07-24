@@ -134,21 +134,41 @@ const getOrderLists = async () => {
   const orders = [];
   // wait load dom
   const ordersXpath = "#orders-table tbody tr";
+  const noOrdersSelector = 'span:contains("No orders were found that match the given search criteria.")';
 
-  let i = 0;
-  while (i < 5) {
-    if (
-      $(ordersXpath).length &&
-      $(".total-orders-heading>span:first-child").length
-    )
-      break;
+  const MAX_WAIT_SECONDS = 60; // Vẫn giữ thời gian chờ tối đa 1 phút
+  let tableFound = false;
+
+  console.log(`Bắt đầu chờ, tối đa ${MAX_WAIT_SECONDS} giây. Sẽ chỉ dừng lại khi thấy bảng order.`);
+
+  // Vòng lặp này chỉ có một mục đích duy nhất: chờ bằng được cái bảng order xuất hiện.
+  for (let i = 0; i < MAX_WAIT_SECONDS; i++) {
+    if ($(ordersXpath).length > 0) {
+      console.log(`OK, đã tìm thấy bảng order sau ${i + 1} giây.`);
+      tableFound = true;
+      break; // Thoát ngay khi thấy bảng
+    }
     await sleep(1000);
-    i++;
   }
 
-  if ($(ordersXpath).length == 0) {
-    return [];
+  // Sau khi vòng lặp kết thúc, ta mới bắt đầu phán xét
+  if (tableFound) {
+    // Nếu vòng lặp dừng lại do đã tìm thấy bảng, thì quá tốt.
+    // Bỏ qua cái dòng "No orders" dù nó có tồn tại hay không.
+    console.log("Bảng order đã xuất hiện. Bắt đầu lấy danh sách.");
+  } else {
+    // Nếu chạy hết 60 giây mà không thấy bảng order đâu (tableFound = false)
+    // Lúc này ta mới kiểm tra lần cuối xem có dòng "No orders" không.
+    if ($(noOrdersSelector).length > 0) {
+      console.log("Đã chờ hết 60 giây, không thấy bảng order, chỉ thấy thông báo 'No orders'. Kết luận không có đơn hàng.");
+      return [];
+    } else {
+      // Trường hợp tệ nhất: hết 60s mà không thấy gì cả.
+      console.log(`Hết ${MAX_WAIT_SECONDS} giây chờ mà không thấy bảng order hay thông báo. Có thể trang đã bị lỗi.`);
+      return [];
+    }
   }
+
   // wait load all order
   const totalOrders = parseInt(
     $(".total-orders-heading>span:first-child").text().split(" ")[0],
