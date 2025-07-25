@@ -19,6 +19,37 @@ let isSyncing = false;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Gửi trạng thái của một feature về server để monitor.
+ * @param {string} featureName - Tên của feature (vd: 'syncOrder').
+ * @param {string} status - Trạng thái ('SUCCESS', 'FAILED', 'SKIPPED', 'RUNNING').
+ * @param {string} message - Thông điệp chi tiết.
+ */
+const reportStatusToServer = async (featureName, status, message = '') => {
+  try {
+    const merchantId = await getMBApiKey();
+    if (!merchantId) {
+      return;
+    }
+    const MONITORING_URL = "http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=updateMonitoringStatus";
+    await fetch(MONITORING_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "merchantId": merchantId
+      },
+      body: JSON.stringify({
+        merchantId,
+        featureName,
+        status,
+        message
+      }),
+    });
+  } catch (error) {
+    console.error(`[Monitor] Failed to report status for ${featureName}:`, error);
+  }
+};
+
 const setupTestAlarms = async () => {
   // Lấy cài đặt test từ storage
   const { testSettings } = await chrome.storage.local.get("testSettings");
@@ -193,6 +224,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 
   if (alarm.name.startsWith("syncOrder_") || alarm.name === "test_syncOrder") {
+    const featureName = 'syncOrder';
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
     console.log("Đã tới giờ tự động sync order...");
 
     try {
@@ -240,10 +273,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       }
     } catch (error) {
       sendLogToServer(`ERROR in dailySyncOrder: ${error.message}`); // Log khi có lỗi
+      await reportStatusToServer(featureName, 'FAILED', error.message);
       console.error("[BG] Đã xảy ra lỗi trong quá trình tự động sync order:", error);
     }
   }
   else if (alarm.name.startsWith("updateTracking_") || alarm.name === "test_updateTracking") {
+    const featureName = 'updateTracking';
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
     console.log("Đang chạy tự động update tracking theo lịch lúc 9h10 sáng...");
     // Mở trang order details
     openOrderDetailPage(); // Reverted to correct function call for update tracking
@@ -261,7 +297,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }, 5000);
   }
   else if (alarm.name.startsWith("accountHealth_") || alarm.name === "test_accountHealth") {
+    const featureName = 'accountHealth';
     const logPrefix = '[AccHealth]';
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
     console.log("Đang chạy tự động kiểm tra account health theo lịch.");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình kiểm tra tự động theo lịch.`);
 
@@ -300,20 +338,25 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       } catch (error) {
         console.error("[BG] Lỗi trong quá trình tự động lấy account health:", error);
         sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+        await reportStatusToServer(featureName, 'FAILED', error.message);
       }
     })();
   }
 
   else if (alarm.name.startsWith("downloadAdsReports_") || alarm.name === "test_downloadAdsReports") {
+    const featureName = 'downloadAdsReports';
     const logPrefix = '[AdsReport]'; // Tạo prefix cho dễ lọc log
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
     console.log("Đang chạy tự động tải và tải lên báo cáo quảng cáo theo lịch...");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động theo lịch.`);
 
-    // 1. Kiểm tra khóa
+  // 1. Kiểm tra khóa
   if (isDownloadingAdsReport) {
-      console.log("Đã có quá trình tải báo cáo đang chạy, bỏ qua.");
-      sendLogToServer(`${logPrefix} Bỏ qua vì tác vụ trước đó vẫn đang chạy.`);
-      return;
+    const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
+    console.log(skipMessage);
+    sendLogToServer(`${logPrefix} ${skipMessage}`);
+    await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+    return;
   }
   // 2. Đặt khóa và bắt đầu
   isDownloadingAdsReport = true;
@@ -507,10 +550,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                   
                   console.log(`Tự động: Hoàn tất. Đã tải lên thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
                   sendLogToServer(`${logPrefix} Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
+                  const finalMessage = `Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`;
+                  await reportStatusToServer(featureName, 'SUCCESS', finalMessage);
                   saveLog("adsReportsLog", { type: "Auto Ads Reports Upload", date: new Date().toISOString(), successCount: successCount, totalFound: reportsToUpload.length });
               } catch (error) {
                 console.error("Lỗi nghiêm trọng trong quá trình tự động tải báo cáo:", error);
                 sendLogToServer(`${logPrefix} LỖI NGHIÊM TRỌNG: ${error.message}`);
+                await reportStatusToServer(featureName, 'FAILED', error.message);
               } finally {
                 // 3. Mở khóa
                 isDownloadingAdsReport = false;
@@ -522,6 +568,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       } catch (error) {
         console.error("Lỗi nghiêm trọng xảy ra ở bước setup:", error);
         sendLogToServer(`${logPrefix} LỖI NGHIÊM TRỌNG (SETUP): ${error.message}`);
+        await reportStatusToServer(featureName, 'FAILED', error.message);
         // Đảm bảo mở khóa nếu có lỗi sớm
         isDownloadingAdsReport = false;
       }
@@ -1148,6 +1195,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
   }
 
   if (message === "runUpdateTracking") {
+    const featureName = 'updateTracking';
     // 1. KIỂM TRA KHÓA: Nếu quy trình đang chạy, từ chối yêu cầu mới
     if (isUpdateTrackingRunning) {
         console.warn("[BG] 'runUpdateTracking' đang chạy. Yêu cầu mới bị từ chối.");
@@ -1179,8 +1227,10 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
 
             const orders = result.data;
             if (!orders || orders.length === 0) {
+                const skipMessage = "Không có đơn hàng nào cần xử lý.";
                 console.log("[BG] Không có đơn hàng nào cần cập nhật tracking.");
-                sendLogToServer('[Update Tracking] Hoàn tất: Không có đơn hàng nào cần xử lý.');
+                sendLogToServer(`[Update Tracking] Hoàn tất: ${skipMessage}`);
+                await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
 
                 sendMessage(initialTabId, "updateTracking", {
                     error: null,
@@ -1285,12 +1335,20 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
                 }
             } // Kết thúc vòng lặp for
 
-            sendLogToServer(`[Update Tracking] Hoàn tất xử lý ${orders.length} đơn. Thành công: ${successCount}, Thất bại: ${errorCount}.`);
+            const finalMessage = `Hoàn tất xử lý ${orders.length} đơn. Thành công: ${successCount}, Thất bại: ${errorCount}.`;
+            sendLogToServer(`[Update Tracking] ${finalMessage}`);
+            if(errorCount > 0) {
+              await reportStatusToServer(featureName, 'FAILED', finalMessage); // ✅ OK
+            } else {
+              await reportStatusToServer(featureName, 'SUCCESS', finalMessage); // ✅ OK
+            }
+
             // Thông báo hoàn tất về tab ban đầu
             sendMessage(initialTabId, "updateTracking", { error: overallErrorMessage, autoMode: autoModeFromReq });
 
         } catch (e) {
             sendLogToServer(`[Update Tracking] Lỗi hệ thống: ${e.message}`);
+            await reportStatusToServer(featureName, 'FAILED', e.message);
             console.error("[BG] Lỗi nghiêm trọng trong quy trình 'runUpdateTracking':", e);
             sendMessage(initialTabId, "updateTracking", { error: `Lỗi hệ thống: ${e.message}`, autoMode: autoModeFromReq });
         } finally {
@@ -1333,7 +1391,9 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
       totalPages: syncDetails.totalPages || 1,
       status: syncDetails.status || "completed"
     });
-    
+    const message = `Hoàn tất. Total Products: ${syncDetails.totalProducts || 0}, Total Pages: ${syncDetails.totalPages || 1}`;
+    await reportStatusToServer('syncOrder', 'SUCCESS', message);
+
     // Kiểm tra nếu còn đơn hàng để sync không
     chrome.storage.local.get(["UnshippedOrders"], function(result) {
       const unshippedOrders = result.UnshippedOrders || [];
@@ -1359,6 +1419,10 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
       date: new Date().toISOString(),
       reason: data?.reason || "unknown_reason"
     });
+
+    const reason = data?.reason || 'unknown';
+    const message = `Bỏ qua. Lý do: ${reason}`;
+    await reportStatusToServer('syncOrder', 'SKIPPED', message);
   }
   if (message === "checkSyncedOrders") {
     const query = JSON.stringify({
@@ -1536,6 +1600,8 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
   if (message === "accountHealthProcessFinished") {
     if (sender.tab && sender.tab.id) {
       console.log(`[BG] Tác vụ Account Health đã hoàn tất, đóng tab ID: ${sender.tab.id}`);
+      const message = `Tác vụ đã hoàn tất. Đang đóng tab ID: ${sender.tab?.id}`;
+      await reportStatusToServer('accountHealth', 'SUCCESS', message);
       sendLogToServer(`[AccHealth] Tác vụ đã hoàn tất. Đang đóng tab ID: ${sender.tab.id}`); // <-- THÊM DÒNG NÀY
       chrome.tabs.remove(sender.tab.id);
     }
@@ -2392,19 +2458,28 @@ const handleSyncOrders = async (orders, options, apiKey, domain) => {
     if (!apiKey) apiKey = await getMBApiKey();
     stopProcess = false;
     const addMockups = {};
+    let successCount = 0;
+    let errorCount = 0;
+    const featureName = 'syncOrder';
+    const totalOrders = orders.length;
 
-    sendLogToServer(`[Sync] Bắt đầu xử lý lô ${orders.length} đơn hàng.`);
+    const startMessage = `Bắt đầu xử lý lô ${totalOrders} đơn hàng.`;
+    sendLogToServer(`[Sync] ${startMessage}`);
+    await reportStatusToServer(featureName, 'RUNNING', startMessage);
 
     for (let i = 0; i < orders.length; i++) {
         if (stopProcess) {
           sendLogToServer(`[Sync] Quy trình bị dừng bởi người dùng.`);
+          await reportStatusToServer(featureName, 'FAILED', 'Bị dừng bởi người dùng.');
           break;
         }
         const order = orders[i];
         const orderId = order.id;
 
+        const progressMessage = `Đang xử lý đơn ${i + 1}/${totalOrders} (ID: ${orderId}).`;
         sendLogToServer(`[Sync][${orderId}] Bắt đầu xử lý (đơn ${i + 1}/${orders.length}).`);
         console.log(`Bắt đầu xử lý đơn hàng ${orderId}`);
+        await reportStatusToServer(featureName, 'RUNNING', progressMessage);
         const url = `${domain ? domain : AMZDomain}/orders-v3/order/${orderId}`;
 
         // Điều hướng đến trang chi tiết đơn hàng
@@ -2718,14 +2793,19 @@ const handleSyncOrders = async (orders, options, apiKey, domain) => {
             if (messResp.error) {
               // LOG: Lỗi từ server
               sendLogToServer(`[Sync][${orderId}] Gửi lên server THẤT BẠI: ${messResp.error}`);
+              errorCount++;
             } else {
               // LOG: Thành công
               sendLogToServer(`[Sync][${orderId}] Gửi lên server THÀNH CÔNG.`);
+              successCount++;
             }
 
             sendToContentScript("syncedOrderToMB", messResp);
 
         } catch (error) {
+            errorCount++;
+            const errorMessage = `Lỗi đơn ${orderId}: ${error.message}. Tiếp tục xử lý...`;
+            await reportStatusToServer(featureName, 'RUNNING', errorMessage);
             sendLogToServer(`[Sync][${orderId}] Lỗi nghiêm trọng: ${error.message}`);
             console.error(`Lỗi khi xử lý đơn hàng ${order.id}:`, error);
             sendToContentScript("syncedOrderToMB", { data: false, error: error.message });
@@ -2735,7 +2815,15 @@ const handleSyncOrders = async (orders, options, apiKey, domain) => {
         }
     }
 
-  sendLogToServer(`[Sync] Hoàn tất xử lý lô ${orders.length} đơn hàng.`);
+  if (!stopProcess) { // Chỉ báo cáo khi quy trình hoàn tất tự nhiên
+    const finalMessage = `Hoàn tất xử lý lô ${totalOrders} đơn. Thành công: ${successCount}, Thất bại: ${errorCount}.`;
+    sendLogToServer(`[Sync] ${finalMessage}`);
+    if (errorCount > 0) {
+      await reportStatusToServer(featureName, 'FAILED', finalMessage);
+    } else {
+      await reportStatusToServer(featureName, 'SUCCESS', finalMessage);
+    }
+  }
   stopProcess = false;
   // back to home page
   const url = `${domain ? domain : AMZDomain}/orders-v3?page=1`;
