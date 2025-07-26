@@ -115,9 +115,11 @@ const setupDailyAlarm = async () => {
       console.log("Đã tải cài đặt alarm từ server.", settings);
     } else {
       console.error("Lỗi HTTP khi tải cài đặt, sẽ không có alarm nào được đặt.");
+      return;
     }
   } catch (error) {
     console.error("Không thể tải cài đặt từ server, sẽ không có alarm nào được đặt:", error);
+    return;
   }
 
   // Xóa TẤT CẢ các alarm tác vụ cũ (trừ settingsRefresher) để đảm bảo sạch sẽ.
@@ -132,8 +134,9 @@ const setupDailyAlarm = async () => {
   const now = new Date();
   const GMT7_OFFSET_HOURS = 7;
 
-  // Hàm helper để tính toán và đặt lịch
+// Hàm helper để tính toán và đặt lịch
   const scheduleAlarm = (name, config) => {
+    const MAX_RANDOM_DELAY_MS = 5 * 60 * 1000; // 5 phút, tính bằng mili giây
     // Thêm một khoảng thời gian ngẫu nhiên từ 0 đến 300 giây (5 phút)
     const randomDelayInSeconds = Math.floor(Math.random() * 301);
 
@@ -141,21 +144,32 @@ const setupDailyAlarm = async () => {
     const alarmTime = new Date();
     alarmTime.setUTCHours(targetHourUTC, config.minute, 0, 0);
 
-    if (alarmTime.getTime() < now.getTime()) {
+    // --- LOGIC SỬA ĐỔI ---
+    // Chỉ dời sang ngày mai nếu thời gian hiện tại đã qua MỐC ALARM + 5 PHÚT.
+    // Ví dụ: Alarm đặt lúc 4:00, thì chỉ khi nào sau 4:05 mà nó mới chạy lại, nó mới bị dời.
+    if (now.getTime() > alarmTime.getTime() + MAX_RANDOM_DELAY_MS) {
       alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
     }
+    // Nếu không, alarmTime vẫn được giữ cho ngày hôm nay.
 
     // Cộng thêm thời gian ngẫu nhiên vào thời gian báo thức
     alarmTime.setSeconds(alarmTime.getSeconds() + randomDelayInSeconds);
+
+    // Tính toán delay cuối cùng
     const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
 
+    // Nếu vì lý do nào đó mà delay vẫn âm (ví dụ: máy tính bị lag),
+    // ta sẽ cho nó chạy ngay lập tức thay vì bỏ lỡ.
+    const finalDelay = Math.max(0.1, delayInMinutes); // Chạy ngay sau 0.1 phút nếu bị âm
+
     chrome.alarms.create(name, {
-      delayInMinutes: delayInMinutes,
+      delayInMinutes: finalDelay,
       periodInMinutes: config.periodInMinutes, // Thường sẽ là 1440 (24h)
     });
 
     // Cập nhật log để hiển thị cả giây cho chính xác
-    console.log(`✅ Đã đặt lịch cho '${name}' vào khoảng ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7) với độ trễ ngẫu nhiên.`);
+    const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
+    console.log(`✅ Đã đặt lịch cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
   };
 
   // --- LOGIC MỚI: Duyệt qua danh sách và đặt lịch ---
@@ -173,13 +187,39 @@ const setupDailyAlarm = async () => {
   console.log("--- Hoàn tất quá trình đặt lịch ---");
 
   // Tạo hoặc cập nhật alarm 'settingsRefresher'
-  if (settings.settingsRefresher) {
-    const refresherPeriod = settings.settingsRefresher.periodInMinutes;
+  await chrome.alarms.clear('settingsRefresher');
+
+  const refresherConfig = settings.settingsRefresher;
+  if (refresherConfig && typeof refresherConfig.runAtMinute === 'number' && typeof refresherConfig.periodInHours === 'number') {
+
+    // Lấy các giá trị từ config, hoặc đặt giá trị mặc định an toàn
+    const runAtMinute = refresherConfig.runAtMinute;
+    const periodInHours = refresherConfig.periodInHours;
+    console.log(`[Refresher] Đặt lịch chạy vào phút thứ ${runAtMinute}, lặp lại mỗi ${periodInHours} giờ.`);
+
+    let nextRefreshTime = new Date(); // Bắt đầu tính từ bây giờ
+
+    // Đặt mốc phút và giây mong muốn
+    nextRefreshTime.setMinutes(runAtMinute, 0, 0);
+
+    // Vòng lặp để đảm bảo thời gian tính được luôn ở tương lai
+    // Nếu thời gian tính ra đã ở trong quá khứ, ta cứ cộng thêm `periodInHours` cho đến khi nó ở tương lai thì thôi.
+    while (nextRefreshTime.getTime() <= now.getTime()) {
+      nextRefreshTime.setHours(nextRefreshTime.getHours() + periodInHours);
+    }
+
+    // Tính toán độ trễ còn lại (tính bằng phút)
+    const delayInMinutes = (nextRefreshTime.getTime() - now.getTime()) / (1000 * 60);
+
+    // Tạo alarm một lần duy nhất. Khi nó chạy, nó sẽ tự tính lại mốc tiếp theo.
     chrome.alarms.create('settingsRefresher', {
-      delayInMinutes: refresherPeriod,
-      periodInMinutes: refresherPeriod
+      delayInMinutes: delayInMinutes
     });
-    console.log(`Đã đặt lịch tự động cập nhật cài đặt sau mỗi ${refresherPeriod} phút.`);
+
+    console.log(`✅ [Refresher] Đã đặt lịch cập nhật tiếp theo vào lúc: ${nextRefreshTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+
+  } else {
+    console.log("❌ [Refresher] Cấu hình không đúng định dạng, sẽ không đặt lịch. Cần có 'runAtMinute' và 'periodInHours'.");
   }
 
   chrome.alarms.getAll((alarms) => {
@@ -454,12 +494,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
                   const reportsToUpload = injectionResults[0].result;
                   if (reportsToUpload.length === 0) {
-                      console.log("Tự động: Không có báo cáo mới nào để tải lên.");
-                      sendLogToServer(`${logPrefix} Hoàn tất: Không có báo cáo mới nào để xử lý.`);
-                  } else {
-                      sendLogToServer(`${logPrefix} Tìm thấy ${reportsToUpload.length} báo cáo. Bắt đầu tải và upload...`);
+                    const skipMessage = "Không có báo cáo mới nào để xử lý.";
+                    console.log(`Tự động: ${skipMessage}`);
+                    sendLogToServer(`${logPrefix} ${skipMessage}`);
+                    // Gửi trạng thái SKIPPED về server
+                    await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+                    // Thoát khỏi hàm ngay tại đây, không chạy code bên dưới nữa
+                    return;
                   }
-
+                  sendLogToServer(`${logPrefix} Tìm thấy ${reportsToUpload.length} báo cáo. Bắt đầu tải và upload...`);
                   console.log(`Tự động: Tìm thấy ${reportsToUpload.length} báo cáo để xử lý.`);
                   let successCount = 0;
 
@@ -1214,7 +1257,9 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
         let workerTab = null; // Tab duy nhất được sử dụng cho tất cả các thao tác
 
         try {
-            sendLogToServer('[Update Tracking] Bắt đầu quy trình.');
+            const startMessage = 'Bắt đầu quy trình Update Tracking.';
+            sendLogToServer(`[Update Tracking] ${startMessage}`);
+            await reportStatusToServer(featureName, 'RUNNING', startMessage);
 
             // Lấy danh sách đơn hàng cần cập nhật
             const apiKey = await getMBApiKey();

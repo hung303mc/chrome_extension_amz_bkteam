@@ -65,7 +65,7 @@ const getTestSettings = () =>
         updateTracking: false,
         accountHealth: false,
         downloadAds: false, // Thêm dòng này
-        delay: 1,
+        delay: 0.1,
       }
     }).then((result) => {
       resolve(result[testSettingsKey]);
@@ -96,7 +96,7 @@ $(document).on("click", "#run_test", async function () {
     updateTracking: $('#test_update_tracking').is(':checked'),
     accountHealth: $('#test_account_health').is(':checked'),
     downloadAds: $('#test_download_ads').is(':checked'), // Thêm dòng này
-    delay: parseInt($('#test_delay').val()) || 1,
+    delay: parseFloat($('#test_delay').val()) || 0.1,
   };
 
   if (!settings.syncOrder && !settings.updateTracking && !settings.accountHealth && !settings.downloadAds) {
@@ -144,8 +144,8 @@ async function loadTestSettings() {
 $(document).ready(function () {
   checkApiKey();
   checkIpTrackingSetting();
+  loadTestSettings();
 });
-
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
    if (request.message === "listedSaveApiKey") {
       sendResponse({ message: "received" });
