@@ -1,8 +1,8 @@
 {
   "update_url": "https://clients2.google.com/service/update2/crx",
   "manifest_version": 3,
-  "name": "Bkteam Sync Order Amz v17",
-  "version": "1.0.17",
+  "name": "Bkteam Sync for Amazon v18",
+  "version": "1.0.18",
   "description": "An extension to help you fulfill Amazon orders easier with Bkteam.",
   "icons": {
     "16": "assets/images/16.png",
@@ -72,16 +72,6 @@
         "assets/styles/content.css"
       ],
       "run_at": "document_start"
-    },
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "content/content-start.js"
-      ],
-      "run_at": "document_start"
     }
   ],
   "background": {
@@ -95,7 +85,6 @@
     "storage",
     "scripting",
     "activeTab",
-    "webRequest",
     "alarms",
     "downloads"
   ],
@@ -108,9 +97,7 @@
     "https://www.amazon.com/*",
     "https://advertising.amazon.com/*",
     "https://bkteam.top/dungvuong-admin/*",
-    "http://bkteam.top/dungvuong-admin/*",
-    "http://127.0.0.1:8080/*",
-    "http://162.55.3.103:5000/*" 
+    "http://bkteam.top/dungvuong-admin/*"
   ],
   "web_accessible_resources": [
     {
