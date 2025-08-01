@@ -113,12 +113,16 @@ const setupDailyAlarm = async () => {
     if (response.ok) {
       settings = await response.json();
       console.log("Đã tải cài đặt alarm từ server.", settings);
+
+      await chrome.storage.local.set({ alarmSettings: settings });
+      console.log("Đã lưu cài đặt vào storage."); // Thêm log để xác nhận
     } else {
       console.error("Lỗi HTTP khi tải cài đặt, sẽ không có alarm nào được đặt.");
       return;
     }
   } catch (error) {
     console.error("Không thể tải cài đặt từ server, sẽ không có alarm nào được đặt:", error);
+    await chrome.storage.local.remove('alarmSettings');
     return;
   }
 
@@ -1227,8 +1231,17 @@ let stopProcess = false;
 
 // Sử dụng hàm async IIFE để xử lý và đảm bảo finally luôn được gọi
 async function processTrackingUpdates(ordersToProcess, retryCount = 0, initialSender = {}, initialData = {}) {
-  const featureName = 'updateTracking';
-  const MAX_RETRIES = 3;
+  const featureName = 'updateTracking'; // <--- Tên này dùng làm key
+
+  // SỬA ĐOẠN NÀY
+  const { alarmSettings } = await chrome.storage.local.get('alarmSettings');
+  // Lấy config riêng cho "updateTracking"
+  const retryConfig = alarmSettings?.retry_configs?.[featureName];
+
+  // Dùng giá trị riêng, nếu không có thì dùng mặc định
+  const MAX_RETRIES = retryConfig?.max_retries || 3;
+  const DELAY_MINUTES = retryConfig?.delay_minutes || 1;
+
   if (retryCount >= MAX_RETRIES) {
     sendLogToServer(`[Update Tracking][Retry] Đã thử lại ${retryCount} lần nhưng vẫn lỗi. Tạm dừng.`);
     await reportStatusToServer(featureName, 'FAILED', `Đã thất bại sau ${MAX_RETRIES} lần thử lại.`);
@@ -1394,9 +1407,8 @@ async function processTrackingUpdates(ordersToProcess, retryCount = 0, initialSe
       });
 
       // 2. Tạo alarm retry
-      await chrome.alarms.create(alarmName, { delayInMinutes: 1 });
-      console.log(`[Update Tracking] Đã đặt alarm '${alarmName}' để retry sau 1 phút.`);
-
+      await chrome.alarms.create(alarmName, { delayInMinutes: DELAY_MINUTES });
+      console.log(`[Update Tracking] Đã đặt alarm '${alarmName}' để retry sau ${DELAY_MINUTES} phút.`);
     } else {
       const successMessage = (retryCount > 0)
         ? `Hoàn tất update tracking tất cả đơn hàng sau ${retryCount + 1} lần chạy.`
@@ -2583,7 +2595,17 @@ const waitForData = (key, timeout = 30000) => {
  */
 
 const handleSyncOrders = async (orders, options, apiKey, domain, retryCount = 0) => {
-    const MAX_RETRIES = 3;
+    const featureName = 'syncOrder'; // <--- Tên này dùng làm key
+
+    // SỬA ĐOẠN NÀY
+    const { alarmSettings } = await chrome.storage.local.get('alarmSettings');
+    // Lấy config riêng cho "syncOrder"
+    const retryConfig = alarmSettings?.retry_configs?.[featureName];
+
+    // Dùng giá trị riêng, nếu không có thì dùng mặc định
+    const MAX_RETRIES = retryConfig?.max_retries || 3;
+    const DELAY_MINUTES = retryConfig?.delay_minutes || 1;
+
     if (retryCount >= MAX_RETRIES) {
       sendLogToServer(`[Sync][Retry] Đã thử lại ${retryCount} lần cho các đơn hàng còn lại nhưng vẫn lỗi. Tạm dừng.`);
       await reportStatusToServer('syncOrder', 'FAILED', `Đã thất bại sau ${MAX_RETRIES} lần thử lại.`);
@@ -2597,7 +2619,6 @@ const handleSyncOrders = async (orders, options, apiKey, domain, retryCount = 0)
     let successCount = 0;
     const failedOrders = [];
 
-    const featureName = 'syncOrder';
     const totalOrders = orders.length;
 
     // Chỉ log và báo cáo RUNNING ở lần chạy đầu tiên
@@ -2966,7 +2987,7 @@ const handleSyncOrders = async (orders, options, apiKey, domain, retryCount = 0)
       const alarmName = `retry_syncOrder`; // Đặt tên cố định cho alarm retry
 
       // THAY THẾ SETIMEOUT BẰNG ALARM
-      sendLogToServer(`[Sync] Sẽ thử lại sau 1 phút cho ${errorCount} đơn lỗi (lần thử #${nextRetryCount}).`);
+      sendLogToServer(`[Sync] Sẽ thử lại sau ${DELAY_MINUTES} phút cho ${errorCount} đơn lỗi (lần thử #${nextRetryCount}).`);
       await reportStatusToServer(featureName, 'RETRYING', `Thất bại ${errorCount} đơn. Chuẩn bị thử lại lần ${nextRetryCount}.`);
 
       // 1. Lưu các thông tin cần thiết cho lần chạy lại vào storage
@@ -2981,8 +3002,8 @@ const handleSyncOrders = async (orders, options, apiKey, domain, retryCount = 0)
       });
 
       // 2. Tạo một alarm để kích hoạt sau 1 phút
-      await chrome.alarms.create(alarmName, { delayInMinutes: 1 });
-      console.log(`[Sync] Đã đặt alarm '${alarmName}' để retry sau 1 phút.`);
+      await chrome.alarms.create(alarmName, { delayInMinutes: DELAY_MINUTES });
+      console.log(`[Sync] Đã đặt alarm '${alarmName}' để retry sau ${DELAY_MINUTES} phút.`);
 
     } else {
       // Chỉ báo cáo SUCCESS khi không còn lỗi nào
