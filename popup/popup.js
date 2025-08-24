@@ -65,6 +65,7 @@ const getTestSettings = () =>
         updateTracking: false,
         accountHealth: false,
         downloadAds: false, // Thêm dòng này
+        sendMessageAuto: false,
         delay: 0.1,
       }
     }).then((result) => {
@@ -96,10 +97,11 @@ $(document).on("click", "#run_test", async function () {
     updateTracking: $('#test_update_tracking').is(':checked'),
     accountHealth: $('#test_account_health').is(':checked'),
     downloadAds: $('#test_download_ads').is(':checked'), // Thêm dòng này
+    sendMessageAuto: $('#test_send_message_auto').is(':checked'), // <-- Sửa key và ID
     delay: parseFloat($('#test_delay').val()) || 0.1,
   };
 
-  if (!settings.syncOrder && !settings.updateTracking && !settings.accountHealth && !settings.downloadAds) {
+  if (!settings.syncOrder && !settings.updateTracking && !settings.accountHealth && !settings.downloadAds && !settings.sendMessageAuto) {
     $('#test_status').text("Chọn ít nhất 1 tác vụ!").css('color', 'red');
     return;
   }
@@ -137,6 +139,7 @@ async function loadTestSettings() {
   $('#test_update_tracking').prop('checked', settings.updateTracking);
   $('#test_account_health').prop('checked', settings.accountHealth);
   $('#test_download_ads').prop('checked', settings.downloadAds); // Thêm dòng này
+  $('#test_send_message_auto').prop('checked', settings.sendMessageAuto); // <-- Sửa key và ID
   $('#test_delay').val(settings.delay);
   console.log("Đã load cài đặt test đã lưu.", settings);
 }

@@ -58,16 +58,18 @@ const setupTestAlarms = async () => {
     return;
   }
 
-  const { syncOrder, updateTracking, accountHealth, downloadAds, delay = 1 } = testSettings;
+  const { syncOrder, updateTracking, accountHealth, downloadAds, sendMessageAuto, delay = 1 } = testSettings;
 
   console.log(`--- CHẠY CHẾ ĐỘ TEST THEO YÊU CẦU ---`);
-  console.log(`Cài đặt: Lấy đơn=${syncOrder}, Update Tracking=${updateTracking}, Account Health=${accountHealth}, Chạy sau=${delay} phút.`);
+  console.log(`Cài đặt: Lấy đơn=${syncOrder}, Update Tracking=${updateTracking}, Account Health=${accountHealth}, Gửi Tin Nhắn=${sendMessageAuto}, , Chạy sau=${delay} phút.`);
 
   // Xóa các alarm test cũ đi để tránh bị trùng lặp
   chrome.alarms.clear("test_syncOrder");
   chrome.alarms.clear("test_updateTracking");
   chrome.alarms.clear("test_accountHealth");
   chrome.alarms.clear("test_downloadAdsReports"); // Thêm dòng này
+  chrome.alarms.clear("test_sendMessageAuto");
+
 
   let currentDelay = delay;
 
@@ -89,6 +91,12 @@ const setupTestAlarms = async () => {
     chrome.alarms.create("test_downloadAdsReports", { delayInMinutes: currentDelay });
     console.log(`- Đã đặt lịch 'test_downloadAdsReports' sau ${currentDelay} phút.`);
   }
+  if (sendMessageAuto) {
+    chrome.alarms.create("test_sendMessageAuto", { delayInMinutes: currentDelay });
+    console.log(`- Đã đặt lịch 'test_sendMessageAuto' sau ${currentDelay} phút.`);
+  }
+
+
 
   console.log("Đã đặt lịch hẹn test thành công!");
 };
@@ -104,8 +112,10 @@ const setupDailyAlarm = async () => {
     'syncOrder_1', 'syncOrder_2', 'syncOrder_3', 'syncOrder_4', 'syncOrder_5',
     'updateTracking_1', 'updateTracking_2', 'updateTracking_3', 'updateTracking_4', 'updateTracking_5',
     'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
-    'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5'
+    'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
+    'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5' // <-- THÊM DÒNG NÀY
   ];
+
 
   let settings = {};
   try {
@@ -231,6 +241,136 @@ const setupDailyAlarm = async () => {
   });
 };
 
+async function fetchAndProcessDesignTasks() {
+  // Dùng lại hàm sendLogToServer có sẵn của mày
+  const logPrefix = '[SendMessageAuto]';
+
+  try {
+    sendLogToServer(`${logPrefix} Bắt đầu kiểm tra task mới từ server...`);
+    console.log("[BG] Đang hỏi server xem có task gửi design nào không...");
+    const merchantId = await getMBApiKey();
+
+    const response = await fetch("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=getPendingDesignTasks", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ "merchant_id": merchantId })
+    });
+
+    if (!response.ok) throw new Error(`Server response not OK: ${response.status}`);
+    const result = await response.json();
+
+    if (result.status === 'success' && result.data && result.data.length > 0) {
+      const tasks = result.data;
+      sendLogToServer(`${logPrefix} ✅ Tìm thấy ${tasks.length} task. Bắt đầu xử lý...`);
+      console.log(`[BG] Tìm thấy ${tasks.length} task. Bắt đầu xử lý...`);
+
+      for (const task of tasks) {
+        const orderNumber = task.order_number;
+        try {
+          sendLogToServer(`${logPrefix} >> Đang xử lý task cho đơn hàng: ${orderNumber}`);
+          await automateSendDesign(task);
+          sendLogToServer(`${logPrefix} >> HOÀN TẤT xử lý task cho đơn hàng: ${orderNumber}`);
+        } catch (error) {
+          // Nếu automateSendDesign báo lỗi, cập nhật status và log
+          sendLogToServer(`${logPrefix} >> ❌ LỖI khi xử lý task cho đơn ${orderNumber}: ${error.message}`);
+          console.error(`[BG] Lỗi khi tự động hóa cho đơn ${orderNumber}:`, error);
+          await updateTaskStatusOnServer(task.task_id, 'error', error.message);
+        }
+      }
+    } else {
+      sendLogToServer(`${logPrefix} Không có task mới hoặc server báo lỗi: ${result.message || 'Không có task'}`);
+      console.log("[BG] Không có task nào cần xử lý hoặc server báo lỗi:", result.message);
+    }
+
+  } catch (error) {
+    sendLogToServer(`${logPrefix} ❌ Lỗi nghiêm trọng khi lấy task từ server: ${error.message}`);
+    console.error("[BG] Lỗi khi lấy hoặc xử lý task từ server:", error);
+    // Ném lỗi ra để alarm listener có thể bắt và báo FAILED
+    throw error;
+  }
+}
+
+
+async function automateSendDesign(task) {
+  const orderNumber = task.order_number;
+  const logPrefix = `[SendMessageAuto][Order: ${orderNumber}]`;
+
+  sendLogToServer(`${logPrefix} Mở tab nhắn tin...`);
+  const messageUrl = `https://sellercentral.amazon.com/messaging/contact?orderID=${orderNumber}&marketplaceID=ATVPDKIKX0DER`;
+
+  let [tab] = await chrome.tabs.query({ url: "https://sellercentral.amazon.com/messaging/*" });
+  if (tab) {
+    await chrome.tabs.update(tab.id, { url: messageUrl, active: true });
+  } else {
+    tab = await chrome.tabs.create({ url: messageUrl, active: true });
+  }
+
+  sendLogToServer(`${logPrefix} Đang chờ tab tải xong...`);
+  await new Promise(resolve => {
+    const listener = (tabId, changeInfo) => {
+      if (tabId === tab.id && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        setTimeout(resolve, 2000);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+
+  sendLogToServer(`${logPrefix} ✅ Tab đã tải xong. Gửi task cho content script...`);
+  console.log(`[BG] Trang message đã tải xong. Gửi task cho content script.`);
+
+  const response = await chrome.tabs.sendMessage(tab.id, {
+    message: "executeSendDesignSteps",
+    task: task
+  });
+
+  if (response && response.status === 'success') {
+    sendLogToServer(`${logPrefix} ✅ Content script báo thành công. Cập nhật status 'sent' lên server.`);
+    await updateTaskStatusOnServer(task.task_id, 'sent');
+  } else {
+    const errorMessage = response ? response.message : "Content script không phản hồi hoặc đã đóng.";
+    sendLogToServer(`${logPrefix} ❌ Content script báo lỗi: ${errorMessage}`);
+    // Ném lỗi ra để fetchAndProcessDesignTasks có thể bắt được
+    throw new Error(errorMessage);
+  }
+}
+
+
+// Thêm hàm này vào đâu đó trong background.js
+async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
+  try {
+    console.log(`[BG] Cập nhật status cho task ${taskId} -> ${status}`);
+    const merchantId = await getMBApiKey(); // Lấy merchantId/apiKey
+
+    const payload = {
+      task_id: taskId,
+      status: status, // 'sent' hoặc 'error'
+      error_message: errorMessage
+    };
+
+    const response = await fetch("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=updateMessageTaskStatus", {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'merchantId': merchantId // Gửi cả merchantId nếu server cần
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server response not OK: ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (result.status !== 'success') {
+      console.error(`[BG] Lỗi khi cập nhật status task ${taskId} trên server:`, result.message);
+    } else {
+      console.log(`[BG] Cập nhật status cho task ${taskId} thành công!`);
+    }
+  } catch (error) {
+    console.error(`[BG] Lỗi nghiêm trọng khi gọi API updateTaskStatus:`, error);
+  }
+}
 
 // Xử lý alarm khi kích hoạt
 
@@ -661,6 +801,27 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       }
   })();
 }
+  else if (alarm.name.startsWith("sendMessageAuto_") || alarm.name === "test_sendMessageAuto") {
+    const featureName = 'sendMessageAuto'; // Dùng lại featureName của tính năng gốc để server monitor
+    const logPrefix = '[SendMessageAuto]';
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
+    console.log(`Đang chạy tự động gửi tin nhắn design theo lịch (${alarm.name})...`);
+    sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động theo lịch.`);
+
+    try {
+      // Gọi hàm xử lý chính của mày
+      await fetchAndProcessDesignTasks();
+      // Báo cáo thành công nếu hàm chạy xong không lỗi
+      const finalMessage = `Hoàn tất tác vụ gửi tin nhắn tự động từ alarm: ${alarm.name}.`;
+      await reportStatusToServer(featureName, 'SUCCESS', finalMessage);
+      sendLogToServer(`${logPrefix} ${finalMessage}`);
+
+    } catch (error) {
+      console.error(`${logPrefix} Lỗi trong quá trình tự động gửi tin nhắn:`, error);
+      sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+      await reportStatusToServer(featureName, 'FAILED', error.message);
+    }
+  }
 });
 
 /**

@@ -65,7 +65,8 @@
         "scripts/update_tracking.js",
         "scripts/sync_file.js",
         "scripts/get_account_health.js",
-        "scripts/ads_report.js"
+        "scripts/ads_report.js",
+        "scripts/amazon_message_automation.js"
       ],
       "css": [
         "assets/styles/jquery.toast.css",
