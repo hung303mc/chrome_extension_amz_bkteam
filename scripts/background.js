@@ -1273,7 +1273,7 @@ const redirectToNewURL = (fn) => {
 // 
 const openOrderPage = () => {
   return new Promise((resolve) => {
-    const url = `${globalDomain}/orders-v3?page=1`;
+    const url = `${globalDomain}/orders-v3?page=1&date-range=last-30`;
     // Tìm xem có tab orders nào đang mở không
     chrome.tabs.query({ url: `${globalDomain}/orders-v3*` }, (tabs) => {
       if (tabs.length > 0) {
@@ -3176,7 +3176,7 @@ const handleSyncOrders = async (orders, options, apiKey, domain, retryCount = 0)
       // Dọn dẹp storage nếu có
       await chrome.storage.local.remove('retry_syncOrder_data');
       // Redirect khi thành công
-      const url = `${domain ? domain : AMZDomain}/orders-v3?page=1`;
+      const url = `${domain ? domain : AMZDomain}/orders-v3?page=1&date-range=last-30`;
       await redirectToNewURL(tabs => { /* ... code redirect của mày ... */ });
     }
   }
@@ -3965,7 +3965,7 @@ const openOrderDetailPage = () => {
   if (!globalDomain.includes("sellercentral")) {
     return;
   }
-  const url = `${globalDomain}/orders-v3?statuses=Update%20Tracking`;
+  const url = `${globalDomain}/orders-v3?page=1&date-range=last-30&statuses=Update%20Tracking`;
   chrome.tabs.query({}, (tabs) => {
     let found = false;
 
