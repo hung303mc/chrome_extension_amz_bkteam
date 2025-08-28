@@ -1793,7 +1793,17 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
         return true;
     }
 
-    processTrackingUpdates(null, 0, sender, data);
+    // 2. ĐÓNG KHÓA NGAY LẬP TỨC!!!
+    isUpdateTrackingRunning = true;
+    console.log("[BG] Đã khóa isUpdateTrackingRunning = true (từ onMessage listener).");
+
+
+    // 3. Bắt đầu xử lý. Giờ thì chỉ có 1 thằng được chạy thôi.
+    // Dùng .finally() để đảm bảo khóa luôn được mở dù hàm có lỗi hay không
+    processTrackingUpdates(null, 0, sender, data).finally(() => {
+      isUpdateTrackingRunning = false;
+      console.log("[BG] Đã mở khóa isUpdateTrackingRunning = false (sau khi processTrackingUpdates hoàn tất).");
+    });
 
     return true; // Giữ message port mở
 }
