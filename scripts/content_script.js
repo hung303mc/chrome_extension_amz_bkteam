@@ -616,60 +616,75 @@ window.addEventListener("message", function (evt = {}) {
  });
 
 // Add user interaction detection to keep service worker alive
+/**
+ * Hàm helper: Chờ một phần tử xuất hiện trên trang.
+ * Nó sẽ liên tục kiểm tra cho đến khi tìm thấy hoặc hết thời gian.
+ * @param {string} selector - CSS selector của phần tử cần chờ.
+ * @param {number} timeout - Thời gian chờ tối đa (tính bằng miliseconds).
+ * @returns {Promise<Element>} - Trả về phần tử nếu tìm thấy, hoặc báo lỗi nếu timeout.
+ */
+const waitForElement = (selector, timeout = 15000) => {
+  return new Promise((resolve, reject) => {
+    const intervalTime = 200; // Tần suất kiểm tra: mỗi 200ms
+    const maxAttempts = timeout / intervalTime;
+    let attempts = 0;
 
+    const interval = setInterval(() => {
+      const element = document.querySelector(selector);
+      if (element) {
+        clearInterval(interval);
+        resolve(element);
+      } else if (attempts++ >= maxAttempts) {
+        clearInterval(interval);
+        reject(new Error(`Không tìm thấy phần tử "${selector}" sau ${timeout / 1000} giây.`));
+      }
+    }, intervalTime);
+  });
+};
 
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
-   if (req.message === "autoGetAccountHealth") {
+    if (req.message === "autoGetAccountHealth") {
       res({ message: "received" });
-      console.log("[CS] Đang thực hiện auto get account health...");
-      
-      // Đợi để đảm bảo giao diện đã load
-      setTimeout(() => {
-        // Kích hoạt tab Account Health
-        const accountHealthTabButton = $('button[data-name="account_health"]');
-        if (accountHealthTabButton.length > 0) {
+      console.log("[CS] Bắt đầu quy trình tự động lấy account health...");
+
+
+      // Chạy toàn bộ logic trong một hàm async để dùng await
+      (async () => {
+        try {
+          // 1. Chờ và click vào nút tab "Account Health"
+          console.log("[CS] Đang chờ nút tab 'account_health'...");
+          const accountHealthTabButton = await waitForElement('button[data-name="account_health"]');
           accountHealthTabButton.click();
-          console.log("[CS] Kích hoạt tab Account Health");
-        } else {
-          console.error("[CS] Không tìm thấy tab Account Health button[data-name='account_health']");
-          if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health tab.");
-          return; 
+          console.log("[CS] Đã click tab Account Health.");
+
+          // 2. Chờ cho nội dung của tab đó xuất hiện
+          console.log("[CS] Đang chờ nội dung '#account_health' hiển thị...");
+          const accountHealthContentDiv = await waitForElement("#account_health");
+          accountHealthContentDiv.style.display = "block";
+          console.log("[CS] Nội dung tab Account Health đã hiển thị.");
+
+          // 3. Chờ và click vào nút "Get account health"
+          console.log("[CS] Đang chờ nút '#account-health'...");
+          const getAccountHealthButton = await waitForElement('#account-health');
+          getAccountHealthButton.click();
+          console.log("[CS] Đã click nút 'Get account health'.");
+
+          if (typeof notifySuccess === 'function') {
+            notifySuccess("Automated account health check initiated.");
+          }
+
+        } catch (error) {
+          // Bắt tất cả các lỗi (bao gồm cả lỗi timeout từ waitForElement)
+          console.error("[CS] Lỗi trong quy trình auto get account health:", error.message);
+          if (typeof notifyError === 'function') {
+            notifyError(`Auto mode failed: ${error.message}`);
+          }
         }
-        
-        // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
-        setTimeout(() => {
-          // Đảm bảo tab content đã hiển thị đúng
-          const accountHealthContentDiv = $("#account_health");
-          if (accountHealthContentDiv.length > 0) {
-            accountHealthContentDiv.css("display", "block");
-            console.log("[CS] Đảm bảo nội dung tab Account Health hiển thị.");
-          } else {
-            console.error("[CS] Không tìm thấy div nội dung Account Health #account_health");
-            if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find Account Health content div.");
-            return;
-          }
-          
-          console.log("[CS] Tìm kiếm nút Get account health...");
-          const getAccountHealthButtonElement = document.querySelector('#account-health'); // Using pure JS selector
-          
-          if (getAccountHealthButtonElement) {
-              console.log("[CS] Nút 'Get account health' (#account-health) tìm thấy. Click bằng dispatchEvent.");
-              getAccountHealthButtonElement.dispatchEvent(new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                view: window
-              }));
-              if (typeof notifySuccess === 'function') notifySuccess("Automated account health check initiated (auto mode).");
-          } else {
-            console.error("[CS] Không tìm thấy nút Get account health bằng selector '#account-health'.");
-            if (typeof notifyError === 'function') notifyError("Auto mode: Failed to find 'Get account health' button.");
-          }
-          
-        }, 4000); // Tăng thời gian chờ lên 4 giây
-      }, 2000); // Tăng thời gian chờ lên 2 giây
-      
+      })();
+
       return true;
     }
+
   
     const { message, data } = req || {};
     
@@ -755,28 +770,44 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     if (message === "autoSyncOrders") {
       console.log("[Content] Xử lý yêu cầu autoSyncOrders:", data);
       res({ message: "received" });
-      
-      try {
-        // Chờ một chút để đảm bảo UI đã được tải hoàn toàn
-        await sleep(3000);
-        
-        // Nếu có useSelectAllSync, chọn tất cả các đơn hàng
-        if (data?.useSelectAllSync) {
-          console.log("[Content] Tự động chọn tất cả đơn hàng");
-          $(".force-sync-all-item .om-checkbox").prop("checked", true).trigger("click");
-          await sleep(1000);
+
+      (async () => { // Bọc trong một hàm async để dùng await
+        try {
+          // Chờ một chút để đảm bảo UI đã được tải hoàn toàn
+          await sleep(3000);
+
+          // KIỂM TRA XEM NÚT SYNC CÓ HIỂN THỊ KHÔNG
+          const syncButtonContainer = $(".btn-sync-order-wrap");
+
+          if (syncButtonContainer.is(":visible")) {
+            // Nếu nút đang hiện -> có đơn hàng -> tiến hành sync
+            console.log("[Content] Nút Sync Orders đang hiển thị, tiến hành tự động đồng bộ.");
+
+            // Nếu có useSelectAllSync, chọn tất cả các đơn hàng
+            if (data?.useSelectAllSync) {
+              console.log("[Content] Tự động chọn tất cả đơn hàng");
+              $(".force-sync-all-item .om-checkbox").prop("checked", true).trigger("click");
+              await sleep(1000);
+            }
+
+            // Click nút "Sync Orders"
+            console.log("[Content] Tự động nhấn nút Sync Orders");
+            $(".om-addon #not_synced #sync-order").trigger("click");
+
+            notifySuccess("Tự động đồng bộ đơn hàng đang được thực hiện");
+          } else {
+            // Nếu nút đang bị ẩn -> không có đơn hàng -> bỏ qua
+            console.log("[Content] Không có đơn hàng để đồng bộ. Bỏ qua auto-sync.");
+            // Gửi một tin nhắn về background để nó biết là đã bỏ qua (không bắt buộc nhưng nên có để log)
+            chrome.runtime.sendMessage({ message: "autoSyncSkipped", data: { reason: "no_orders_to_sync" } });
+          }
+
+        } catch (error) {
+          console.error("[Content] Lỗi khi tự động đồng bộ đơn hàng:", error);
+          notifyError("Không thể tự động đồng bộ đơn hàng: " + error.message);
         }
-        
-        // Click nút "Sync Orders"
-        console.log("[Content] Tự động nhấn nút Sync Orders");
-        $(".om-addon #not_synced #sync-order").trigger("click");
-        
-        notifySuccess("Tự động đồng bộ đơn hàng đang được thực hiện");
-      } catch (error) {
-        console.error("[Content] Lỗi khi tự động đồng bộ đơn hàng:", error);
-        notifyError("Không thể tự động đồng bộ đơn hàng: " + error.message);
-      }
-      
-      return true;
+      })();
+
+      return true; // Giữ message port mở
     }
   });

@@ -134,21 +134,41 @@ const getOrderLists = async () => {
   const orders = [];
   // wait load dom
   const ordersXpath = "#orders-table tbody tr";
+  const noOrdersSelector = 'span:contains("No orders were found that match the given search criteria.")';
 
-  let i = 0;
-  while (i < 5) {
-    if (
-      $(ordersXpath).length &&
-      $(".total-orders-heading>span:first-child").length
-    )
-      break;
+  const MAX_WAIT_SECONDS = 60; // Vẫn giữ thời gian chờ tối đa 1 phút
+  let tableFound = false;
+
+  console.log(`Bắt đầu chờ, tối đa ${MAX_WAIT_SECONDS} giây. Sẽ chỉ dừng lại khi thấy bảng order.`);
+
+  // Vòng lặp này chỉ có một mục đích duy nhất: chờ bằng được cái bảng order xuất hiện.
+  for (let i = 0; i < MAX_WAIT_SECONDS; i++) {
+    if ($(ordersXpath).length > 0) {
+      console.log(`OK, đã tìm thấy bảng order sau ${i + 1} giây.`);
+      tableFound = true;
+      break; // Thoát ngay khi thấy bảng
+    }
     await sleep(1000);
-    i++;
   }
 
-  if ($(ordersXpath).length == 0) {
-    return [];
+  // Sau khi vòng lặp kết thúc, ta mới bắt đầu phán xét
+  if (tableFound) {
+    // Nếu vòng lặp dừng lại do đã tìm thấy bảng, thì quá tốt.
+    // Bỏ qua cái dòng "No orders" dù nó có tồn tại hay không.
+    console.log("Bảng order đã xuất hiện. Bắt đầu lấy danh sách.");
+  } else {
+    // Nếu chạy hết 60 giây mà không thấy bảng order đâu (tableFound = false)
+    // Lúc này ta mới kiểm tra lần cuối xem có dòng "No orders" không.
+    if ($(noOrdersSelector).length > 0) {
+      console.log("Đã chờ hết 60 giây, không thấy bảng order, chỉ thấy thông báo 'No orders'. Kết luận không có đơn hàng.");
+      return [];
+    } else {
+      // Trường hợp tệ nhất: hết 60s mà không thấy gì cả.
+      console.log(`Hết ${MAX_WAIT_SECONDS} giây chờ mà không thấy bảng order hay thông báo. Có thể trang đã bị lỗi.`);
+      return [];
+    }
   }
+
   // wait load all order
   const totalOrders = parseInt(
     $(".total-orders-heading>span:first-child").text().split(" ")[0],
@@ -521,9 +541,9 @@ const setTextBtnRevert = () => {
 // Đăng ký message listener trong phạm vi toàn cục để đảm bảo nhận tin nhắn trên mọi trang
 chrome.runtime.onMessage.addListener(async function (req, sender, res) {
   const { message, data } = req || {};
-  
+
   console.log(`[Content] Nhận tin nhắn từ background.js: ${message}`, { url: window.location.href });
-  
+
   // Phản hồi ping từ background script để xác nhận content script đã được tiêm
   if (message === "ping") {
     console.log("[Content] Nhận ping từ background script, phản hồi để xác nhận đã tiêm");
@@ -574,8 +594,9 @@ chrome.runtime.onMessage.addListener(async function (req, sender, res) {
   }
   
   // Xử lý các tin nhắn phổ biến khác trên mọi trang
-  if (message === "syncOrderToMB") {
+  if (message === "syncedOrderToMB") {
     handleSyncOrderToMBResponse(data);
+    res({ message: "received" });
     return true;
   }
   
@@ -611,16 +632,16 @@ chrome.runtime.onMessage.addListener(async function (req, sender, res) {
     
     const hasNotSync = appendOrdersIntoTable(orders, orderInfos);
 
-    if (hasNotSync) {
-      // Auto sync
-      await sleep(3000);
-      const isAuto = await getStorage("_mb_auto");
-      const autoKey = await getStorage("_mb_auto_key");
-      if (isAuto && autoKey) {
-        $(".om-addon #not_synced #sync-order").trigger("click");
-        return true;
-      }
-    }
+    // if (hasNotSync) {
+    //   // Auto sync
+    //   await sleep(3000);
+    //   const isAuto = await getStorage("_mb_auto");
+    //   const autoKey = await getStorage("_mb_auto_key");
+    //   if (isAuto && autoKey) {
+    //     $(".om-addon #not_synced #sync-order").trigger("click");
+    //     return true;
+    //   }
+    // }
   }
   
   return true; // Giữ kết nối message port mở cho các callbacks bất đồng bộ
@@ -791,8 +812,6 @@ $(document).on("click", "#sync-order", async function () {
     $(`.sync-order-item[data-order-id="${order.orderId}"]`).addClass("loader");
   }
 
-  const isAuto = await getStorage("_mb_auto");
-  const autoKey = await getStorage("_mb_auto_key");
   // send order ids to background
   chrome.runtime.sendMessage({
     message: "syncOrderToMB",
@@ -800,7 +819,7 @@ $(document).on("click", "#sync-order", async function () {
     data: {
       apiKey: await getStorage(mbApi),
       orders,
-      markSynced: isAuto && autoKey,
+      markSynced: false,
     },
   });
 });

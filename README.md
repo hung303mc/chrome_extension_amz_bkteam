@@ -62,6 +62,7 @@ Tiện ích sử dụng hệ thống báo thức (Alarms) của Chrome để th�
   - `ads_report.js` gửi yêu cầu tải các báo cáo quảng cáo.
   - `background.js` truy cập vào trang quản lý báo cáo quảng cáo và tìm các báo cáo có sẵn.
   - Các báo cáo được tải về dưới dạng Blob và gửi lên máy chủ Bkteam.
+  - Báo cáo được lưu ở /home/amazon-ads-system/webapp/ads_report_uploaded/
 
 ### 5. Cấu hình (Popup)
 - **File liên quan**: `popup/index.html`, `popup/popup.js`.

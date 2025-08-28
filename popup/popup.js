@@ -20,8 +20,10 @@ const getMbApi = () =>
         chrome.storage.local.get(mbApi).then((result) => {
             if (result[mbApi] !== undefined) {
                 resolve((result[mbApi] || '').toString().trim());
+                resolve((result[mbApi] || '').toString().trim());
             } else {
                 const localData = localStorage.getItem(mbApi);
+                resolve((localData || '').toString().trim());
                 resolve((localData || '').toString().trim());
             }
         });
