@@ -68,6 +68,7 @@ const getTestSettings = () =>
                 updateTracking: false,
                 accountHealth: false,
                 downloadAds: false,
+                sendMessageAuto: false,
                 delay: 0.1,
             }
         }).then((result) => {
@@ -143,6 +144,7 @@ $(document).on("click", "#run_test", async function () {
         updateTracking: $('#test_update_tracking').is(':checked'),
         accountHealth: $('#test_account_health').is(':checked'),
         downloadAds: $('#test_download_ads').is(':checked'),
+        sendMessageAuto: $('#test_send_message_auto').is(':checked'), 
         payment: $('#test_payment').is(':checked') // Thêm checkbox mới
     };
 
@@ -159,7 +161,7 @@ $(document).on("click", "#run_test", async function () {
     }
 
     // Xử lý 4 tác vụ cũ
-    const otherTasks = settings.syncOrder || settings.updateTracking || settings.accountHealth || settings.downloadAds;
+    const otherTasks = settings.syncOrder || settings.updateTracking || settings.accountHealth || settings.downloadAds || settings.sendMessageAuto;
     if (otherTasks) {
         const otherSettings = { ...settings };
         delete otherSettings.payment; // Xóa key payment khỏi object này
@@ -234,6 +236,7 @@ async function loadTestSettings() {
     $('#test_sync_order').prop('checked', settings.syncOrder);
     $('#test_update_tracking').prop('checked', settings.updateTracking);
     $('#test_account_health').prop('checked', settings.accountHealth);
+    $('#test_send_message_auto').prop('checked', settings.sendMessageAuto);
     $('#test_download_ads').prop('checked', settings.downloadAds);
     $('#test_delay').val(settings.delay);
     console.log("Đã load cài đặt test đã lưu.", settings);
