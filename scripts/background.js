@@ -108,7 +108,53 @@ const setupDailyAlarm = () => {
     console.log("Danh sách tất cả alarm:", alarms);
   });
 };
+/**
+ * Tính toán và đặt báo thức cho lần rút tiền tiếp theo.
+ * Lịch rút: 12:30 các ngày T2, T4, T6 và 8:00 ngày Chủ Nhật.
+ */
+function scheduleNextPaymentRequest() {
+    chrome.alarms.clear("autoRequestPayment"); // Xóa alarm cũ trước khi đặt cái mới
 
+    const now = new Date();
+    const schedule = [
+        { day: 1, hour: 12, minute: 30 }, // Thứ 2
+        { day: 3, hour: 12, minute: 30 }, // Thứ 4
+        { day: 5, hour: 12, minute: 30 }, // Thứ 6
+        { day: 0, hour: 8, minute: 0 }    // Chủ Nhật
+    ];
+
+    let nextAlarmTime = null;
+
+    // Tìm thời điểm báo thức hợp lệ tiếp theo
+    for (let i = 0; i < 7; i++) {
+        const checkDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+        const dayOfWeek = checkDate.getDay();
+
+        const dailySchedules = schedule.filter(s => s.day === dayOfWeek).sort((a,b) => a.hour - b.hour || a.minute - b.minute);
+
+        for (const item of dailySchedules) {
+            const potentialAlarm = new Date(checkDate);
+            potentialAlarm.setHours(item.hour, item.minute, 0, 0);
+
+            if (potentialAlarm > now) {
+                nextAlarmTime = potentialAlarm;
+                break;
+            }
+        }
+        if (nextAlarmTime) break;
+    }
+    
+    if (nextAlarmTime) {
+        const delayInMinutes = (nextAlarmTime.getTime() - now.getTime()) / 60000;
+
+        if (delayInMinutes > 0) {
+            chrome.alarms.create("autoRequestPayment", {
+                delayInMinutes: delayInMinutes,
+            });
+            console.log(`[Payment] Đã đặt lịch rút tiền tiếp theo vào: ${nextAlarmTime.toLocaleString()}`);
+        }
+    }
+}
 // Xử lý alarm khi kích hoạt
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -231,7 +277,7 @@ else if (alarm.name === "dailyDownloadAdsReports") {
           if (!merchantId) {
               throw new Error("Không thể lấy được merchantId để chạy tác vụ tự động.");
           }
-          const UPLOAD_HANDLER_URL = "https://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
+          const UPLOAD_HANDLER_URL = "http://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
           console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
 
           const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
@@ -357,6 +403,93 @@ else if (alarm.name === "dailyDownloadAdsReports") {
       }
   })();
 }
+else if (alarm.name === "autoRequestPayment") {
+        console.log("[Payment] Đã đến giờ tự động rút tiền.");
+
+        // Đặt lịch cho lần tiếp theo ngay lập tức
+        scheduleNextPaymentRequest();
+
+        const merchantId = await getMBApiKey();
+        if (!merchantId) {
+            console.error("[Payment] Không lấy được merchantId, không thể tiếp tục.");
+            return;
+        }
+
+        try {
+            // Step 1: Check xem có bị pending hay không
+            // Giả sử API endpoint trả về { "data": {"is_pending": true/false} }
+            const query = JSON.stringify({ merchantId: merchantId });
+            const result = await sendRequestToMB("getPendingStatus", merchantId, query);
+
+            if (result.error || (result.data && result.data.is_pending)) {
+                 console.log(`[Payment] Account ${merchantId} đang được đánh dấu "Pending Payment Request". Bỏ qua lần rút tiền này.`);
+                 return;
+            }
+
+            // Mở tab ẩn để thực hiện
+            const url = `${globalDomain}/payments/dashboard/index.html`;
+            chrome.tabs.create({ url, active: false }, (tab) => {
+                if (chrome.runtime.lastError || !tab || !tab.id) {
+                    console.error("[Payment] Không thể tạo tab để xử lý:", chrome.runtime.lastError?.message);
+                    return;
+                }
+                // Gửi message để content script bắt đầu
+                sendMessage(tab.id, "startPaymentProcess", {
+                tabId: tab.id,
+                testMode: false,
+                realPayment: true,
+                clickButton: true
+              });
+            });
+
+        } catch (error) {
+            console.error("[Payment] Lỗi trong quá trình tự động rút tiền:", error);
+        }
+    }
+else if (alarm.name === "testPaymentAlarm") {
+        console.log("[Payment] Đã đến giờ chạy test payment");
+        
+        const merchantId = getMBApiKey();
+        if (!merchantId) {
+            console.error("[Payment] Không lấy được merchantId cho test");
+            return;
+        }
+        
+        // Thực hiện test payment (không click button thật)
+        chrome.tabs.create({
+            url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+            active: true
+        }, (tab) => {
+            if (chrome.runtime.lastError || !tab || !tab.id) {
+                console.error("[Payment] Không thể tạo tab cho test:", chrome.runtime.lastError?.message);
+                return;
+            }
+            
+            function handleTestAlarmUpdate(updatedTabId, changeInfo) {
+                if (updatedTabId === tab.id && changeInfo.status === "complete") {
+                    chrome.tabs.onUpdated.removeListener(handleTestAlarmUpdate);
+                    
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        files: ['scripts/payment_auto.js']
+                    }).then(() => {
+                        setTimeout(() => {
+                            chrome.tabs.sendMessage(tab.id, {
+                                message: "startPaymentProcess",
+                                data: { 
+                                    tabId: tab.id,
+                                    testMode: true,
+                                    clickButton: false
+                                }
+                            });
+                        }, 2000);
+                    });
+                }
+            }
+            
+            chrome.tabs.onUpdated.addListener(handleTestAlarmUpdate);
+        });
+    }
   else if (alarm.name === "testSyncOrder") {
     console.log("Đang chạy test alarm...");
     // Test thông báo
@@ -427,26 +560,12 @@ const sendLogToServer = async (logMessage) => {
       console.error("Failed to send log to server. Error:", error);
   }
 };
-// Helper function to send message after tab loads
-function sendMessageToTabWhenLoaded(tabId, messagePayload) {
-    chrome.tabs.onUpdated.addListener(function listener(updatedTabId, changeInfo, tab) {
-        // Ensure the tab is fully loaded and is the performance dashboard page
-        if (updatedTabId === tabId && changeInfo.status === 'complete' && tab.url && tab.url.includes("/performance/dashboard")) {
-            chrome.tabs.onUpdated.removeListener(listener); // Important: remove listener to prevent multiple triggers
-            chrome.tabs.sendMessage(tabId, messagePayload, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error(`Error sending message to tab ${tabId} (${tab.url}):`, chrome.runtime.lastError.message);
-                } else {
-                    console.log(`Message sent to tab ${tabId} (${tab.url}), response:`, response);
-                }
-            });
-        }
-    });
-}
+
+
 
 // Chạy thiết lập alarm khi extension được tải
 setupDailyAlarm();
-
+scheduleNextPaymentRequest();
 const isImage = (filename) => {
   return /\.(jpg|jpeg|png|webp|avif|gif|svg)$/.test(filename);
 };
@@ -3133,7 +3252,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     return true;
   }
-  
+
+  // Case cho UI Checkbox - FIXED: Sử dụng request thay vì req
+  if (request.message === "getPendingStatus") {
+    const merchantId = getMBApiKey();
+    const query = JSON.stringify({ merchantId: merchantId });
+    const result = sendRequestToMB("getPendingStatus", merchantId, query);
+    sendResponse({ status: result.data ? result.data.is_pending : false });
+    return true; // async
+  }
+
+  if (request.message === "updatePendingStatus") {
+    const merchantId = getMBApiKey();
+    const query = JSON.stringify({ merchantId: merchantId, status: request.data.status });
+    const result = sendRequestToMB("updatePendingStatus", merchantId, query);
+    if (result && !result.error) {
+      sendResponse({ status: 'success' });
+    } else {
+      sendResponse({ status: 'error', error: result.error });
+    }
+    return true; // async
+  }
+
+
   if (request.message === "getPaymentData") {
     console.log('getPaymentData');
     chrome.tabs.create({ 
@@ -3230,6 +3371,1668 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  // Handler cho việc navigate trực tiếp đến disbursement page
+  if (request.message === "navigateToDisburse") {
+    console.log("[Background] Nhận yêu cầu navigate đến disbursement page");
+    const { targetUrl, currentTabId } = request.data;
+    
+    // Option 1: Update current tab
+    chrome.tabs.update(currentTabId, { url: targetUrl }).then(() => {
+      console.log("[Background] Đã navigate đến:", targetUrl);
+      
+      // Đợi trang mới load và inject script
+      function handleNavigationUpdate(updatedTabId, changeInfo) {
+        if (updatedTabId === currentTabId && changeInfo.status === "complete") {
+          chrome.tabs.onUpdated.removeListener(handleNavigationUpdate);
+          
+          // Inject script để handle disbursement page
+          setTimeout(() => {
+            chrome.tabs.sendMessage(currentTabId, {
+              message: "handleDisburseDetailsPage",
+              data: { tabId: currentTabId }
+            }).catch(error => {
+              console.error("[Background] Lỗi khi gửi message cho disbursement page:", error);
+            });
+          }, 2000);
+        }
+      }
+      
+      chrome.tabs.onUpdated.addListener(handleNavigationUpdate);
+      
+    }).catch(error => {
+      console.error("[Background] Lỗi khi navigate:", error);
+      
+      // Fallback: Tạo tab mới
+      chrome.tabs.create({ 
+        url: targetUrl, 
+        active: false 
+      }, (newTab) => {
+        // Đóng tab cũ
+        chrome.tabs.remove(currentTabId);
+        
+        // Handle tab mới
+        function handleNewTabUpdate(updatedTabId, changeInfo) {
+          if (updatedTabId === newTab.id && changeInfo.status === "complete") {
+            chrome.tabs.onUpdated.removeListener(handleNewTabUpdate);
+            
+            setTimeout(() => {
+              chrome.tabs.sendMessage(newTab.id, {
+                message: "handleDisburseDetailsPage", 
+                data: { tabId: newTab.id }
+              });
+            }, 2000);
+          }
+        }
+        
+        chrome.tabs.onUpdated.addListener(handleNewTabUpdate);
+      });
+    });
+    
+    sendResponse({ status: "navigation_started" });
+    return true;
+  }
+
+  // Handler cho alternative approach - direct disbursement
+  if (request.message === "directDisbursementRequest") {
+    console.log("[Background] Thực hiện direct disbursement request");
+    
+    // Tạo tab trực tiếp đến disbursement page
+    chrome.tabs.create({
+      url: "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE",
+      active: false
+    }, function(tab) {
+      const tabId = tab.id;
+      
+      function handleDirectTabUpdate(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === "complete") {
+          chrome.tabs.onUpdated.removeListener(handleDirectTabUpdate);
+          
+          // Inject script để handle disbursement
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: async function() {
+              // Inline function để handle disbursement page
+              console.log("[Direct Script] Đang xử lý trang disbursement");
+              
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              
+              // Tìm số tiền
+              let amount = '0.00';
+              const amountSelectors = [
+                'div[data-test-id="current-settlement-amount"] span.currency-display-amount',
+                '[data-test-id*="amount"] .currency-display-amount',
+                '.settlement-amount span',
+                '.disbursement-amount span',
+                '.currency-display-amount'
+              ];
+              
+              for (const selector of amountSelectors) {
+                const el = document.querySelector(selector);
+                if (el && el.textContent.trim()) {
+                  amount = el.textContent.trim().replace(/[^0-9.]/g, '');
+                  break;
+                }
+              }
+              
+              // Tìm button
+              const buttonSelectors = [
+                'span[data-test-id="request-disbursement-button"] button',
+                'button[data-test-id="request-disbursement-button"]',
+                '[data-test-id*="disburs"] button:not([disabled])',
+                'kat-button[label*="Request"]:not([disabled])'
+              ];
+              
+              let button = null;
+              for (const selector of buttonSelectors) {
+                const btn = document.querySelector(selector);
+                if (btn && !btn.hasAttribute('disabled')) {
+                  button = btn;
+                  break;
+                }
+              }
+              
+              if (button) {
+                console.log("[Direct Script] Click disbursement button, amount:", amount);
+                button.click();
+                return { success: true, amount: parseFloat(amount) || 0 };
+              } else {
+                return { success: false, error: "Button not found" };
+              }
+            }
+          }).then((results) => {
+            const result = results[0].result;
+            
+            if (result.success) {
+              chrome.runtime.sendMessage({
+                message: "disbursementSuccess",
+                data: {
+                  amount: result.amount,
+                  tabId: tabId
+                }
+              });
+            } else {
+              chrome.runtime.sendMessage({
+                message: "disbursementFailed", 
+                data: { 
+                  reason: `Direct disbursement failed: ${result.error}`,
+                  tabId 
+                }
+              });
+            }
+          }).catch(error => {
+            chrome.runtime.sendMessage({
+              message: "disbursementFailed",
+              data: { 
+                reason: `Script execution error: ${error.message}`,
+                tabId 
+              }
+            });
+          });
+        }
+      }
+      
+      chrome.tabs.onUpdated.addListener(handleDirectTabUpdate);
+    });
+    
+    sendResponse({ status: "direct_disbursement_started" });
+    return true;
+  }
+  // if (request.message === "manualRequestPayment") {
+  //   console.log("[Background] Nhận yêu cầu tìm disbursement button (không click)");
+    
+  //   chrome.tabs.create({
+  //     url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+  //     active: false
+  //   }, function(tab) {
+  //     const tabId = tab.id;
+      
+  //     function handleTabUpdate(updatedTabId, changeInfo) {
+  //       if (updatedTabId === tabId && changeInfo.status === "complete") {
+  //         chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+          
+  //         // Inject payment script
+  //         chrome.scripting.executeScript({
+  //           target: { tabId: tabId },
+  //           files: ['payment_auto.js']
+  //         }).then(() => {
+  //           setTimeout(() => {
+  //             chrome.tabs.sendMessage(tabId, {
+  //               message: "startPaymentProcess",
+  //               data: { 
+  //                 tabId: tabId,
+  //                 testMode: false,      // Chắc chắn không phải test mode
+  //                 realPayment: true,    // Kích hoạt chế độ rút tiền thật
+  //                 clickButton: true     // Cho phép click vào nút
+  //               }
+  //             }).catch(error => {
+  //               console.error("[Background] Lỗi khi gửi message:", error);
+  //             });
+  //           }, 2000);
+  //         }).catch(error => {
+  //           console.error("[Background] Lỗi khi inject script:", error);
+  //         });
+  //       }
+  //     }
+      
+  //     chrome.tabs.onUpdated.addListener(handleTabUpdate);
+  //   });
+    
+  //   sendResponse({ status: "finding_button_process_started" });
+  //   return true;
+  // }
+if (request.message === "manualRequestPayment") {
+    console.log("[Background] Nhận yêu cầu manual request payment");
+
+    // ====================================================================
+    // HÀM INJECTABLE: Toàn bộ logic của payment_auto.js V5 được đặt ở đây
+    // ====================================================================
+    function injectedPaymentProcessor() {
+        (() => {
+            'use strict';
+            console.log("[Payment Script V5 - Shadow DOM] Loaded on:", window.location.href);
+
+            chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+                if (request.message === "startPaymentProcess") {
+                    initialize(request.data);
+                    sendResponse({ status: "processing" });
+                }
+                return true;
+            });
+
+            async function initialize(options) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const url = window.location.href;
+
+                if (url.includes('/payments/dashboard')) {
+                    console.log("[Payment V5] Detected Dashboard page.");
+                    await processDashboardPage(options);
+                } else if (url.includes('/payments/disburse/details')) {
+                    console.log("[Payment V5] Detected Disburse Details page.");
+                    await processDisburseDetailsPage(options);
+                } else {
+                    reportFailure({ ...options, reason: "Không thể nhận diện trang thanh toán." });
+                }
+            }
+
+            async function processDashboardPage(options) {
+                const { testMode, clickButton } = options;
+                const funds = getAvailableFunds();
+                console.log(`[Payment V5] Available Funds: $${funds}`);
+
+                if (funds > 150 || testMode) {
+                    const requestButton = findRequestPaymentButton();
+                    if (requestButton) {
+                        console.log("[Payment V5] ✅ Found 'Request Payment' button.");
+                        if (!testMode && clickButton) {
+                            requestButton.click();
+                        } else {
+                            navigateToDisbursePage();
+                        }
+                    } else {
+                        reportFailure({ ...options, reason: "Không tìm thấy nút 'Request Payment' trên Dashboard." });
+                    }
+                } else {
+                    reportFailure({ ...options, reason: `Số tiền $${funds} không đủ (> $150).` });
+                }
+            }
+
+            async function processDisburseDetailsPage(options) {
+                const { testMode, realPayment, clickButton } = options;
+                const amount = getSettlementAmount();
+                const buttonInfo = findDisburseButton(); // Sử dụng hàm hỗ trợ Shadow DOM
+
+                const { found, enabled, text, element } = buttonInfo;
+                console.log(`[Payment V5] Disburse Button -> Found: ${found}, Enabled: ${enabled}, Amount: $${amount}`);
+
+                if (testMode) {
+                    reportSuccess({ ...options, found, amount, buttonEnabled: enabled, buttonText: text });
+                    return;
+                }
+
+                if (realPayment && clickButton && found && enabled) {
+                    console.log("[Payment V5] Clicking 'Request Disbursement' button inside Shadow DOM...");
+                    element.click();
+                    setTimeout(() => reportSuccess({ ...options, clickPerformed: true, amount, found, buttonEnabled: enabled, buttonText: text }), 2000);
+                } else {
+                    const reason = !found ? "Không tìm thấy nút 'Request Disbursement'" : "Nút bị vô hiệu hóa";
+                    reportFailure({ ...options, reason, found, buttonEnabled: enabled, amount });
+                }
+            }
+
+            // --- CÁC HÀM TIỆN ÍCH ---
+
+            function getAvailableFunds() {
+                const el = document.querySelector('.available-currency-total-amount span');
+                return el ? (parseFloat(el.textContent.replace(/[^0-9.]/g, '')) || 0) : 0;
+            }
+
+            function getSettlementAmount() {
+                const el = document.querySelector('.settlement-amount-balance div');
+                return el ? el.textContent.trim().replace(/[^0-9.]/g, '') : '0.00';
+            }
+
+            function findRequestPaymentButton() {
+                return document.querySelector('.custom-child-available-balance kat-button[label="Request Payment"]');
+            }
+
+            /**
+             * SỬA LỖI TẠI ĐÂY: Hàm được viết lại hoàn toàn để xử lý Shadow DOM
+             */
+            function findDisburseButton() {
+                const katButtonHost = document.getElementById('request-transfer-button');
+                if (!katButtonHost) {
+                    console.log("   -> Host <kat-button> #request-transfer-button not found.");
+                    return { found: false };
+                }
+                if (katButtonHost.shadowRoot) {
+                    const actualButton = katButtonHost.shadowRoot.querySelector('button[type="submit"]');
+                    if (actualButton) {
+                        console.log("   -> ✅ Found actual <button> inside Shadow DOM.");
+                        const enabled = !actualButton.disabled && !katButtonHost.hasAttribute('disabled');
+                        return {
+                            found: true,
+                            element: actualButton,
+                            text: katButtonHost.getAttribute('label') || "Request Disbursement",
+                            enabled: enabled
+                        };
+                    }
+                }
+                console.log("   -> Host <kat-button> found, but internal button not found in Shadow DOM.");
+                return { found: false };
+            }
+
+            function navigateToDisbursePage() {
+                window.location.href = "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE";
+            }
+
+            function reportSuccess(data) {
+                const parsedAmount = parseFloat(data.amount) || 0;
+                chrome.runtime.sendMessage({
+                    message: "sendPaymentLogToServer",
+                    data: { ...data, amount: parsedAmount, url: window.location.href, method: 'V5_ShadowDOM' }
+                });
+            }
+
+            function reportFailure(data) {
+                chrome.runtime.sendMessage({ message: "disbursementFailed", data: data });
+            }
+        })();
+    }
+
+    // ====================================================================
+    // LOGIC CHÍNH: Tạo tab, chờ load xong, và inject hàm ở trên
+    // ====================================================================
+    chrome.tabs.create({
+        url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+        active: false
+    }, function(tab) {
+        if (chrome.runtime.lastError || !tab?.id) {
+            console.error("[Background] Không thể tạo tab:", chrome.runtime.lastError?.message);
+            return;
+        }
+
+        const tabId = tab.id;
+        let executed = false;
+
+        const executeInjection = (tabIdToInject) => {
+            if (executed) return;
+            executed = true;
+            
+            clearTimeout(forcedTimeout);
+            chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+
+            console.log(`[Background] Trang payment (tab ${tabIdToInject}) đã sẵn sàng. Bắt đầu inject script...`);
+
+            setTimeout(() => {
+                chrome.scripting.executeScript({
+                    target: { tabId: tabIdToInject },
+                    func: injectedPaymentProcessor
+                }).then(() => {
+                    console.log("[Background] ✅ Script đã được inject thành công.");
+                    setTimeout(() => {
+                         chrome.tabs.sendMessage(tabIdToInject, {
+                            message: "startPaymentProcess",
+                            data: {
+                                tabId: tabIdToInject,
+                                testMode: false,
+                                realPayment: true,
+                                clickButton: true
+                            }
+                        }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error("[Background] ❌ Gửi message thất bại:", chrome.runtime.lastError.message);
+                            }
+                        });
+                    }, 2000);
+                }).catch(err => {
+                    console.error("[Background] ❌ Inject script gộp thất bại:", err);
+                });
+            }, 3000);
+        };
+
+        const handleTabUpdate = (updatedTabId, changeInfo, updatedTab) => {
+            if (updatedTabId === tabId && changeInfo.status === 'complete' && updatedTab.url?.includes('/payments/')) {
+                executeInjection(tabId);
+            }
+        };
+
+        const forcedTimeout = setTimeout(() => executeInjection(tabId), 20000);
+        chrome.tabs.onUpdated.addListener(handleTabUpdate);
+    });
+
+    sendResponse({ status: "manual_payment_process_started" });
+    return true;
+}
+
+  // Handler cho direct navigation test
+  if (request.message === "directNavigateToDisburse") {
+    console.log("[Background] Direct navigate test đến disbursement page");
+    
+    chrome.tabs.create({
+      url: "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE",
+      active: false
+    }, function(tab) {
+      const tabId = tab.id;
+      
+      function handleDirectTabUpdate(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === "complete") {
+          chrome.tabs.onUpdated.removeListener(handleDirectTabUpdate);
+          
+          // Inject script để tìm button trên trang disbursement
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: async function() {
+              console.log("[Direct Test] Đang tìm Request Disbursement button...");
+              
+              // Đợi trang load
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              
+              // Tìm button
+              const buttonSelectors = [
+                'span[data-test-id="request-disbursement-button"] button',
+                'button[data-test-id="request-disbursement-button"]',
+                '[data-test-id*="disburs"] button',
+                'kat-button[label*="Request Disbursement"]',
+                'kat-button[label*="Request"]',
+                '.disbursement-button button',
+                '[class*="disburs"] button'
+              ];
+
+              let foundButton = null;
+              let foundSelector = null;
+              
+              for (const selector of buttonSelectors) {
+                const btn = document.querySelector(selector);
+                if (btn) {
+                  foundButton = btn;
+                  foundSelector = selector;
+                  break;
+                }
+              }
+              
+              // Lấy amount
+              let amount = '0.00';
+              const amountSelectors = [
+                'div[data-test-id="current-settlement-amount"] span.currency-display-amount',
+                '[data-test-id*="amount"] .currency-display-amount',
+                '.settlement-amount span',
+                '.currency-display-amount'
+              ];
+              
+              for (const selector of amountSelectors) {
+                const el = document.querySelector(selector);
+                if (el && el.textContent.trim()) {
+                  amount = el.textContent.trim().replace(/[^0-9.]/g, '');
+                  break;
+                }
+              }
+              
+              return {
+                found: !!foundButton,
+                buttonText: foundButton?.textContent?.trim() || '',
+                buttonEnabled: foundButton ? !foundButton.hasAttribute('disabled') : false,
+                selector: foundSelector,
+                amount: parseFloat(amount) || 0,
+                url: window.location.href,
+                allButtons: Array.from(document.querySelectorAll('button, kat-button')).map(btn => ({
+                  text: btn.textContent?.trim(),
+                  className: btn.className,
+                  disabled: btn.hasAttribute('disabled')
+                }))
+              };
+            }
+          }).then((results) => {
+            const result = results[0].result;
+            
+            chrome.runtime.sendMessage({
+              message: "directNavigationFinished",
+              data: {
+                success: true,
+                ...result
+              }
+            });
+            
+            // Đóng tab sau khi test xong
+            setTimeout(() => {
+              chrome.tabs.remove(tabId);
+            }, 2000);
+            
+          }).catch(error => {
+            chrome.runtime.sendMessage({
+              message: "directNavigationFinished",
+              data: {
+                success: false,
+                error: error.message
+              }
+            });
+            
+            chrome.tabs.remove(tabId);
+          });
+        }
+      }
+      
+      chrome.tabs.onUpdated.addListener(handleDirectTabUpdate);
+    });
+    
+    sendResponse({ status: "direct_navigation_started" });
+    return true;
+  }
+
+  // Modified handler for disbursementSuccess - để handle trường hợp chỉ tìm button
+  
+if (request.message === "disbursementFailed") {
+    const { reason, tabId, testMode, realPayment } = request.data;
+    console.error(`[Payment] Thất bại: ${reason}`);
+    
+    if (testMode) {
+        chrome.runtime.sendMessage({
+            message: "testPaymentFinished",
+            data: { success: false, error: reason }
+        });
+    } else if (realPayment) {
+        chrome.runtime.sendMessage({
+            message: "realPaymentFinished", 
+            data: { success: false, error: reason }
+        });
+    }
+    
+    if (tabId) {
+        setTimeout(() => chrome.tabs.remove(tabId).catch(e => {}), 1000);
+    }
+    sendResponse({ status: "error_logged" });
+    return true;
+}
+
+  // Modified handler for disbursementFailed
+if (request.message === "disbursementFailed") {
+    const { reason, tabId, testMode, realPayment } = request.data;
+    console.error(`[Payment] Thất bại: ${reason}`);
+    
+    if (testMode && !realPayment) {
+        // Test mode failed
+        chrome.runtime.sendMessage({
+            message: "testPaymentFinished",
+            data: {
+                success: false,
+                error: reason,
+                found: false,
+                amount: 0
+            }
+        });
+    } else if (realPayment && !testMode) {
+        // Real payment failed
+        chrome.runtime.sendMessage({
+            message: "realPaymentFinished", 
+            data: {
+                success: false,
+                error: reason,
+                amount: 0
+            }
+        });
+    }
+    
+    // Đóng tab
+    if (tabId) {
+        setTimeout(() => {
+            chrome.tabs.remove(tabId).catch(e => console.error("Lỗi khi đóng tab:", e.message));
+        }, 1000);
+    }
+    
+    sendResponse({ status: "error_logged" });
+    return true;
+}
+  // Handler cho payment process success
+if (request.message === "paymentProcessSuccess") {
+    const { tabId, found, amount, dashboardFunds, buttonText, buttonEnabled } = request.data;
+    
+    console.log("[Background] ✅ Payment process thành công:", request.data);
+    
+    // Gửi kết quả về UI
+    chrome.runtime.sendMessage({
+        message: "paymentRequestFinished",
+        data: {
+            success: true,
+            found: found,
+            amount: amount,
+            dashboardFunds: dashboardFunds,
+            buttonText: buttonText,
+            buttonEnabled: buttonEnabled,
+            error: null
+        }
+    });
+
+    // Đóng tab sau khi hoàn tất
+    if (tabId) {
+        setTimeout(() => {
+            chrome.tabs.remove(tabId).catch(e => console.error("Lỗi khi đóng tab:", e.message));
+        }, 2000);
+    }
+    
+    sendResponse({ status: "success_processed" });
+    return true;
+}
+
+// Handler cho payment process failed
+if (request.message === "paymentProcessFailed") {
+    const { reason, tabId, fundsAmount } = request.data;
+    
+    console.error(`[Background] ❌ Payment process thất bại: ${reason}`);
+    
+    // Gửi lỗi về UI
+    chrome.runtime.sendMessage({
+        message: "paymentRequestFinished", 
+        data: {
+            success: false,
+            found: false,
+            error: reason,
+            amount: 0,
+            dashboardFunds: fundsAmount || 0
+        }
+    });
+    
+    // Đóng tab
+    if (tabId) {
+        setTimeout(() => {
+            chrome.tabs.remove(tabId).catch(e => console.error("Lỗi khi đóng tab:", e.message));
+        }, 1000);
+    }
+    
+    sendResponse({ status: "error_processed" });
+    return true;
+}
+
+// Handler để gửi log lên server
+if (request.message === "sendPaymentLogToServer") {
+    const logDataFromContentScript = request.data;
+    console.log("[Background] Received sendPaymentLogToServer:", logDataFromContentScript);
+    
+    // --- PHẦN SỬA LỖI BẮT ĐẦU TỪ ĐÂY ---
+    (async () => {
+        try {
+            // 1. Lấy merchantId (API Key)
+            const merchantId = await getMBApiKey();
+            if (!merchantId) {
+                throw new Error("Không thể lấy được merchantId để gửi lên server.");
+            }
+
+            // 2. Gộp merchantId vào dữ liệu sẽ gửi đi
+            const finalPayload = {
+                ...logDataFromContentScript, // Dữ liệu từ payment_auto.js
+                merchantId: merchantId       // Thêm merchantId vào
+            };
+
+            const serverUrl = "https://bkteam.top/dungvuong-admin/api/update_disbursement_handler.php";
+            console.log("[Background] Sending to server:", serverUrl, "with payload:", finalPayload);
+            
+            // 3. Gửi dữ liệu đã có merchantId lên server
+            const response = await fetch(serverUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(finalPayload) // Gửi finalPayload
+            });
+
+            const resultText = await response.text();
+            console.log("[Background] Server raw response:", resultText);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText} - ${resultText}`);
+            }
+
+            const jsonResult = JSON.parse(resultText);
+            if (jsonResult.status !== 'success') {
+                throw new Error(jsonResult.message || "Server returned an error status.");
+            }
+
+            console.log("[Background] ✅ Dữ liệu payment đã gửi lên server thành công.");
+            sendResponse({ status: "log_sent", success: true, serverResponse: jsonResult });
+
+        } catch (error) {
+            console.error("[Background] ❌ Lỗi khi gửi dữ liệu payment:", error);
+            sendResponse({ status: "log_failed", success: false, error: error.message });
+        }
+    })();
+    // --- KẾT THÚC PHẦN SỬA LỖI ---
+    
+    return true; // Giữ kênh message mở cho phản hồi bất đồng bộ
+}
+
+// Handler cho Test Payment Request
+// if (request.message === "testPaymentRequest") {
+//     console.log("[Background] Nhận yêu cầu test payment");
+    
+//     chrome.tabs.create({
+//         url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+//         active: false
+//     }, function(tab) {
+//         const tabId = tab.id;
+        
+//         function handleTabUpdate(updatedTabId, changeInfo) {
+//             if (updatedTabId === tabId && changeInfo.status === "complete") {
+//                 chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+                
+//                 // Inject payment script cho test mode
+//                 chrome.scripting.executeScript({
+//                     target: { tabId: tabId },
+//                     files: ['scripts/payment_auto.js']
+//                 }).then(() => {
+//                     setTimeout(() => {
+//                         chrome.tabs.sendMessage(tabId, {
+//                             message: "startPaymentProcess",
+//                             data: { 
+//                                 tabId: tabId,
+//                                 testMode: true,
+//                                 clickButton: false // Chỉ tìm, không click
+//                             }
+//                         }).catch(error => {
+//                             console.error("[Background] Lỗi khi gửi test message:", error);
+//                         });
+//                     }, 2000);
+//                 }).catch(error => {
+//                     console.error("[Background] Lỗi khi inject script cho test:", error);
+//                 });
+//             }
+//         }
+        
+//         chrome.tabs.onUpdated.addListener(handleTabUpdate);
+//     });
+    
+//     sendResponse({ status: "test_payment_started" });
+//     return true;
+// }
+if (request.message === "testPaymentRequest") {
+    console.log("[Background] Nhận yêu cầu test payment");
+    
+    chrome.tabs.create({
+        url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+        active: false
+    }, function(tab) {
+        const tabId = tab.id;
+        let executed = false;
+        
+        const forcedTimeout = setTimeout(() => {
+            if (!executed) {
+                executed = true;
+                executeTestScript(tabId);
+            }
+        }, 15000);
+        
+        function handleTabUpdate(updatedTabId, changeInfo) {
+            if (updatedTabId === tabId && changeInfo.status === "complete" && !executed) {
+                executed = true;
+                clearTimeout(forcedTimeout);
+                chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+                executeTestScript(tabId);
+            }
+        }
+        
+        chrome.tabs.onUpdated.addListener(handleTabUpdate);
+        
+        function executeTestScript(tabId) {
+            // Inject payment script cho test
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['scripts/payment_auto.js']
+            }).then(() => {
+                console.log("[Background] Test script injected successfully");
+                
+                setTimeout(() => {
+                    chrome.tabs.sendMessage(tabId, {
+                        message: "startPaymentProcess",
+                        data: { 
+                            tabId: tabId,
+                            testMode: true,
+                            realPayment: false,
+                            clickButton: false
+                        }
+                    }).catch(error => {
+                        console.error("[Background] Lỗi khi gửi test message:", error);
+                        
+                        // Fallback cho test mode
+                        navigateDirectToDisbursementTest(tabId);
+                    });
+                }, 3000);
+                
+            }).catch(error => {
+                console.error("[Background] Lỗi khi inject test script:", error);
+                navigateDirectToDisbursementTest(tabId);
+            });
+        }
+    });
+    
+    sendResponse({ status: "test_payment_started" });
+    return true;
+}
+function navigateDirectToDisbursementTest(tabId) {
+    console.log("[Background] Test fallback: Navigate trực tiếp đến disbursement");
+    
+    const disbursementUrl = "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE";
+    
+    chrome.tabs.update(tabId, { url: disbursementUrl }).then(() => {
+        
+        function handleTestDisbursementUpdate(updatedTabId, changeInfo) {
+            if (updatedTabId === tabId && changeInfo.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(handleTestDisbursementUpdate);
+                
+                // Inject script cho test trang disbursement
+                chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    files: ['scripts/disbursement_direct.js']
+                }).then(() => {
+                    
+                    setTimeout(() => {
+                        chrome.tabs.sendMessage(tabId, {
+                            message: "handleDisburseDetailsPage",
+                            data: { 
+                                tabId: tabId,
+                                testMode: true,
+                                realPayment: false,
+                                clickButton: false
+                            }
+                        }).catch(error => {
+                            console.error("[Background] Lỗi khi test disbursement page:", error);
+                        });
+                    }, 5000);
+                    
+                }).catch(error => {
+                    console.error("[Background] Lỗi inject test script cho disbursement:", error);
+                });
+            }
+        }
+        
+        chrome.tabs.onUpdated.addListener(handleTestDisbursementUpdate);
+        
+    }).catch(error => {
+        console.error("[Background] Lỗi test navigate đến disbursement:", error);
+    });
+}
+// Handler mới cho direct disbursement access
+if (request.message === "directDisbursementAccess") {
+    console.log("[Background] Direct access to disbursement page");
+    
+    chrome.tabs.create({
+        url: "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE",
+        active: false
+    }, function(tab) {
+        const tabId = tab.id;
+        const { testMode = false, realPayment = false, clickButton = false } = request.data || {};
+        
+        function handleDirectDisbursementUpdate(updatedTabId, changeInfo) {
+            if (updatedTabId === tabId && changeInfo.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(handleDirectDisbursementUpdate);
+                
+                // Đợi thêm để trang load hoàn toàn
+                setTimeout(() => {
+                    chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        files: ['scripts/payment_auto.js']
+                    }).then(() => {
+                        
+                        // Đợi thêm thời gian cho script được inject
+                        setTimeout(() => {
+                            chrome.tabs.sendMessage(tabId, {
+                                message: "handleDisburseDetailsPage",
+                                data: { 
+                                    tabId: tabId,
+                                    testMode: testMode,
+                                    realPayment: realPayment,
+                                    clickButton: clickButton
+                                }
+                            }).catch(error => {
+                                console.error("[Background] Lỗi direct disbursement message:", error);
+                            });
+                        }, 3000);
+                        
+                    }).catch(error => {
+                        console.error("[Background] Lỗi inject script direct disbursement:", error);
+                    });
+                }, 5000); // Tăng thời gian chờ
+            }
+        }
+        
+        chrome.tabs.onUpdated.addListener(handleDirectDisbursementUpdate);
+    });
+    
+    sendResponse({ status: "direct_disbursement_access_started" });
+    return true;
+}
+
+// Cải thiện handler cho các message response
+if (request.message === "disbursementSuccess") {
+    const { amount, tabId, testMode, realPayment } = request.data;
+    console.log(`[Background] ✅ Disbursement thành công: ${amount}`);
+    
+    // Gửi kết quả về popup/UI
+    if (testMode) {
+        chrome.runtime.sendMessage({
+            message: "testPaymentFinished",
+            data: {
+                success: true,
+                found: true,
+                amount: amount,
+                buttonEnabled: true
+            }
+        });
+    } else if (realPayment) {
+        chrome.runtime.sendMessage({
+            message: "realPaymentFinished",
+            data: {
+                success: true,
+                amount: amount
+            }
+        });
+    }
+    
+    // Đóng tab sau khi thành công
+    if (tabId) {
+        setTimeout(() => {
+            chrome.tabs.remove(tabId).catch(e => console.error("Lỗi khi đóng tab:", e.message));
+        }, 3000); // Đợi lâu hơn để user thấy kết quả
+    }
+    
+    sendResponse({ status: "success_processed" });
+    return true;
+}
+// Handler cho Schedule Test Payment
+if (request.message === "scheduleTestPayment") {
+    console.log("[Background] Đặt lịch test payment");
+    const { time, minutes, type } = request.data;
+    
+    let alarmName = "testPaymentAlarm";
+    let delayInMinutes;
+    let scheduleTime;
+    
+    // Clear existing test alarm
+    chrome.alarms.clear(alarmName);
+    
+    if (type === 'specific_time' && time) {
+        // Tính toán delay từ thời gian cụ thể
+        const now = new Date();
+        const [hours, mins] = time.split(':');
+        const targetTime = new Date();
+        targetTime.setHours(parseInt(hours), parseInt(mins), 0, 0);
+        
+        // Nếu thời gian đã qua trong ngày, đặt cho ngày mai
+        if (targetTime <= now) {
+            targetTime.setDate(targetTime.getDate() + 1);
+        }
+        
+        delayInMinutes = (targetTime.getTime() - now.getTime()) / 60000;
+        scheduleTime = targetTime.toLocaleString();
+    } else {
+        // Đặt lịch theo phút
+        delayInMinutes = minutes || 5;
+        const targetTime = new Date(Date.now() + delayInMinutes * 60000);
+        scheduleTime = targetTime.toLocaleString();
+    }
+    
+    if (delayInMinutes > 0) {
+        chrome.alarms.create(alarmName, {
+            delayInMinutes: delayInMinutes,
+        });
+        
+        console.log(`[Background] Đã đặt lịch test payment sau ${delayInMinutes} phút`);
+        
+        // Gửi confirmation về popup
+        chrome.runtime.sendMessage({
+            message: "testScheduled",
+            data: {
+                success: true,
+                scheduleTime: scheduleTime
+            }
+        });
+    }
+    
+    sendResponse({ status: "test_scheduled" });
+    return true;
+}
+
+
+
+// Handler cho Execute Real Payment - giữ
+// if (request.message === "executeRealPayment") {
+//     console.log("[Background] Thực hiện rút tiền thật");
+//     const { confirmed, realPayment } = request.data;
+    
+//     if (!confirmed || !realPayment) {
+//         sendResponse({ status: "not_confirmed" });
+//         return true;
+//     }
+    
+//     // Kiểm tra merchantId
+//     const merchantId = getMBApiKey();
+//     if (!merchantId) {
+//         chrome.runtime.sendMessage({
+//             message: "realPaymentFinished",
+//             data: {
+//                 success: false,
+//                 error: "Không tìm thấy API key"
+//             }
+//         });
+//         sendResponse({ status: "no_api_key" });
+//         return true;
+//     }
+    
+//     // Thực hiện rút tiền thật
+//     chrome.tabs.create({
+//         url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+//         active: false
+//     }, function(tab) {
+//         // Kiểm tra lỗi khi tạo tab
+//         if (chrome.runtime.lastError) {
+//             console.error("[Background] Lỗi tạo tab:", chrome.runtime.lastError);
+//             chrome.runtime.sendMessage({
+//                 message: "realPaymentFinished",
+//                 data: {
+//                     success: false,
+//                     error: "Không thể tạo tab: " + chrome.runtime.lastError.message
+//                 }
+//             });
+//             return;
+//         }
+        
+//         if (!tab || !tab.id) {
+//             console.error("[Background] Tab được tạo nhưng không hợp lệ");
+//             chrome.runtime.sendMessage({
+//                 message: "realPaymentFinished",
+//                 data: {
+//                     success: false,
+//                     error: "Tab không hợp lệ"
+//                 }
+//             });
+//             return;
+//         }
+        
+//         const tabId = tab.id;
+//         console.log("[Background] Đã tạo tab:", tabId);
+        
+//         let listenerRemoved = false;
+        
+//         function handleRealPaymentUpdate(updatedTabId, changeInfo) {
+//             if (updatedTabId === tabId && changeInfo.status === "complete") {
+//                 if (!listenerRemoved) {
+//                     chrome.tabs.onUpdated.removeListener(handleRealPaymentUpdate);
+//                     listenerRemoved = true;
+//                 }
+                
+//                 console.log("[Background] Tab", tabId, "đã load xong, inject script...");
+                
+//                 chrome.scripting.executeScript({
+//                     target: { tabId: tabId },
+//                     files: ['scripts/payment_auto.js']
+//                 }).then(() => {
+//                     console.log("[Background] Script đã inject thành công");
+                    
+//                     // Đợi script khởi tạo
+//                     setTimeout(() => {
+//                         console.log("[Background] Gửi startPaymentProcess message...");
+                        
+//                         // SỬA CHÍNH: Sử dụng callback thay vì .catch()
+//                         chrome.tabs.sendMessage(tabId, {
+//                             message: "startPaymentProcess",
+//                             data: {
+//                                 tabId: tabId,
+//                                 testMode: false,
+//                                 realPayment: true,
+//                                 clickButton: true
+//                             }
+//                         }, function(response) {
+//                             // Callback để xử lý response
+//                             if (chrome.runtime.lastError) {
+//                                 console.error("[Background] Lỗi khi gửi real payment message:", chrome.runtime.lastError.message);
+//                                 chrome.runtime.sendMessage({
+//                                     message: "realPaymentFinished",
+//                                     data: {
+//                                         success: false,
+//                                         error: "Không thể gửi message: " + chrome.runtime.lastError.message
+//                                     }
+//                                 });
+//                             } else {
+//                                 console.log("[Background] Message gửi thành công, response:", response);
+//                             }
+//                         });
+//                     }, 2000);
+                    
+//                 }).catch(error => {
+//                     console.error("[Background] Lỗi khi inject script cho real payment:", error);
+//                     chrome.runtime.sendMessage({
+//                         message: "realPaymentFinished",
+//                         data: {
+//                             success: false,
+//                             error: "Lỗi inject script: " + error.message
+//                         }
+//                     });
+//                 });
+//             }
+//         }
+        
+//         chrome.tabs.onUpdated.addListener(handleRealPaymentUpdate);
+        
+//         // Timeout để cleanup nếu tab không load
+//         setTimeout(() => {
+//             if (!listenerRemoved) {
+//                 chrome.tabs.onUpdated.removeListener(handleRealPaymentUpdate);
+//                 listenerRemoved = true;
+//                 console.error("[Background] Timeout chờ tab load");
+//                 chrome.runtime.sendMessage({
+//                     message: "realPaymentFinished",
+//                     data: {
+//                         success: false,
+//                         error: "Timeout chờ tab load"
+//                     }
+//                 });
+//             }
+//         }, 30000);
+//     });
+    
+//     sendResponse({ status: "real_payment_started" });
+//     return true;
+// }
+// Improved background.js handler for executeRealPayment
+// if (request.message === "executeRealPayment") {
+//     console.log("[Background] Thực hiện rút tiền thật");
+//     const { confirmed, realPayment } = request.data;
+    
+//     if (!confirmed || !realPayment) {
+//         sendResponse({ status: "not_confirmed" });
+//         return true;
+//     }
+    
+//     // Kiểm tra merchantId
+//     const merchantId = getMBApiKey();
+//     if (!merchantId) {
+//         chrome.runtime.sendMessage({
+//             message: "realPaymentFinished",
+//             data: {
+//                 success: false,
+//                 error: "Không tìm thấy API key"
+//             }
+//         });
+//         sendResponse({ status: "no_api_key" });
+//         return true;
+//     }
+    
+//     console.log("[Background] Tạo tab mới cho payment...");
+    
+//     try {
+//         chrome.tabs.create({
+//             url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+//             active: false
+//         }, function(tab) {
+//             if (chrome.runtime.lastError) {
+//                 console.error("[Background] Lỗi tạo tab:", chrome.runtime.lastError);
+//                 chrome.runtime.sendMessage({
+//                     message: "realPaymentFinished",
+//                     data: {
+//                         success: false,
+//                         error: "Không thể tạo tab: " + chrome.runtime.lastError.message
+//                     }
+//                 });
+//                 return;
+//             }
+            
+//             if (!tab || !tab.id) {
+//                 console.error("[Background] Tab được tạo nhưng không hợp lệ");
+//                 chrome.runtime.sendMessage({
+//                     message: "realPaymentFinished",
+//                     data: {
+//                         success: false,
+//                         error: "Tab không hợp lệ"
+//                     }
+//                 });
+//                 return;
+//             }
+            
+//             const tabId = tab.id;
+//             console.log("[Background] Đã tạo tab:", tabId);
+            
+//             // Sử dụng cả hai phương pháp để đảm bảo script được inject
+//             let scriptInjected = false;
+//             let tabLoaded = false;
+            
+//             // Phương pháp 1: Inject script khi tab load hoàn tất
+//             function handleTabUpdate(updatedTabId, changeInfo) {
+//                 if (updatedTabId === tabId && changeInfo.status === "complete") {
+//                     tabLoaded = true;
+//                     chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+                    
+//                     console.log("[Background] Tab đã load, inject script...");
+                    
+//                     // Thử inject script
+//                     injectPaymentScript(tabId);
+//                 }
+//             }
+            
+//             // Phương pháp 2: Timeout để đảm bảo script được inject dù thế nào
+//             const injectTimeout = setTimeout(() => {
+//                 if (!scriptInjected) {
+//                     console.log("[Background] Timeout inject script, thử inject...");
+//                     injectPaymentScript(tabId);
+//                 }
+//             }, 10000);
+            
+//             // Hàm inject script
+//             function injectPaymentScript(tabId) {
+//                 if (scriptInjected) return;
+                
+//                 console.log("[Background] Đang inject payment script...");
+                
+//                 chrome.scripting.executeScript({
+//                     target: { tabId: tabId },
+//                     files: ['scripts/payment_auto.js']
+//                 }).then(() => {
+//                     console.log("[Background] Script injected successfully");
+//                     scriptInjected = true;
+//                     clearTimeout(injectTimeout);
+                    
+//                     // Gửi message đến content script
+//                     setTimeout(() => {
+//                         sendStartPaymentMessage(tabId);
+//                     }, 2000);
+                    
+//                 }).catch(error => {
+//                     console.error("[Background] Lỗi khi inject script:", error);
+                    
+//                     // Thử fallback injection method
+//                     chrome.scripting.executeScript({
+//                         target: { tabId: tabId },
+//                         func: () => {
+//                             // Fallback injection code
+//                             console.log("Fallback injection executed");
+//                         }
+//                     }).then(() => {
+//                         scriptInjected = true;
+//                         clearTimeout(injectTimeout);
+//                         sendStartPaymentMessage(tabId);
+//                     }).catch(fallbackError => {
+//                         console.error("[Background] Fallback injection cũng thất bại:", fallbackError);
+//                         chrome.runtime.sendMessage({
+//                             message: "realPaymentFinished",
+//                             data: {
+//                                 success: false,
+//                                 error: "Không thể inject script: " + fallbackError.message
+//                             }
+//                         });
+//                     });
+//                 });
+//             }
+            
+//             // Hàm gửi message đến content script
+//             function sendStartPaymentMessage(tabId) {
+//                 console.log("[Background] Gửi startPaymentProcess message...");
+                
+//                 chrome.tabs.sendMessage(tabId, {
+//                     message: "startPaymentProcess",
+//                     data: {
+//                         tabId: tabId,
+//                         testMode: false,
+//                         realPayment: true,
+//                         clickButton: true
+//                     }
+//                 }, function(response) {
+//                     if (chrome.runtime.lastError) {
+//                         console.error("[Background] Lỗi khi gửi message:", chrome.runtime.lastError.message);
+                        
+//                         // Thử phương pháp thay thế - navigate trực tiếp đến disbursement
+//                         fallbackDirectNavigation(tabId);
+//                     } else {
+//                         console.log("[Background] Message gửi thành công, response:", response);
+//                     }
+//                 });
+//             }
+            
+//             // Fallback: Navigate trực tiếp đến disbursement page
+//             function fallbackDirectNavigation(tabId) {
+//                 console.log("[Background] Sử dụng fallback direct navigation...");
+                
+//                 chrome.tabs.update(tabId, {
+//                     url: "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE"
+//                 }, function() {
+//                     if (chrome.runtime.lastError) {
+//                         console.error("[Background] Lỗi khi navigate:", chrome.runtime.lastError);
+//                         chrome.runtime.sendMessage({
+//                             message: "realPaymentFinished",
+//                             data: {
+//                                 success: false,
+//                                 error: "Lỗi navigate: " + chrome.runtime.lastError.message
+//                             }
+//                         });
+//                         return;
+//                     }
+                    
+//                     // Theo dõi navigation và inject script
+//                     chrome.tabs.onUpdated.addListener(function fallbackNavigationListener(updatedTabId, changeInfo) {
+//                         if (updatedTabId === tabId && changeInfo.status === "complete") {
+//                             chrome.tabs.onUpdated.removeListener(fallbackNavigationListener);
+                            
+//                             console.log("[Background] Fallback navigation hoàn tất");
+                            
+//                             // Inject script mới
+//                             chrome.scripting.executeScript({
+//                                 target: { tabId: tabId },
+//                                 files: ['scripts/payment_auto.js']
+//                             }).then(() => {
+//                                 console.log("[Background] Fallback script injected");
+                                
+//                                 // Gửi message đến content script
+//                                 setTimeout(() => {
+//                                     chrome.tabs.sendMessage(tabId, {
+//                                         message: "handleDisburseDetailsPage",
+//                                         data: {
+//                                             tabId: tabId,
+//                                             testMode: false,
+//                                             realPayment: true,
+//                                             clickButton: true
+//                                         }
+//                                     });
+//                                 }, 2000);
+                                
+//                             }).catch(error => {
+//                                 console.error("[Background] Lỗi inject fallback script:", error);
+//                             });
+//                         }
+//                     });
+//                 });
+//             }
+            
+//             // Bắt đầu theo dõi tab
+//             chrome.tabs.onUpdated.addListener(handleTabUpdate);
+//         });
+//     } catch (error) {
+//         console.error("[Background] Lỗi không xác định:", error);
+//         chrome.runtime.sendMessage({
+//             message: "realPaymentFinished",
+//             data: {
+//                 success: false,
+//                 error: "Lỗi không xác định: " + error.message
+//             }
+//         });
+//     }
+    
+//     sendResponse({ status: "real_payment_started" });
+//     return true;
+// }
+// if (request.message === "executeRealPayment") {
+//     console.log("[Background] Nhận yêu cầu executeRealPayment (rút tiền thật)");
+//     const { confirmed, realPayment } = request.data;
+
+//     if (!confirmed || !realPayment) {
+//         console.log("[Background] Yêu cầu không được xác nhận hoặc không phải real payment");
+//         sendResponse({ status: "not_confirmed" });
+//         return true;
+//     }
+
+//     // Lấy API key bất đồng bộ
+//     getMBApiKey().then(merchantId => {
+//         if (!merchantId) {
+//             console.error("[Background] Không tìm thấy API key");
+//             chrome.runtime.sendMessage({
+//                 message: "realPaymentFinished",
+//                 data: { success: false, error: "Không tìm thấy API key. Vui lòng cài đặt API key trong popup." }
+//             });
+//             return;
+//         }
+
+//         console.log("[Background] API key tìm thấy:", merchantId.substring(0, 8) + "...");
+
+//         // Tạo tab payment
+//         chrome.tabs.create({
+//             url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+//             active: false
+//         }, function(tab) {
+//             if (chrome.runtime.lastError) {
+//                 console.error("[Background] Lỗi tạo tab:", chrome.runtime.lastError);
+//                 chrome.runtime.sendMessage({
+//                     message: "realPaymentFinished",
+//                     data: { success: false, error: "Không thể tạo tab: " + chrome.runtime.lastError.message }
+//                 });
+//                 return;
+//             }
+
+//             if (!tab || !tab.id) {
+//                 console.error("[Background] Tab không hợp lệ");
+//                 chrome.runtime.sendMessage({
+//                     message: "realPaymentFinished",
+//                     data: { success: false, error: "Tab không hợp lệ" }
+//                 });
+//                 return;
+//             }
+
+//             const tabId = tab.id;
+//             let scriptInjected = false;
+//             let tabCompleted = false;
+
+//             console.log(`[Background] Đã tạo tab ${tabId}, chờ load...`);
+
+//             // Handler cho tab update
+//             function handleTabUpdate(updatedTabId, changeInfo, updatedTab) {
+//                 if (updatedTabId === tabId && changeInfo.status === "complete") {
+//                     tabCompleted = true;
+//                     chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+                    
+//                     console.log(`[Background] Tab ${tabId} đã load hoàn tất. URL:`, updatedTab.url);
+                    
+//                     // Chờ thêm để trang render xong
+//                     setTimeout(() => {
+//                         injectAndRunScript(tabId);
+//                     }, 2000);
+//                 }
+//             }
+
+//             // Function để inject và chạy script
+//             function injectAndRunScript(tabId) {
+//                 if (scriptInjected) return;
+                
+//                 console.log(`[Background] Đang inject script vào tab ${tabId}...`);
+                
+//                 chrome.scripting.executeScript({
+//                     target: { tabId: tabId },
+//                     files: ['scripts/payment_auto.js']
+//                 }).then(() => {
+//                     scriptInjected = true;
+//                     console.log("[Background] Script injected thành công");
+
+//                     // Chờ script load xong rồi gửi message
+//                     setTimeout(() => {
+//                         console.log("[Background] Gửi startPaymentProcess message...");
+                        
+//                         chrome.tabs.sendMessage(tabId, {
+//                             message: "startPaymentProcess",
+//                             data: {
+//                                 tabId: tabId,
+//                                 testMode: false,
+//                                 realPayment: true,
+//                                 clickButton: true
+//                             }
+//                         }, (response) => {
+//                             if (chrome.runtime.lastError) {
+//                                 console.error("[Background] Lỗi gửi message:", chrome.runtime.lastError.message);
+//                                 // Fallback: thử navigate trực tiếp
+//                                 navigateToDisburse(tabId);
+//                             } else {
+//                                 console.log("[Background] Message gửi thành công, response:", response);
+//                             }
+//                         });
+//                     }, 3000);
+
+//                 }).catch(error => {
+//                     console.error("[Background] Lỗi inject script:", error);
+//                     chrome.runtime.sendMessage({
+//                         message: "realPaymentFinished",
+//                         data: { success: false, error: "Lỗi inject script: " + error.message }
+//                     });
+//                 });
+//             }
+
+//             // Fallback navigation function
+//             function navigateToDisburse(tabId) {
+//                 console.log("[Background] Fallback: Navigate trực tiếp đến disbursement");
+                
+//                 chrome.tabs.update(tabId, {
+//                     url: "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE"
+//                 }, () => {
+//                     if (chrome.runtime.lastError) {
+//                         console.error("[Background] Lỗi navigate:", chrome.runtime.lastError);
+//                         return;
+//                     }
+
+//                     // Listen for disbursement page load
+//                     function handleDisburseUpdate(updatedTabId, changeInfo) {
+//                         if (updatedTabId === tabId && changeInfo.status === "complete") {
+//                             chrome.tabs.onUpdated.removeListener(handleDisburseUpdate);
+                            
+//                             setTimeout(() => {
+//                                 chrome.tabs.sendMessage(tabId, {
+//                                     message: "startPaymentProcess",
+//                                     data: {
+//                                         tabId: tabId,
+//                                         testMode: false,
+//                                         realPayment: true,
+//                                         clickButton: true
+//                                     }
+//                                 });
+//                             }, 5000);
+//                         }
+//                     }
+                    
+//                     chrome.tabs.onUpdated.addListener(handleDisburseUpdate);
+//                 });
+//             }
+
+//             // Bắt đầu listen tab updates
+//             chrome.tabs.onUpdated.addListener(handleTabUpdate);
+
+//             // Timeout fallback
+//             setTimeout(() => {
+//                 if (!tabCompleted && !scriptInjected) {
+//                     console.log("[Background] Timeout - force inject script");
+//                     chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+//                     injectAndRunScript(tabId);
+//                 }
+//             }, 15000);
+//         });
+
+//     }).catch(error => {
+//         console.error("[Background] Lỗi lấy API key:", error);
+//         chrome.runtime.sendMessage({
+//             message: "realPaymentFinished",
+//             data: { success: false, error: "Lỗi lấy API key: " + error.message }
+//         });
+//     });
+
+//     sendResponse({ status: "real_payment_started" });
+//     return true;
+// }
+if (request.message === "executeRealPayment") {
+    console.log("[Background] Nhận yêu cầu executeRealPayment (rút tiền thật)");
+    const { confirmed, realPayment } = request.data;
+
+    if (!confirmed || !realPayment) {
+        sendResponse({ status: "not_confirmed" });
+        return true;
+    }
+
+    getMBApiKey().then(merchantId => {
+        if (!merchantId) {
+            console.error("[Background] Không tìm thấy API key");
+            chrome.runtime.sendMessage({
+                message: "realPaymentFinished",
+                data: { success: false, error: "Không tìm thấy API key. Vui lòng cài đặt." }
+            });
+            return;
+        }
+
+        chrome.tabs.create({
+            url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+            active: true // Chuyển thành true để dễ quan sát
+        }, function(tab) {
+            if (chrome.runtime.lastError || !tab || !tab.id) {
+                console.error("[Background] Lỗi tạo tab:", chrome.runtime.lastError?.message);
+                return;
+            }
+
+            const tabId = tab.id;
+            
+            // Listener này sẽ quản lý toàn bộ quy trình cho tab này
+            const paymentProcessListener = (updatedTabId, changeInfo, updatedTab) => {
+                // Chỉ thực thi khi đúng tab và trang đã tải xong hoàn toàn
+                if (updatedTabId === tabId && changeInfo.status === "complete") {
+                    
+                    console.log(`[BG Process Manager] Tab ${tabId} đã tải xong URL: ${updatedTab.url}`);
+
+                    // Chờ một chút để trang ổn định trước khi inject
+                    setTimeout(() => {
+                        chrome.scripting.executeScript({
+                            target: { tabId: tabId },
+                            files: ['scripts/payment_auto.js']
+                        }).then(() => {
+                            console.log(`[BG Process Manager] Đã inject script thành công.`);
+                            // Gửi lệnh để script tự quyết định hành động dựa trên URL
+                            setTimeout(() => {
+                                chrome.tabs.sendMessage(tabId, {
+                                    message: "startPaymentProcess",
+                                    data: {
+                                        tabId: tabId,
+                                        testMode: false,
+                                        realPayment: true,
+                                        clickButton: true
+                                    }
+                                });
+                            }, 2000);
+                        }).catch(err => {
+                            console.error(`[BG Process Manager] Lỗi inject script: ${err.message}`);
+                            chrome.tabs.onUpdated.removeListener(paymentProcessListener);
+                        });
+                    }, 1000);
+                }
+            };
+
+            // Listener để nhận biết khi nào quy trình kết thúc để dọn dẹp
+            const finalMessageListener = (req, sender) => {
+                if (sender.tab && sender.tab.id === tabId) {
+                    if (req.message === "sendPaymentLogToServer" || req.message === "disbursementFailed") {
+                        console.log(`[BG Process Manager] Nhận được tin nhắn cuối cùng '${req.message}'. Dọn dẹp listener.`);
+                        chrome.tabs.onUpdated.removeListener(paymentProcessListener);
+                        chrome.runtime.onMessage.removeListener(finalMessageListener);
+                    }
+                }
+            };
+
+            // Gắn các listener vào
+            chrome.tabs.onUpdated.addListener(paymentProcessListener);
+            chrome.runtime.onMessage.addListener(finalMessageListener);
+        });
+    });
+
+    sendResponse({ status: "real_payment_started" });
+    return true;
+}
+// Handler cho Toggle Auto Schedule
+if (request.message === "toggleAutoSchedule") {
+    console.log("[Background] Toggle auto schedule");
+    
+    // Kiểm tra trạng thái hiện tại của auto schedule
+    chrome.alarms.get("autoRequestPayment", (alarm) => {
+        let enabled = false;
+        
+        if (alarm) {
+            // Đang có alarm, tắt nó
+            chrome.alarms.clear("autoRequestPayment");
+            enabled = false;
+            console.log("[Background] Đã tắt auto schedule");
+        } else {
+            // Chưa có alarm, bật nó
+            scheduleNextPaymentRequest(); // Function có sẵn
+            enabled = true;
+            console.log("[Background] Đã bật auto schedule");
+        }
+        
+        // Gửi trạng thái về popup
+        chrome.runtime.sendMessage({
+            message: "autoScheduleStatus",
+            data: { enabled: enabled }
+        });
+        
+        sendResponse({ 
+            status: "toggled", 
+            enabled: enabled 
+        });
+    });
+    
+    return true;
+}
+// Handler để lấy merchant ID
+if (request.message === "getMerchantId") {
+    const merchantId = getMBApiKey(); // Sử dụng function có sẵn
+    sendResponse({ merchantId: merchantId });
+    return true;
+}
+
+// Cập nhật handler cho autoRequestPayment alarm
+
 });
 
 // Mở trang Performance Dashboard (Account Health)
@@ -3300,4 +5103,5 @@ const openOrderDetailPage = () => {
 chrome.runtime.onStartup.addListener(() => {
   console.log("Extension starting up - setting up daily alarms");
   setupDailyAlarm();
+  scheduleNextPaymentRequest(); 
 });

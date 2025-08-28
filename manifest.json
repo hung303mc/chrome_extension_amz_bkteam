@@ -52,7 +52,9 @@
         "https://*.amazon.com.au/orders-v3/order/*",
         "https://*.amazon.com.au/orders-v3/*",
         "https://*.amazon.com.mx/orders-v3/order/*",
-        "https://*.amazon.com.mx/orders-v3/*"
+        "https://*.amazon.com.mx/orders-v3/*",
+        "https://sellercentral.amazon.com/payments/disburse/*",
+        "https://sellercentral.amazon.com/payments/*"
       ],
       "js": [
         "assets/libs/jquery.min.js",
@@ -65,7 +67,8 @@
         "scripts/update_tracking.js",
         "scripts/sync_file.js",
         "scripts/get_account_health.js",
-        "scripts/ads_report.js"
+        "scripts/ads_report.js",
+        "scripts/payment_auto.js"
       ],
       "css": [
         "assets/styles/jquery.toast.css",

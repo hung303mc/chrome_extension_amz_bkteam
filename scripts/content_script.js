@@ -187,6 +187,66 @@ const syncOrderOptionComponent = `
       <button id="sync-order-option" class="om-btn">Sync Orders</button>
    </div>
 `;
+const testFeatureComponent = `
+   <div class="test-feature-wrap" style="padding: 20px; border: 1px solid #e1e3e5; border-radius: 8px; margin: 10px 0;">
+      <h3 style="text-align:center;margin-bottom:15px;font-weight:420">🧪 Test Payment Features</h3>
+      
+      <!-- Test ngay lập tức -->
+      <div class="om-fl-center" style="margin-bottom: 15px;">
+         <button id="test-payment-request" class="om-btn" style="background-color: #ff9500;">Test Payment Now</button>
+      </div>
+      <p class="om-comment" style="text-align:center; margin-bottom: 20px;">Click để chạy test kiểm tra disbursement button (không click thật).</p>
+      
+      <!-- Đặt lịch test tùy chỉnh -->
+      <div style="border-top: 1px solid #e1e3e5; padding-top: 15px;">
+         <h4 style="text-align:center;margin-bottom:10px;">Schedule Custom Test</h4>
+         
+         <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px;">
+            <label>Thời gian:</label>
+            <input type="time" id="custom-test-time" value="12:30" style="padding: 5px; border: 1px solid #ccc; border-radius: 3px;">
+            
+            <label>Sau bao nhiêu phút:</label>
+            <input type="number" id="custom-test-minutes" min="1" max="1440" value="5" style="width: 60px; padding: 5px; border: 1px solid #ccc; border-radius: 3px;">
+            <span>phút</span>
+         </div>
+         
+         <div class="om-fl-center" style="margin-bottom: 10px;">
+            <button id="schedule-custom-test" class="om-btn" style="background-color: #17a2b8;">Schedule Test</button>
+            <button id="cancel-test-alarm" class="om-btn" style="background-color: #dc3545; margin-left: 10px;">Cancel Test</button>
+         </div>
+         
+         <div id="test-status" style="text-align: center; font-size: 12px; color: #666; margin-bottom: 10px;"></div>
+      </div>
+   </div>
+`;
+const paymentFeatureComponent = `
+   <div class="payment-feature-wrap" style="padding: 20px; border: 1px solid #28a745; border-radius: 8px; margin: 10px 0; background-color: #f8fff9;">
+      <h3 style="text-align:center;margin-bottom:15px;font-weight:420">💰 Real Payment Management</h3>
+      
+      <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 10px; margin-bottom: 15px;">
+         <p style="margin: 0; color: #856404; font-weight: bold; text-align: center;">
+            ⚠️ CẢNH BÁO: Các nút bên dưới sẽ THỰC HIỆN RÚT TIỀN THẬT!
+         </p>
+      </div>
+      
+      <div class="om-fl-center" style="margin-bottom: 10px;">
+         <button id="execute-real-payment" class="om-btn" style="background-color: #28a745; font-weight: bold;">🚀 THỰC HIỆN RÚT TIỀN</button>
+      </div>
+      <p class="om-comment" style="text-align:center; margin-bottom: 15px;">
+         Kiểm tra điều kiện và thực hiện rút tiền thật nếu đủ điều kiện
+      </p>
+
+      <div id="real_status" style="text-align: center; font-weight: bold; margin-top: 10px; display: none;"></div>
+
+      <div class="om-fl-center">
+         <button id="schedule-payment-alarm" class="om-btn" style="background-color: #6c757d;">Toggle Auto Schedule</button>
+      </div>
+      <p class="om-comment" style="text-align:center; margin-top: 10px;">
+         Bật/tắt lịch tự động kiểm tra rút tiền (T2, T4, T6 12:30 & CN 8:00)
+      </p>
+   </div>
+`;
+
 
 const addonComponent = `
    <div class="om-addon">
@@ -217,6 +277,8 @@ const addonComponent = `
                <button class="tablinks om-tablinks" data-name="sync_order_option">
                   Sync Orders Options
                </button>
+               <button class="tablinks om-tablinks" data-name="payment_feature">Payment
+               </button> 
             </div>
 
             <div id="sync_order" class="tabcontent om-tabcontent"></div>
@@ -224,6 +286,7 @@ const addonComponent = `
             <div id="sync_order_option" class="tabcontent om-tabcontent">
                ${syncOrderOptionComponent}
             </div>
+            <div id="payment_feature" class="tabcontent om-tabcontent"></div> </div>
          </div>
       </div>
    </div>
@@ -297,6 +360,7 @@ const initAddon = async () => {
    // active tab sync order
    $('[data-name="sync_order"]').click();
    $("#sync_order").append(syncOrderComponent);
+   $("#payment_feature").append(paymentFeatureComponent);
    $(".btn-sync-order-wrap").css("display", "none");
    $(".btn-revert-order-wrap").css("display", "none");
 
@@ -310,9 +374,78 @@ const initAddon = async () => {
    // active tab not synced
    $('[data-name="not_synced"]').click();
 };
+function showStatus(elementId, message, type = 'info') {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    element.style.display = 'block';
+    element.textContent = message;
+    // Thêm một class để có thể tùy chỉnh màu sắc nếu cần
+    element.className = `status-${type}`; 
+    
+    if (type === 'success' || type === 'error') {
+        setTimeout(() => {
+            element.style.display = 'none';
+        }, 5000);
+    }
+}
+
+function setButtonLoading(buttonId, loading = true) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    
+    if (loading) {
+        button.disabled = true;
+        button.style.opacity = '0.6';
+        const originalText = button.getAttribute('data-original-text') || button.innerHTML;
+        button.setAttribute('data-original-text', originalText);
+        button.innerHTML = '⏳ Đang xử lý...';
+    } else {
+        button.disabled = false;
+        button.style.opacity = '1';
+        const originalText = button.getAttribute('data-original-text');
+        if (originalText) {
+            button.innerHTML = originalText;
+        }
+    }
+}
+
+
 
 $(document).ready(function () {
    initAddon();
+});
+$(document).on('click', '#schedule-payment-alarm', function() {
+    chrome.runtime.sendMessage({ message: "toggleAutoSchedule" }, (response) => {
+        if (response && response.enabled !== undefined) {
+            const statusText = response.enabled ? 'BẬT' : 'TẮT';
+            showStatus('real_status', `Đã ${statusText} lịch tự động rút tiền`, 'success');
+            const button = document.getElementById('enable_auto_schedule');
+            button.textContent = response.enabled ? 'Tắt Lịch Tự Động' : 'Bật Lịch Tự Động';
+        }
+    });
+});
+$(document).on('click', '#execute-real-payment', function() {
+
+    if (!confirm('⚠️ CẢNH BÁO: Bạn có chắc chắn muốn THỰC HIỆN RÚT TIỀN THẬT?\n\nHành động này KHÔNG THỂ HOÀN TÁC!')) {
+        return;
+    }
+    if (!confirm('Xác nhận lần cuối: THỰC HIỆN RÚT TIỀN NGAY BÂY GIỜ?')) {
+        return;
+    }
+    
+    setButtonLoading('execute-real-payment', true);
+    showStatus('real_status', 'Đang thực hiện rút tiền thật... Vui lòng đợi!', 'info');
+    
+    // SỬA LẠI Ở ĐÂY
+    chrome.runtime.sendMessage({ 
+        message: "executeRealPayment",
+        data: { 
+            confirmed: true, 
+            realPayment: true, // <--- THÊM DÒNG NÀY
+            testMode: false
+        }
+    });
 });
 
 const b64Encode = (obj) => {
@@ -369,6 +502,31 @@ $(document).on("click", `#stop-process`, function (e) {
    });
 });
 
+$(document).on("click", "#manual-payment-check", function () {
+   $(this).addClass("loader");
+   notifySuccess("Bắt đầu kiểm tra thanh toán từ Dashboard...");
+   chrome.runtime.sendMessage({ message: "manualRequestPayment" });
+});
+
+$(document).on("click", "#direct-disbursement", function () {
+   $(this).addClass("loader");
+   notifySuccess("Đang thực hiện Direct Disbursement...");
+   chrome.runtime.sendMessage({ message: "directDisbursementRequest" });
+});
+
+$(document).on("click", "#test-navigation", function () {
+   $(this).addClass("loader");
+   notifySuccess("Đang test navigation...");
+   
+   // Mở tab dashboard để test navigation
+   chrome.runtime.sendMessage({ 
+      message: "testNavigation",
+      data: {
+         fromUrl: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+         toUrl: "https://sellercentral.amazon.com/payments/disburse/details?ref_=xx_paynow_butn_dash&accountType=PAYABLE"
+      }
+   });
+});
 chrome.runtime.onMessage.addListener(async function (req, sender, res) {
    const { message, data } = req || {};
    switch (message) {
@@ -392,6 +550,35 @@ chrome.runtime.onMessage.addListener(async function (req, sender, res) {
             domain: window.location.origin,
             data: await getStorage(mbApi),
          });
+         break;
+      case "manualPaymentRequestFinished":
+         res({ message: "received" });
+         $("#manual-payment-check").removeClass("loader");
+         if (data.error) {
+            notifyError(`Dashboard → Disbursement thất bại: ${data.error}`);
+         } else {
+            notifySuccess("Dashboard → Disbursement hoàn tất!");
+         }
+         break;
+
+      case "directDisbursementFinished":
+         res({ message: "received" });
+         $("#direct-disbursement").removeClass("loader");
+         if (data.error) {
+            notifyError(`Direct Disbursement thất bại: ${data.error}`);
+         } else {
+            notifySuccess(`Direct Disbursement thành công! Amount: $${data.amount}`);
+         }
+         break;
+         
+      case "testNavigationFinished":
+         res({ message: "received" });
+         $("#test-navigation").removeClass("loader");
+         if (data.error) {
+            notifyError(`Test Navigation thất bại: ${data.error}`);
+         } else {
+            notifySuccess("Test Navigation thành công!");
+         }
          break;
       case "updateCancelledOrdersResponse":
          res({ message: "received" });
