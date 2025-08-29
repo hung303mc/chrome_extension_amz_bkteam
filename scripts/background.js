@@ -1910,7 +1910,17 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
         return true;
     }
 
-    processTrackingUpdates(null, 0, sender, data);
+    // 2. ĐÓNG KHÓA NGAY LẬP TỨC!!!
+    isUpdateTrackingRunning = true;
+    console.log("[BG] Đã khóa isUpdateTrackingRunning = true (từ onMessage listener).");
+
+
+    // 3. Bắt đầu xử lý. Giờ thì chỉ có 1 thằng được chạy thôi.
+    // Dùng .finally() để đảm bảo khóa luôn được mở dù hàm có lỗi hay không
+    processTrackingUpdates(null, 0, sender, data).finally(() => {
+      isUpdateTrackingRunning = false;
+      console.log("[BG] Đã mở khóa isUpdateTrackingRunning = false (sau khi processTrackingUpdates hoàn tất).");
+    });
 
     return true; // Giữ message port mở
 }
@@ -3765,7 +3775,15 @@ chrome.runtime.onMessage.addListener(async (req) => {
   }
 });
 
-chrome.runtime.onInstalled.addListener(openHomePage);
+chrome.runtime.onInstalled.addListener(() => {
+  // Nó sẽ xóa cái key "UnshippedOrders" mỗi khi extension được cài mới hoặc cập nhật.
+  chrome.storage.local.remove("UnshippedOrders", () => {
+    console.log('✅ Đã dọn dẹp UnshippedOrders cũ khi cài đặt/cập nhật extension.');
+  });
+
+  // Mở trang chủ sau khi dọn dẹp xong
+  openHomePage();
+});
 chrome.runtime.onInstalled.addListener(() => {
     console.log("[Payment] Extension installed/updated - Khởi tạo lịch rút tiền");
     scheduleNextPaymentRequest();
@@ -4040,9 +4058,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                           if (negMatch) result.fb_negative_last_30 = parseInt(negMatch[1]);
                         }
                       }
+// THAY THẾ CHO ĐOẠN LẤY fb_count CŨ
                       if (rows.length > 3) {
-                        let countText = rows[3].querySelector(".rating-count")?.textContent || "";
-                        result.fb_count = parseInt(countText.replace(/[^\d]/g, ""));
+                        // Lấy TẤT CẢ các ô (cell) trong hàng "Count"
+                        let countCells = rows[3].querySelectorAll("kat-table-cell");
+
+                        // Ô "Lifetime" là ô cuối cùng.
+                        // Mình kiểm tra xem có đủ 5 ô không (Label + 4 cột giá trị)
+                        if (countCells.length > 4) {
+                          // Lấy text của ô cuối cùng (index 4)
+                          let countText = countCells[4].textContent || "";
+                          result.fb_count = parseInt(countText.replace(/[^\d]/g, ""));
+                        }
                       }
                     }
                     return result;
@@ -5356,34 +5383,19 @@ if (request.message === "getMerchantId") {
 
 });
 
-// Mở trang Performance Dashboard (Account Health)
+// Sửa hàm này để trả về một Promise
 const openPerformanceDashboardPage = () => {
-  if (!globalDomain.includes("sellercentral")) {
-    return;
-  }
-  const url = `${globalDomain}/performance/dashboard`;
-  chrome.tabs.query({}, (tabs) => {
-    let found = false;
-    for (let tab of tabs) {
-      if (found) break;
-      // Check if the tab is already on the performance dashboard
-      if (tab?.url?.includes("/performance/dashboard")) {
-        found = tab.id;
-        break;
+  return new Promise((resolve) => {
+    const url = `${globalDomain}/performance/dashboard`;
+    chrome.tabs.query({ url: `${globalDomain}/performance/dashboard*` }, (tabs) => {
+      if (tabs.length > 0) {
+        // Nếu đã có, update và trả về tab đó
+        chrome.tabs.update(tabs[0].id, { active: true, url }, (tab) => resolve(tab));
+      } else {
+        // Nếu chưa có, tạo mới và trả về tab đó
+        chrome.tabs.create({ active: true, url }, (tab) => resolve(tab));
       }
-    }
-
-    if (found) {
-      chrome.tabs.update(found, {
-        active: true,
-        url, // Ensure it navigates to the base dashboard URL if already on a sub-page
-      });
-    } else {
-      chrome.tabs.create({
-        active: true,
-        url,
-      });
-    }
+    });
   });
 };
 
