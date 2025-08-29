@@ -137,8 +137,59 @@ $(document).on('change', '#enable_ip_tracking', async function() {
     await saveIpTrackingSetting(isEnabled);
 });
 
+// $(document).on("click", "#run_test", async function () {
+
+//     // Đọc trạng thái của tất cả 5 checkbox
+//     const settings = {
+//         syncOrder: $('#test_sync_order').is(':checked'),
+//         updateTracking: $('#test_update_tracking').is(':checked'),
+//         accountHealth: $('#test_account_health').is(':checked'),
+//         downloadAds: $('#test_download_ads').is(':checked'),
+//         sendMessageAuto: $('#test_send_message_auto').is(':checked'), 
+//         payment: $('#test_payment').is(':checked') // Thêm checkbox mới
+//     };
+
+//     // Đọc giá trị thời gian chờ (delay)
+//     const delayMinutes = parseFloat($('#test_delay').val()) || 0.1;
+
+//     // Kiểm tra xem có tác vụ nào được chọn không
+//     const isAnyTaskSelected = Object.values(settings).some(status => status === true);
+
+//     if (!isAnyTaskSelected) {
+//         $('#test_status').text("Vui lòng chọn ít nhất 1 tác vụ!").css('color', 'red');
+//         setTimeout(() => { $('#test_status').text(''); }, 3000);
+//         return;
+//     }
+
+//     // Xử lý 4 tác vụ cũ
+//     const otherTasks = settings.syncOrder || settings.updateTracking || settings.accountHealth || settings.downloadAds || settings.sendMessageAuto;
+//     if (otherTasks) {
+//         const otherSettings = { ...settings };
+//         delete otherSettings.payment; // Xóa key payment khỏi object này
+//         otherSettings.delay = delayMinutes;
+
+//         await saveTestSettings(otherSettings);
+//         chrome.runtime.sendMessage({ message: "runTestNow" });
+//     }
+
+//     // Xử lý tác vụ Test Rút tiền
+//     if (settings.payment) {
+//         console.log(`[Popup] Scheduling payment test in ${delayMinutes} minutes.`);
+//         chrome.runtime.sendMessage({
+//             message: "scheduleTestPayment",
+//             data: {
+//                 minutes: delayMinutes,
+//                 type: 'delay_minutes',
+//                 testMode: true
+//             }
+//         });
+//     }
+
+//     $('#test_status').text("Đã gửi lệnh chạy test!").css('color', 'green');
+//     setTimeout(() => { $('#test_status').text(''); }, 3000);
+// });
 $(document).on("click", "#run_test", async function () {
-    // Đọc trạng thái của tất cả 5 checkbox
+    // Đọc trạng thái của tất cả các checkbox
     const settings = {
         syncOrder: $('#test_sync_order').is(':checked'),
         updateTracking: $('#test_update_tracking').is(':checked'),
@@ -160,18 +211,18 @@ $(document).on("click", "#run_test", async function () {
         return;
     }
 
-    // Xử lý 4 tác vụ cũ
+    // Xử lý các tác vụ cũ (Lấy đơn, Update tracking, v.v.)
     const otherTasks = settings.syncOrder || settings.updateTracking || settings.accountHealth || settings.downloadAds || settings.sendMessageAuto;
     if (otherTasks) {
         const otherSettings = { ...settings };
-        delete otherSettings.payment; // Xóa key payment khỏi object này
+        delete otherSettings.payment; // Xóa key payment khỏi object này để không ảnh hưởng logic cũ
         otherSettings.delay = delayMinutes;
 
         await saveTestSettings(otherSettings);
         chrome.runtime.sendMessage({ message: "runTestNow" });
     }
 
-    // Xử lý tác vụ Test Rút tiền
+    // Xử lý riêng cho tác vụ Test Rút tiền
     if (settings.payment) {
         console.log(`[Popup] Scheduling payment test in ${delayMinutes} minutes.`);
         chrome.runtime.sendMessage({
@@ -179,7 +230,7 @@ $(document).on("click", "#run_test", async function () {
             data: {
                 minutes: delayMinutes,
                 type: 'delay_minutes',
-                testMode: true
+                testMode: true // Luôn là test mode
             }
         });
     }
@@ -187,7 +238,6 @@ $(document).on("click", "#run_test", async function () {
     $('#test_status').text("Đã gửi lệnh chạy test!").css('color', 'green');
     setTimeout(() => { $('#test_status').text(''); }, 3000);
 });
-
 // ====================================================================
 // CÁC TRÌNH XỬ LÝ SỰ KIỆN MỚI TỪ CODE 1 (THÊM MỚI)
 // ====================================================================

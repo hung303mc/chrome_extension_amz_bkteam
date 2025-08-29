@@ -116,7 +116,13 @@ const setupDailyAlarm = async () => {
     'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5' // <-- THÊM DÒNG NÀY
   ];
 
-
+  let savedPaymentAlarm = null;
+  await chrome.alarms.get("autoRequestPayment", (alarm) => {
+      if (alarm) {
+          savedPaymentAlarm = alarm;
+          console.log("[Payment] Đã lưu alarm payment hiện tại");
+      }
+  });
   let settings = {};
   try {
     const response = await fetch(SETTINGS_URL, { cache: "no-store" });
@@ -139,12 +145,30 @@ const setupDailyAlarm = async () => {
   // Xóa TẤT CẢ các alarm tác vụ cũ (trừ settingsRefresher) để đảm bảo sạch sẽ.
   const allAlarms = await chrome.alarms.getAll();
   for (const alarm of allAlarms) {
-    if (alarm.name !== 'settingsRefresher') {
-      await chrome.alarms.clear(alarm.name);
-    }
+      // QUAN TRỌNG: Không xóa alarm payment
+      if (alarm.name === "autoRequestPayment") {
+          console.log("[Payment] Giữ nguyên alarm autoRequestPayment");
+          continue;
+      }
+      
+      if (alarm.name.includes('_') && 
+          !alarm.name.startsWith('test_') && 
+          !alarm.name.startsWith('retry_')) {
+          await chrome.alarms.clear(alarm.name);
+      }
   }
   console.log("Đã xoá các alarm tác vụ cũ.");
-
+  chrome.alarms.get("autoRequestPayment", (alarm) => {
+        if (!alarm && savedPaymentAlarm) {
+            console.log("[Payment] Khôi phục alarm payment đã bị xóa");
+            chrome.alarms.create("autoRequestPayment", {
+                when: savedPaymentAlarm.scheduledTime
+            });
+        } else if (!alarm) {
+            console.log("[Payment] Tạo mới alarm payment");
+            scheduleNextPaymentRequest();
+        }
+    });
   const now = new Date();
   const GMT7_OFFSET_HOURS = 7;
 
@@ -195,7 +219,7 @@ const setupDailyAlarm = async () => {
       scheduleAlarm(alarmName, settings[alarmName]);
     } else {
       // Nếu không, chỉ log ra để biết là nó bị bỏ qua (có thể bỏ comment nếu cần debug)
-      // console.log(`❌ Bỏ qua alarm '${alarmName}' vì không được định nghĩa trên server.`);
+      console.log(`❌ Bỏ qua alarm '${alarmName}' vì không được định nghĩa trên server.`);
     }
   }
   console.log("--- Hoàn tất quá trình đặt lịch ---");
@@ -375,51 +399,72 @@ async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
  * Tính toán và đặt báo thức cho lần rút tiền tiếp theo.
  * Lịch rút: 12:30 các ngày T2, T4, T6 và 8:00 ngày Chủ Nhật.
  */
-function scheduleNextPaymentRequest() {
-    chrome.alarms.clear("autoRequestPayment"); // Xóa alarm cũ trước khi đặt cái mới
 
-    const now = new Date();
-    const schedule = [
-        { day: 1, hour: 12, minute: 30 }, // Thứ 2
-        { day: 3, hour: 12, minute: 30 }, // Thứ 4
-        { day: 5, hour: 12, minute: 30 }, // Thứ 6
-        { day: 0, hour: 8, minute: 0 }    // Chủ Nhật
-    ];
+async function scheduleNextPaymentRequest() {
+    try {
+        // Xóa alarm cũ nếu có
+        await chrome.alarms.clear("autoRequestPayment");
+        
+        const now = new Date();
+        const schedule = [
+            // { day: now.getDay(), hour: now.getHours(), minute: now.getMinutes() + 2 },
 
-    let nextAlarmTime = null;
+            { day: 1, hour: 12, minute: 30 }, // Thứ 2
+            { day: 3, hour: 12, minute: 30 }, // Thứ 4
+            { day: 5, hour: 12, minute: 30 }, // Thứ 6
+            { day: 0, hour: 8, minute: 0 },   // Chủ Nhật
+        ];
 
-    // Tìm thời điểm báo thức hợp lệ tiếp theo
-    for (let i = 0; i < 7; i++) {
-        const checkDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-        const dayOfWeek = checkDate.getDay();
+        let nextAlarmTime = null;
 
-        const dailySchedules = schedule.filter(s => s.day === dayOfWeek).sort((a,b) => a.hour - b.hour || a.minute - b.minute);
+        // Tìm thời điểm tiếp theo
+        for (let i = 0; i < 7; i++) {
+            const checkDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+            const dayOfWeek = checkDate.getDay();
 
-        for (const item of dailySchedules) {
-            const potentialAlarm = new Date(checkDate);
-            potentialAlarm.setHours(item.hour, item.minute, 0, 0);
+            const dailySchedules = schedule.filter(s => s.day === dayOfWeek)
+                                          .sort((a, b) => a.hour - b.hour || a.minute - b.minute);
 
-            if (potentialAlarm > now) {
-                nextAlarmTime = potentialAlarm;
-                break;
+            for (const item of dailySchedules) {
+                const potentialAlarm = new Date(checkDate);
+                potentialAlarm.setHours(item.hour, item.minute, 0, 0);
+
+                // Chỉ chọn thời điểm trong tương lai (ít nhất 1 phút sau)
+                if (potentialAlarm.getTime() > (now.getTime() + 60000)) {
+                    nextAlarmTime = potentialAlarm;
+                    break;
+                }
             }
+            if (nextAlarmTime) break;
         }
-        if (nextAlarmTime) break;
-    }
-    
-    if (nextAlarmTime) {
-        const delayInMinutes = (nextAlarmTime.getTime() - now.getTime()) / 60000;
 
-        if (delayInMinutes > 0) {
+        if (nextAlarmTime) {
+            const delayInMinutes = Math.max(1, (nextAlarmTime.getTime() - now.getTime()) / 60000);
+            
             chrome.alarms.create("autoRequestPayment", {
-                delayInMinutes: delayInMinutes,
+                when: nextAlarmTime.getTime() // Dùng when thay vì delayInMinutes cho chính xác hơn
             });
-            console.log(`[Payment] Đã đặt lịch rút tiền tiếp theo vào: ${nextAlarmTime.toLocaleString()}`);
+            
+            console.log(`[Payment] ✅ Đã đặt lịch rút tiền tự động`);
+            console.log(`[Payment] ⏰ Thời gian: ${nextAlarmTime.toLocaleString()}`);
+            console.log(`[Payment] ⏳ Còn ${delayInMinutes.toFixed(0)} phút nữa`);
+            
+            // Lưu thông tin alarm vào storage để debug
+            chrome.storage.local.set({
+                nextPaymentAlarm: {
+                    time: nextAlarmTime.toISOString(),
+                    timestamp: nextAlarmTime.getTime(),
+                    delayMinutes: delayInMinutes
+                }
+            });
+        } else {
+            console.error("[Payment] ❌ Không tìm thấy lịch hợp lệ trong 7 ngày tới");
         }
+    } catch (error) {
+        console.error("[Payment] Lỗi khi tạo alarm:", error);
     }
 }
 // Xử lý alarm khi kích hoạt
-
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   // Nếu là alarm tự cập nhật setting, thì chạy setup và dừng lại ngay
   if (alarm.name === 'settingsRefresher') {
@@ -848,48 +893,108 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   })();
 }
 else if (alarm.name === "autoRequestPayment") {
-        console.log("[Payment] Đã đến giờ tự động rút tiền.");
-
-        // Đặt lịch cho lần tiếp theo ngay lập tức
+    const logPrefix = '[AutoPaymentTrigger]';
+    console.log(`${logPrefix} Báo thức kích hoạt. Bắt đầu quy trình rút tiền tự động.`);
+    sendLogToServer(`${logPrefix} Báo thức kích hoạt lúc ${new Date().toLocaleString()}`);
+    setTimeout(() => {
+        console.log(`${logPrefix} Đặt lịch cho lần rút tiền tiếp theo`);
         scheduleNextPaymentRequest();
+    }, 5000); // Đợi 5 giây sau khi xử lý xong rồi mới tạo alarm mới
 
-        const merchantId = await getMBApiKey();
-        if (!merchantId) {
-            console.error("[Payment] Không lấy được merchantId, không thể tiếp tục.");
-            return;
-        }
-
+    // Hàm helper để inject và trigger payment
+    const injectAndTriggerPayment = async (tabId) => {
         try {
-            // Step 1: Check xem có bị pending hay không
-            // Giả sử API endpoint trả về { "data": {"is_pending": true/false} }
-            const query = JSON.stringify({ merchantId: merchantId });
-            const result = await sendRequestToMB("getPendingStatus", merchantId, query);
-
-            if (result.error || (result.data && result.data.is_pending)) {
-                 console.log(`[Payment] Account ${merchantId} đang được đánh dấu "Pending Payment Request". Bỏ qua lần rút tiền này.`);
-                 return;
+            // Đợi thêm để đảm bảo content script đã load
+            await sleep(3000);
+            
+            // Kiểm tra xem content script đã được inject chưa
+            const response = await chrome.tabs.sendMessage(tabId, { message: "ping" }).catch(() => null);
+            
+            if (!response || !response.injected) {
+                console.log(`${logPrefix} Content script chưa sẵn sàng, đợi thêm...`);
+                await sleep(2000);
             }
+            
+            console.log(`${logPrefix} Gửi lệnh trigger payment button đến tab ${tabId}`);
+            sendLogToServer(`${logPrefix} Gửi lệnh triggerAutoPaymentButton đến tab ${tabId}`);
+            
+            chrome.tabs.sendMessage(tabId, {
+                message: "triggerAutoPaymentButton",
+                data: {
+                    source: "autoRequestPayment_alarm",
+                    timestamp: Date.now()
+                }
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(`${logPrefix} Lỗi khi gửi message:`, chrome.runtime.lastError);
+                    sendLogToServer(`${logPrefix} LỖI: ${chrome.runtime.lastError.message}`);
+                } else {
+                    console.log(`${logPrefix} Đã gửi lệnh thành công, response:`, response);
+                    sendLogToServer(`${logPrefix} Lệnh đã được gửi và nhận phản hồi`);
+                }
+            });
+        } catch (error) {
+            console.error(`${logPrefix} Lỗi trong quá trình inject và trigger:`, error);
+            sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+        }
+    };
 
-            // Mở tab ẩn để thực hiện
-            const url = `${globalDomain}/payments/dashboard/index.html`;
-            chrome.tabs.create({ url, active: false }, (tab) => {
-                if (chrome.runtime.lastError || !tab || !tab.id) {
-                    console.error("[Payment] Không thể tạo tab để xử lý:", chrome.runtime.lastError?.message);
+    // Tìm hoặc tạo tab Orders
+    chrome.tabs.query({ url: "*://sellercentral.amazon.com/orders-v3*" }, async (tabs) => {
+        if (tabs && tabs.length > 0) {
+            // Đã có tab Orders mở sẵn
+            const existingTab = tabs[0];
+            console.log(`${logPrefix} Tìm thấy tab Orders có sẵn (ID: ${existingTab.id})`);
+            sendLogToServer(`${logPrefix} Sử dụng tab Orders hiện có (ID: ${existingTab.id})`);
+            
+            // Focus vào tab
+            chrome.tabs.update(existingTab.id, { active: true }, async () => {
+                // Reload tab để đảm bảo content script fresh
+                chrome.tabs.reload(existingTab.id, {}, () => {
+                    // Đợi tab reload xong
+                    const reloadListener = (tabId, changeInfo) => {
+                        if (tabId === existingTab.id && changeInfo.status === 'complete') {
+                            chrome.tabs.onUpdated.removeListener(reloadListener);
+                            console.log(`${logPrefix} Tab đã reload xong, bắt đầu trigger payment`);
+                            injectAndTriggerPayment(existingTab.id);
+                        }
+                    };
+                    chrome.tabs.onUpdated.addListener(reloadListener);
+                });
+            });
+            
+        } else {
+            // Không có tab Orders nào, tạo mới
+            console.log(`${logPrefix} Không tìm thấy tab Orders, tạo tab mới`);
+            sendLogToServer(`${logPrefix} Tạo tab Orders mới`);
+            
+            const targetUrl = `https://sellercentral.amazon.com/orders-v3?page=1`;
+            
+            chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
+                if (chrome.runtime.lastError || !newTab || !newTab.id) {
+                    const errorMsg = `Không thể tạo tab mới: ${chrome.runtime.lastError?.message}`;
+                    console.error(`${logPrefix} ${errorMsg}`);
+                    sendLogToServer(`${logPrefix} LỖI: ${errorMsg}`);
                     return;
                 }
-                // Gửi message để content script bắt đầu
-                sendMessage(tab.id, "startPaymentProcess", {
-                tabId: tab.id,
-                testMode: false,
-                realPayment: true,
-                clickButton: true
-              });
+                
+                console.log(`${logPrefix} Đã tạo tab mới (ID: ${newTab.id}), đợi load xong...`);
+                
+                // Listener cho tab mới
+                const loadListener = (tabId, changeInfo) => {
+                    if (tabId === newTab.id && changeInfo.status === 'complete') {
+                        chrome.tabs.onUpdated.removeListener(loadListener);
+                        console.log(`${logPrefix} Tab mới đã load xong, bắt đầu trigger payment`);
+                        injectAndTriggerPayment(newTab.id);
+                    }
+                };
+                chrome.tabs.onUpdated.addListener(loadListener);
             });
-
-        } catch (error) {
-            console.error("[Payment] Lỗi trong quá trình tự động rút tiền:", error);
         }
-    }
+    });
+}
+
+
 else if (alarm.name === "testPaymentAlarm") {
         console.log("[Payment] Đã đến giờ chạy test payment");
         
@@ -1519,6 +1624,18 @@ const downloadFiles = async (fieldValues, apiKey) => {
 
   return [];
 };
+async function checkPaymentAlarm() {
+    const alarm = await chrome.alarms.get("autoRequestPayment");
+    if (alarm) {
+        const nextRun = new Date(alarm.scheduledTime);
+        console.log("[Payment] Alarm đang chạy, lần tiếp theo:", nextRun.toLocaleString());
+        return true;
+    } else {
+        console.log("[Payment] Không có alarm nào được set");
+        return false;
+    }
+}
+checkPaymentAlarm();
 
 let stopProcess = false;
 
@@ -3649,7 +3766,14 @@ chrome.runtime.onMessage.addListener(async (req) => {
 });
 
 chrome.runtime.onInstalled.addListener(openHomePage);
-
+chrome.runtime.onInstalled.addListener(() => {
+    console.log("[Payment] Extension installed/updated - Khởi tạo lịch rút tiền");
+    scheduleNextPaymentRequest();
+});
+chrome.runtime.onStartup.addListener(() => {
+    console.log("[Payment] Extension started - Khởi tạo lịch rút tiền");
+    scheduleNextPaymentRequest();
+});
 function getRealTime(dateStr) {
   const myDate = new Date(parseInt(dateStr));
   var pstDate = myDate.toLocaleString("en-US", {
@@ -4241,49 +4365,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ status: "direct_disbursement_started" });
     return true;
   }
-  // if (request.message === "manualRequestPayment") {
-  //   console.log("[Background] Nhận yêu cầu tìm disbursement button (không click)");
-    
-  //   chrome.tabs.create({
-  //     url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
-  //     active: false
-  //   }, function(tab) {
-  //     const tabId = tab.id;
-      
-  //     function handleTabUpdate(updatedTabId, changeInfo) {
-  //       if (updatedTabId === tabId && changeInfo.status === "complete") {
-  //         chrome.tabs.onUpdated.removeListener(handleTabUpdate);
-          
-  //         // Inject payment script
-  //         chrome.scripting.executeScript({
-  //           target: { tabId: tabId },
-  //           files: ['payment_auto.js']
-  //         }).then(() => {
-  //           setTimeout(() => {
-  //             chrome.tabs.sendMessage(tabId, {
-  //               message: "startPaymentProcess",
-  //               data: { 
-  //                 tabId: tabId,
-  //                 testMode: false,      // Chắc chắn không phải test mode
-  //                 realPayment: true,    // Kích hoạt chế độ rút tiền thật
-  //                 clickButton: true     // Cho phép click vào nút
-  //               }
-  //             }).catch(error => {
-  //               console.error("[Background] Lỗi khi gửi message:", error);
-  //             });
-  //           }, 2000);
-  //         }).catch(error => {
-  //           console.error("[Background] Lỗi khi inject script:", error);
-  //         });
-  //       }
-  //     }
-      
-  //     chrome.tabs.onUpdated.addListener(handleTabUpdate);
-  //   });
-    
-  //   sendResponse({ status: "finding_button_process_started" });
-  //   return true;
-  // }
+ 
 if (request.message === "manualRequestPayment") {
     console.log("[Background] Nhận yêu cầu manual request payment");
 
@@ -5072,7 +5154,92 @@ if (request.message === "scheduleTestPayment") {
     sendResponse({ status: "test_scheduled" });
     return true;
 }
+// HÀM MỚI ĐỂ HỢP NHẤT LOGIC
+async function executePaymentProcess(options = {}) {
+    const { isTest = false } = options;
+    console.log(`[Payment Process] Bắt đầu quy trình. Chế độ Test: ${isTest}`);
 
+    try {
+        const merchantId = await getMBApiKey();
+        if (!merchantId) {
+            throw new Error("Không lấy được merchantId, không thể tiếp tục.");
+        }
+
+        const tab = await chrome.tabs.create({
+            url: "https://sellercentral.amazon.com/payments/dashboard/index.html/ref=xx_payments_dnav_xx",
+            active: !isTest // Chạy ẩn nếu là tự động, hiện nếu là test hoặc chạy tay
+        });
+
+        if (!tab || !tab.id) {
+            throw new Error("Không thể tạo tab để xử lý thanh toán.");
+        }
+
+        const tabId = tab.id;
+        let isProcessFinished = false;
+
+        const cleanup = () => {
+            if (isProcessFinished) return;
+            isProcessFinished = true;
+            chrome.tabs.onUpdated.removeListener(updateListener);
+            chrome.runtime.onMessage.removeListener(messageListener);
+            // Tự động đóng tab nếu chạy theo lịch (không phải test)
+            if (!isTest) {
+                setTimeout(() => {
+                    chrome.tabs.remove(tabId).catch(e => console.log(`Không thể đóng tab ${tabId}: ${e.message}`));
+                }, 5000); // Đợi 5 giây trước khi đóng
+            }
+        };
+
+        const updateListener = (updatedTabId, changeInfo) => {
+            if (updatedTabId === tabId && changeInfo.status === "complete") {
+                console.log(`[Payment Process] Tab ${tabId} đã tải xong. Injecting script...`);
+                setTimeout(() => {
+                    chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        files: ['scripts/payment_auto.js']
+                    }).then(() => {
+                        console.log(`[Payment Process] Đã inject script. Gửi lệnh bắt đầu...`);
+                        chrome.tabs.sendMessage(tabId, {
+                            message: "startPaymentProcess",
+                            data: {
+                                tabId: tabId,
+                                testMode: isTest,
+                                realPayment: !isTest,
+                                clickButton: !isTest
+                            }
+                        });
+                    }).catch(err => {
+                        console.error(`[Payment Process] Lỗi inject script: ${err.message}`);
+                        cleanup();
+                    });
+                }, 2000); // Chờ 2 giây để trang ổn định
+            }
+        };
+
+        const messageListener = (req, sender) => {
+            if (sender.tab && sender.tab.id === tabId) {
+                if (req.message === "sendPaymentLogToServer" || req.message === "disbursementFailed") {
+                    console.log(`[Payment Process] Nhận được tin nhắn cuối cùng '${req.message}'. Dọn dẹp.`);
+                    cleanup();
+                }
+            }
+        };
+
+        chrome.tabs.onUpdated.addListener(updateListener);
+        chrome.runtime.onMessage.addListener(messageListener);
+
+        // Timeout để tránh treo tiến trình
+        setTimeout(() => {
+            if (!isProcessFinished) {
+                console.warn(`[Payment Process] Quá trình cho tab ${tabId} đã quá thời gian. Tự động dọn dẹp.`);
+                cleanup();
+            }
+        }, 3 * 60 * 1000); // 3 phút timeout
+
+    } catch (error) {
+        console.error("[Payment Process] Lỗi nghiêm trọng:", error.message);
+    }
+}
 
 
 
@@ -5161,39 +5328,23 @@ if (request.message === "executeRealPayment") {
     return true;
 }
 // Handler cho Toggle Auto Schedule
-if (request.message === "toggleAutoSchedule") {
-    console.log("[Background] Toggle auto schedule");
-    
-    // Kiểm tra trạng thái hiện tại của auto schedule
-    chrome.alarms.get("autoRequestPayment", (alarm) => {
-        let enabled = false;
-        
-        if (alarm) {
-            // Đang có alarm, tắt nó
-            chrome.alarms.clear("autoRequestPayment");
-            enabled = false;
-            console.log("[Background] Đã tắt auto schedule");
-        } else {
-            // Chưa có alarm, bật nó
-            scheduleNextPaymentRequest(); // Function có sẵn
-            enabled = true;
-            console.log("[Background] Đã bật auto schedule");
-        }
-        
-        // Gửi trạng thái về popup
-        chrome.runtime.sendMessage({
-            message: "autoScheduleStatus",
-            data: { enabled: enabled }
+    if (request.message === "toggleAutoSchedule") {
+        chrome.storage.local.get(['autoPaymentEnabled'], async (result) => {
+            const newState = !result.autoPaymentEnabled;
+            await chrome.storage.local.set({ autoPaymentEnabled: newState });
+            
+            if (newState) {
+                // Bật - tạo alarm
+                scheduleNextPaymentRequest();
+                sendResponse({ enabled: true });
+            } else {
+                // Tắt - xóa alarm
+                await chrome.alarms.clear("autoRequestPayment");
+                sendResponse({ enabled: false });
+            }
         });
-        
-        sendResponse({ 
-            status: "toggled", 
-            enabled: enabled 
-        });
-    });
-    
-    return true;
-}
+        return true; // Keep message channel open
+    }
 // Handler để lấy merchant ID
 if (request.message === "getMerchantId") {
     const merchantId = getMBApiKey(); // Sử dụng function có sẵn

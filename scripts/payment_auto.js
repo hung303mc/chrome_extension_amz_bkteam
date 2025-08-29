@@ -25,12 +25,31 @@
 
     // --- LOGIC TRANG DASHBOARD (BƯỚC 1) ---
     async function processDashboardPage(options) {
-        const requestButton = await findRequestPaymentButton();
-        if (requestButton.found) {
-            console.log("[Payment Script] ✅ Bước 1: Đã tìm thấy và sẽ click nút 'Request Payment'.");
-            requestButton.element.click();
+        // Thêm hàm lấy số dư hiện có
+        function getAvailableFunds() {
+            const el = document.querySelector('.available-currency-total-amount span');
+            // Trả về số tiền hoặc 0 nếu không tìm thấy
+            return el ? (parseFloat(el.textContent.replace(/[^0-9.]/g, '')) || 0) : 0;
+        }
+
+        const availableFunds = getAvailableFunds();
+        console.log(`[Payment Script] Số dư khả dụng trên Dashboard: $${availableFunds}`);
+
+        // Bắt đầu kiểm tra điều kiện
+        if (availableFunds >= 150) {
+            console.log(`[Payment Script] Số dư $${availableFunds} >= $150. Tiến hành tìm và nhấn nút.`);
+            const requestButton = await findRequestPaymentButton();
+            if (requestButton.found) {
+                console.log("[Payment Script] ✅ Bước 1: Đã tìm thấy và sẽ click nút 'Request Payment'.");
+                requestButton.element.click();
+            } else {
+                reportFailure({ ...options, reason: "Đủ điều kiện nhưng không tìm thấy nút 'Request Payment' trên trang Dashboard." });
+            }
         } else {
-            reportFailure({ ...options, reason: "Không tìm thấy nút 'Request Payment' trên trang Dashboard." });
+            // Nếu số tiền không đủ, báo cáo thất bại và không làm gì cả
+            const reason = `Số dư không đủ để rút ($${availableFunds} < $150). Tác vụ đã dừng.`;
+            console.error(`[Payment Script] ❌ ${reason}`);
+            reportFailure({ ...options, reason: reason });
         }
     }
 

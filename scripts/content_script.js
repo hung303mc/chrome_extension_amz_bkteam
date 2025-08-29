@@ -426,13 +426,6 @@ $(document).on('click', '#schedule-payment-alarm', function() {
     });
 });
 $(document).on('click', '#execute-real-payment', function() {
-
-    if (!confirm('⚠️ CẢNH BÁO: Bạn có chắc chắn muốn THỰC HIỆN RÚT TIỀN THẬT?\n\nHành động này KHÔNG THỂ HOÀN TÁC!')) {
-        return;
-    }
-    if (!confirm('Xác nhận lần cuối: THỰC HIỆN RÚT TIỀN NGAY BÂY GIỜ?')) {
-        return;
-    }
     
     setButtonLoading('execute-real-payment', true);
     showStatus('real_status', 'Đang thực hiện rút tiền thật... Vui lòng đợi!', 'info');
@@ -684,7 +677,55 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
 
       return true;
     }
+    
+    if (req.message === "triggerAutoPaymentButton") {
+    console.log("[Content] Nhận được lệnh tự động rút tiền từ background.");
+    sendToServerLog("[Content] Bắt đầu quy trình tự động rút tiền.");
 
+    // Bước 1: Kiểm tra xem có phải đang ở trang orders không
+    const currentUrl = window.location.href;
+    if (currentUrl.includes("/orders-v3/")) {
+        console.log("[Content] Đang ở trang Orders. Thực hiện click tab Payment...");
+        sendToServerLog("[Content] Đang ở trang Orders. Bắt đầu click tab Payment.");
+        
+        // Bước 2: Tìm và click vào tab "Payment"
+        const paymentTabButton = document.querySelector('button.tablinks[data-name="payment_feature"]');
+        
+        if (paymentTabButton) {
+            console.log("[Content] Đã tìm thấy tab 'Payment'. Thực hiện click...");
+            sendToServerLog("[Content] Đã tìm thấy tab 'Payment' và thực hiện click.");
+            paymentTabButton.click();
+
+            // Bước 3: Chờ 1 giây để nội dung tab hiển thị rồi mới nhấn nút rút tiền
+            setTimeout(() => {
+                const paymentButton = document.getElementById('execute-real-payment');
+                if (paymentButton) {
+                    console.log("[Content] Đã tìm thấy nút 'THỰC HIỆN RÚT TIỀN'. Thực hiện click...");
+                    sendToServerLog("[Content] Đã tìm thấy nút #execute-real-payment và thực hiện click.");
+                    
+                    // Trigger click event để kích hoạt logic rút tiền
+                    paymentButton.click(); // Tự động nhấn nút
+                    
+                } else {
+                    console.error("[Content] Lệnh tự động thất bại: Không tìm thấy nút #execute-real-payment sau khi đã click tab 'Payment'.");
+                    sendToServerLog("[Content] LỖI: không tìm thấy nút #execute-real-payment sau khi click tab.");
+                }
+            }, 1000); // Đợi 1 giây
+
+        } else {
+            console.error("[Content] Lệnh tự động thất bại: Không tìm thấy tab 'Payment' [data-name='payment_feature'].");
+            sendToServerLog("[Content] LỖI: không tìm thấy tab 'Payment' [data-name='payment_feature'] để tự động click.");
+        }
+        
+    } else {
+        // Nếu không ở trang orders, thông báo lỗi
+        console.error("[Content] Alarm kích hoạt nhưng không ở trang Orders. URL hiện tại:", currentUrl);
+        sendToServerLog(`[Content] LỖI: Alarm kích hoạt nhưng đang ở sai trang. URL: ${currentUrl}`);
+    }
+
+    res({ status: "triggered" });
+    return true; // Giữ message port mở
+}
   
     const { message, data } = req || {};
     
