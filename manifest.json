@@ -2,11 +2,7 @@
   "update_url": "https://clients2.google.com/service/update2/crx",
   "manifest_version": 3,
   "name": "Bkteam Sync for Amazon",
-<<<<<<< HEAD
-  "version": "1.0.20",
-=======
-  "version": "1.0.22",
->>>>>>> 0051830e2ede9cac10aa02bfd13ac71ef137413a
+  "version": "1.0.23",
   "description": "An extension to help you fulfill Amazon orders easier with Bkteam.",
   "icons": {
     "16": "assets/images/16.png",

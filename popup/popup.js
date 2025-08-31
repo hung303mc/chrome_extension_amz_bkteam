@@ -356,10 +356,12 @@ $(document).on('click', '#test-server-connection', function() {
 
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     const { message, data } = request || {};
-    
+    let isMatch = false;
+
     switch (message) {
         case "listedSaveApiKey":
             setTimeout(() => window.close(), 1000);
+            isMatch = true; // Đánh dấu là đã khớp
             break;
 
         case "testPaymentFinished":
@@ -370,6 +372,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
                     : `⚠️ Test hoàn thành nhưng không tìm thấy disbursement button.`)
                 : `❌ Test thất bại: ${data?.error || 'Unknown error'}`;
             showStatus('test_status', msg, data?.success ? 'success' : 'error');
+            isMatch = true; // Đánh dấu là đã khớp
             break;
 
         case "realPaymentFinished":
@@ -387,12 +390,14 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
                 const errorMsg = `❌ RÚT TIỀN THẤT BẠI: ${data?.error || 'Unknown error'}`;
                 showStatus('real_status', errorMsg, 'error');
             }
+            isMatch = true; // Đánh dấu là đã khớp
             break;
 
         case "testScheduled":
             if (data && data.success) {
                 showStatus('test_status', `⏰ Test đã được đặt lịch: ${data.scheduleTime}`, 'success');
             }
+            isMatch = true; // Đánh dấu là đã khớp
             break;
 
         case "autoScheduleStatus":
@@ -402,14 +407,19 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
                     button.textContent = data.enabled ? 'Tắt Lịch Tự Động' : 'Bật Lịch Tự Động';
                 }
             }
+            isMatch = true; // Đánh dấu là đã khớp
             break;
 
         default:
             // console.log("Unhandled message:", message);
             break;
     }
-    
-    sendResponse({ message: "received" });
-    return true;
+
+    // 2. Chỉ sendResponse và return true nếu message được xử lý
+    if (isMatch) {
+        sendResponse({ message: "received" });
+        return true; // Giữ kênh mở cho các phản hồi bất đồng bộ
+    }
+
 });
 
