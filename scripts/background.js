@@ -5404,7 +5404,7 @@ const openOrderDetailPage = () => {
   if (!globalDomain.includes("sellercentral")) {
     return;
   }
-  const url = `${globalDomain}/orders-v3?page=1&date-range=last-30&statuses=Update%20Tracking`;
+  const url = `${globalDomain}/orders-v3?page=1&date-range=last-30&sort=order_date_asc&statuses=Update%20Tracking`;
   chrome.tabs.query({}, (tabs) => {
     let found = false;
 
