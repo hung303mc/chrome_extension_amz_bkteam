@@ -59,11 +59,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }, timeout);
 
         intervalId = setInterval(() => {
-          const uploadedFileElement = document.querySelector('.file-attachment-list li');
-          if (uploadedFileElement && uploadedFileElement.textContent.includes(fileNamePart)) {
-            clearInterval(intervalId);
-            clearTimeout(timeoutId);
-            resolve(uploadedFileElement);
+          // 1. Lấy về danh sách các element có thể khớp
+          const possibleElements = document.querySelectorAll('.file-attachment-list li, .file-attachment-chip-file-name');
+
+          // 2. Lặp qua từng element trong danh sách đó
+          for (const element of possibleElements) {
+            // 3. Kiểm tra text của TỪNG element
+            if (element.textContent && element.textContent.includes(fileNamePart)) {
+              // 4. Tìm thấy rồi! Dọn dẹp và báo thành công
+              clearInterval(intervalId);
+              clearTimeout(timeoutId);
+              resolve(element); // Trả về cái element tìm thấy
+              return; // Thoát khỏi hàm callback của setInterval
+            }
           }
         }, 500); // Kiểm tra mỗi nửa giây
       });
