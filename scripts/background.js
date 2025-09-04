@@ -113,16 +113,17 @@ const setupDailyAlarm = async () => {
     'updateTracking_1', 'updateTracking_2', 'updateTracking_3', 'updateTracking_4', 'updateTracking_5',
     'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
     'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
-    'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5' // <-- THÊM DÒNG NÀY
+    'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5',
+    'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Wednesday', 'paymentRequest_Friday'
   ];
 
-  let savedPaymentAlarm = null;
-  await chrome.alarms.get("autoRequestPayment", (alarm) => {
-      if (alarm) {
-          savedPaymentAlarm = alarm;
-          console.log("[Payment] Đã lưu alarm payment hiện tại");
-      }
-  });
+  // let savedPaymentAlarm = null;
+  // await chrome.alarms.get("autoRequestPayment", (alarm) => {
+  //     if (alarm) {
+  //         savedPaymentAlarm = alarm;
+  //         console.log("[Payment] Đã lưu alarm payment hiện tại");
+  //     }
+  // });
   let settings = {};
   try {
     const response = await fetch(SETTINGS_URL, { cache: "no-store" });
@@ -146,10 +147,10 @@ const setupDailyAlarm = async () => {
   const allAlarms = await chrome.alarms.getAll();
   for (const alarm of allAlarms) {
       // QUAN TRỌNG: Không xóa alarm payment
-      if (alarm.name === "autoRequestPayment") {
-          console.log("[Payment] Giữ nguyên alarm autoRequestPayment");
-          continue;
-      }
+      // if (alarm.name === "autoRequestPayment") {
+      //     console.log("[Payment] Giữ nguyên alarm autoRequestPayment");
+      //     continue;
+      // }
       
       if (alarm.name.includes('_') && 
           !alarm.name.startsWith('test_') && 
@@ -158,17 +159,17 @@ const setupDailyAlarm = async () => {
       }
   }
   console.log("Đã xoá các alarm tác vụ cũ.");
-  chrome.alarms.get("autoRequestPayment", (alarm) => {
-        if (!alarm && savedPaymentAlarm) {
-            console.log("[Payment] Khôi phục alarm payment đã bị xóa");
-            chrome.alarms.create("autoRequestPayment", {
-                when: savedPaymentAlarm.scheduledTime
-            });
-        } else if (!alarm) {
-            console.log("[Payment] Tạo mới alarm payment");
-            scheduleNextPaymentRequest();
-        }
-    });
+  // chrome.alarms.get("autoRequestPayment", (alarm) => {
+  //       if (!alarm && savedPaymentAlarm) {
+  //           console.log("[Payment] Khôi phục alarm payment đã bị xóa");
+  //           chrome.alarms.create("autoRequestPayment", {
+  //               when: savedPaymentAlarm.scheduledTime
+  //           });
+  //       } else if (!alarm) {
+  //           console.log("[Payment] Tạo mới alarm payment");
+  //           scheduleNextPaymentRequest();
+  //       }
+  //   });
   const now = new Date();
   const GMT7_OFFSET_HOURS = 7;
 
@@ -400,70 +401,70 @@ async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
  * Lịch rút: 12:30 các ngày T2, T4, T6 và 8:00 ngày Chủ Nhật.
  */
 
-async function scheduleNextPaymentRequest() {
-    try {
-        // Xóa alarm cũ nếu có
-        await chrome.alarms.clear("autoRequestPayment");
+// async function scheduleNextPaymentRequest() {
+//     try {
+//         // Xóa alarm cũ nếu có
+//         await chrome.alarms.clear("autoRequestPayment");
         
-        const now = new Date();
-        const schedule = [
-            // { day: now.getDay(), hour: now.getHours(), minute: now.getMinutes() + 2 },
+//         const now = new Date();
+//         const schedule = [
+//             // { day: now.getDay(), hour: now.getHours(), minute: now.getMinutes() + 2 },
 
-            { day: 1, hour: 12, minute: 30 }, // Thứ 2
-            { day: 3, hour: 12, minute: 30 }, // Thứ 4
-            { day: 5, hour: 12, minute: 30 }, // Thứ 6
-            { day: 0, hour: 8, minute: 0 },   // Chủ Nhật
-        ];
+//             { day: 1, hour: 12, minute: 30 }, // Thứ 2
+//             { day: 3, hour: 12, minute: 30 }, // Thứ 4
+//             { day: 5, hour: 12, minute: 30 }, // Thứ 6
+//             { day: 0, hour: 8, minute: 0 },   // Chủ Nhật
+//         ];
 
-        let nextAlarmTime = null;
+//         let nextAlarmTime = null;
 
-        // Tìm thời điểm tiếp theo
-        for (let i = 0; i < 7; i++) {
-            const checkDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
-            const dayOfWeek = checkDate.getDay();
+//         // Tìm thời điểm tiếp theo
+//         for (let i = 0; i < 7; i++) {
+//             const checkDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+//             const dayOfWeek = checkDate.getDay();
 
-            const dailySchedules = schedule.filter(s => s.day === dayOfWeek)
-                                          .sort((a, b) => a.hour - b.hour || a.minute - b.minute);
+//             const dailySchedules = schedule.filter(s => s.day === dayOfWeek)
+//                                           .sort((a, b) => a.hour - b.hour || a.minute - b.minute);
 
-            for (const item of dailySchedules) {
-                const potentialAlarm = new Date(checkDate);
-                potentialAlarm.setHours(item.hour, item.minute, 0, 0);
+//             for (const item of dailySchedules) {
+//                 const potentialAlarm = new Date(checkDate);
+//                 potentialAlarm.setHours(item.hour, item.minute, 0, 0);
 
-                // Chỉ chọn thời điểm trong tương lai (ít nhất 1 phút sau)
-                if (potentialAlarm.getTime() > (now.getTime() + 60000)) {
-                    nextAlarmTime = potentialAlarm;
-                    break;
-                }
-            }
-            if (nextAlarmTime) break;
-        }
+//                 // Chỉ chọn thời điểm trong tương lai (ít nhất 1 phút sau)
+//                 if (potentialAlarm.getTime() > (now.getTime() + 60000)) {
+//                     nextAlarmTime = potentialAlarm;
+//                     break;
+//                 }
+//             }
+//             if (nextAlarmTime) break;
+//         }
 
-        if (nextAlarmTime) {
-            const delayInMinutes = Math.max(1, (nextAlarmTime.getTime() - now.getTime()) / 60000);
+//         if (nextAlarmTime) {
+//             const delayInMinutes = Math.max(1, (nextAlarmTime.getTime() - now.getTime()) / 60000);
             
-            chrome.alarms.create("autoRequestPayment", {
-                when: nextAlarmTime.getTime() // Dùng when thay vì delayInMinutes cho chính xác hơn
-            });
+//             chrome.alarms.create("autoRequestPayment", {
+//                 when: nextAlarmTime.getTime() // Dùng when thay vì delayInMinutes cho chính xác hơn
+//             });
             
-            console.log(`[Payment] ✅ Đã đặt lịch rút tiền tự động`);
-            console.log(`[Payment] ⏰ Thời gian: ${nextAlarmTime.toLocaleString()}`);
-            console.log(`[Payment] ⏳ Còn ${delayInMinutes.toFixed(0)} phút nữa`);
+//             console.log(`[Payment] ✅ Đã đặt lịch rút tiền tự động`);
+//             console.log(`[Payment] ⏰ Thời gian: ${nextAlarmTime.toLocaleString()}`);
+//             console.log(`[Payment] ⏳ Còn ${delayInMinutes.toFixed(0)} phút nữa`);
             
-            // Lưu thông tin alarm vào storage để debug
-            chrome.storage.local.set({
-                nextPaymentAlarm: {
-                    time: nextAlarmTime.toISOString(),
-                    timestamp: nextAlarmTime.getTime(),
-                    delayMinutes: delayInMinutes
-                }
-            });
-        } else {
-            console.error("[Payment] ❌ Không tìm thấy lịch hợp lệ trong 7 ngày tới");
-        }
-    } catch (error) {
-        console.error("[Payment] Lỗi khi tạo alarm:", error);
-    }
-}
+//             // Lưu thông tin alarm vào storage để debug
+//             chrome.storage.local.set({
+//                 nextPaymentAlarm: {
+//                     time: nextAlarmTime.toISOString(),
+//                     timestamp: nextAlarmTime.getTime(),
+//                     delayMinutes: delayInMinutes
+//                 }
+//             });
+//         } else {
+//             console.error("[Payment] ❌ Không tìm thấy lịch hợp lệ trong 7 ngày tới");
+//         }
+//     } catch (error) {
+//         console.error("[Payment] Lỗi khi tạo alarm:", error);
+//     }
+// }
 // Xử lý alarm khi kích hoạt
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   // Nếu là alarm tự cập nhật setting, thì chạy setup và dừng lại ngay
@@ -891,111 +892,212 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         isDownloadingAdsReport = false;
       }
   })();
-}
-else if (alarm.name === "autoRequestPayment") {
-    const logPrefix = '[AutoPaymentTrigger]';
-    console.log(`${logPrefix} Báo thức kích hoạt. Bắt đầu quy trình rút tiền tự động.`);
-    sendLogToServer(`${logPrefix} Báo thức kích hoạt lúc ${new Date().toLocaleString()}`);
-    setTimeout(() => {
-        console.log(`${logPrefix} Đặt lịch cho lần rút tiền tiếp theo`);
-        scheduleNextPaymentRequest();
-    }, 5000); // Đợi 5 giây sau khi xử lý xong rồi mới tạo alarm mới
+  }
+  // else if (alarm.name === "autoRequestPayment") {
+  //     const logPrefix = '[AutoPaymentTrigger]';
+  //     console.log(`${logPrefix} Báo thức kích hoạt. Bắt đầu quy trình rút tiền tự động.`);
+  //     sendLogToServer(`${logPrefix} Báo thức kích hoạt lúc ${new Date().toLocaleString()}`);
+  //     setTimeout(() => {
+  //         console.log(`${logPrefix} Đặt lịch cho lần rút tiền tiếp theo`);
+  //         scheduleNextPaymentRequest();
+  //     }, 5000); // Đợi 5 giây sau khi xử lý xong rồi mới tạo alarm mới
 
-    // Hàm helper để inject và trigger payment
-    const injectAndTriggerPayment = async (tabId) => {
-        try {
-            // Đợi thêm để đảm bảo content script đã load
-            await sleep(3000);
-            
-            // Kiểm tra xem content script đã được inject chưa
-            const response = await chrome.tabs.sendMessage(tabId, { message: "ping" }).catch(() => null);
-            
-            if (!response || !response.injected) {
-                console.log(`${logPrefix} Content script chưa sẵn sàng, đợi thêm...`);
-                await sleep(2000);
-            }
-            
-            console.log(`${logPrefix} Gửi lệnh trigger payment button đến tab ${tabId}`);
-            sendLogToServer(`${logPrefix} Gửi lệnh triggerAutoPaymentButton đến tab ${tabId}`);
-            
-            chrome.tabs.sendMessage(tabId, {
-                message: "triggerAutoPaymentButton",
-                data: {
-                    source: "autoRequestPayment_alarm",
-                    timestamp: Date.now()
-                }
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error(`${logPrefix} Lỗi khi gửi message:`, chrome.runtime.lastError);
-                    sendLogToServer(`${logPrefix} LỖI: ${chrome.runtime.lastError.message}`);
-                } else {
-                    console.log(`${logPrefix} Đã gửi lệnh thành công, response:`, response);
-                    sendLogToServer(`${logPrefix} Lệnh đã được gửi và nhận phản hồi`);
-                }
-            });
-        } catch (error) {
-            console.error(`${logPrefix} Lỗi trong quá trình inject và trigger:`, error);
-            sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
-        }
-    };
+  //     // Hàm helper để inject và trigger payment
+  //     const injectAndTriggerPayment = async (tabId) => {
+  //         try {
+  //             // Đợi thêm để đảm bảo content script đã load
+  //             await sleep(3000);
+              
+  //             // Kiểm tra xem content script đã được inject chưa
+  //             const response = await chrome.tabs.sendMessage(tabId, { message: "ping" }).catch(() => null);
+              
+  //             if (!response || !response.injected) {
+  //                 console.log(`${logPrefix} Content script chưa sẵn sàng, đợi thêm...`);
+  //                 await sleep(2000);
+  //             }
+              
+  //             console.log(`${logPrefix} Gửi lệnh trigger payment button đến tab ${tabId}`);
+  //             sendLogToServer(`${logPrefix} Gửi lệnh triggerAutoPaymentButton đến tab ${tabId}`);
+              
+  //             chrome.tabs.sendMessage(tabId, {
+  //                 message: "triggerAutoPaymentButton",
+  //                 data: {
+  //                     source: "autoRequestPayment_alarm",
+  //                     timestamp: Date.now()
+  //                 }
+  //             }, (response) => {
+  //                 if (chrome.runtime.lastError) {
+  //                     console.error(`${logPrefix} Lỗi khi gửi message:`, chrome.runtime.lastError);
+  //                     sendLogToServer(`${logPrefix} LỖI: ${chrome.runtime.lastError.message}`);
+  //                 } else {
+  //                     console.log(`${logPrefix} Đã gửi lệnh thành công, response:`, response);
+  //                     sendLogToServer(`${logPrefix} Lệnh đã được gửi và nhận phản hồi`);
+  //                 }
+  //             });
+  //         } catch (error) {
+  //             console.error(`${logPrefix} Lỗi trong quá trình inject và trigger:`, error);
+  //             sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+  //         }
+  //     };
 
-    // Tìm hoặc tạo tab Orders
-    chrome.tabs.query({ url: "*://sellercentral.amazon.com/orders-v3*" }, async (tabs) => {
-        if (tabs && tabs.length > 0) {
-            // Đã có tab Orders mở sẵn
-            const existingTab = tabs[0];
-            console.log(`${logPrefix} Tìm thấy tab Orders có sẵn (ID: ${existingTab.id})`);
-            sendLogToServer(`${logPrefix} Sử dụng tab Orders hiện có (ID: ${existingTab.id})`);
-            
-            // Focus vào tab
-            chrome.tabs.update(existingTab.id, { active: true }, async () => {
-                // Reload tab để đảm bảo content script fresh
-                chrome.tabs.reload(existingTab.id, {}, () => {
-                    // Đợi tab reload xong
-                    const reloadListener = (tabId, changeInfo) => {
-                        if (tabId === existingTab.id && changeInfo.status === 'complete') {
-                            chrome.tabs.onUpdated.removeListener(reloadListener);
-                            console.log(`${logPrefix} Tab đã reload xong, bắt đầu trigger payment`);
-                            injectAndTriggerPayment(existingTab.id);
-                        }
-                    };
-                    chrome.tabs.onUpdated.addListener(reloadListener);
-                });
-            });
-            
-        } else {
-            // Không có tab Orders nào, tạo mới
-            console.log(`${logPrefix} Không tìm thấy tab Orders, tạo tab mới`);
-            sendLogToServer(`${logPrefix} Tạo tab Orders mới`);
-            
-            const targetUrl = `https://sellercentral.amazon.com/orders-v3?page=1`;
-            
-            chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
-                if (chrome.runtime.lastError || !newTab || !newTab.id) {
-                    const errorMsg = `Không thể tạo tab mới: ${chrome.runtime.lastError?.message}`;
-                    console.error(`${logPrefix} ${errorMsg}`);
-                    sendLogToServer(`${logPrefix} LỖI: ${errorMsg}`);
-                    return;
-                }
-                
-                console.log(`${logPrefix} Đã tạo tab mới (ID: ${newTab.id}), đợi load xong...`);
-                
-                // Listener cho tab mới
-                const loadListener = (tabId, changeInfo) => {
-                    if (tabId === newTab.id && changeInfo.status === 'complete') {
-                        chrome.tabs.onUpdated.removeListener(loadListener);
-                        console.log(`${logPrefix} Tab mới đã load xong, bắt đầu trigger payment`);
-                        injectAndTriggerPayment(newTab.id);
-                    }
-                };
-                chrome.tabs.onUpdated.addListener(loadListener);
-            });
-        }
-    });
-}
+  //     // Tìm hoặc tạo tab Orders
+  //     chrome.tabs.query({ url: "*://sellercentral.amazon.com/orders-v3*" }, async (tabs) => {
+  //         if (tabs && tabs.length > 0) {
+  //             // Đã có tab Orders mở sẵn
+  //             const existingTab = tabs[0];
+  //             console.log(`${logPrefix} Tìm thấy tab Orders có sẵn (ID: ${existingTab.id})`);
+  //             sendLogToServer(`${logPrefix} Sử dụng tab Orders hiện có (ID: ${existingTab.id})`);
+              
+  //             // Focus vào tab
+  //             chrome.tabs.update(existingTab.id, { active: true }, async () => {
+  //                 // Reload tab để đảm bảo content script fresh
+  //                 chrome.tabs.reload(existingTab.id, {}, () => {
+  //                     // Đợi tab reload xong
+  //                     const reloadListener = (tabId, changeInfo) => {
+  //                         if (tabId === existingTab.id && changeInfo.status === 'complete') {
+  //                             chrome.tabs.onUpdated.removeListener(reloadListener);
+  //                             console.log(`${logPrefix} Tab đã reload xong, bắt đầu trigger payment`);
+  //                             injectAndTriggerPayment(existingTab.id);
+  //                         }
+  //                     };
+  //                     chrome.tabs.onUpdated.addListener(reloadListener);
+  //                 });
+  //             });
+              
+  //         } else {
+  //             // Không có tab Orders nào, tạo mới
+  //             console.log(`${logPrefix} Không tìm thấy tab Orders, tạo tab mới`);
+  //             sendLogToServer(`${logPrefix} Tạo tab Orders mới`);
+              
+  //             const targetUrl = `https://sellercentral.amazon.com/orders-v3?page=1`;
+              
+  //             chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
+  //                 if (chrome.runtime.lastError || !newTab || !newTab.id) {
+  //                     const errorMsg = `Không thể tạo tab mới: ${chrome.runtime.lastError?.message}`;
+  //                     console.error(`${logPrefix} ${errorMsg}`);
+  //                     sendLogToServer(`${logPrefix} LỖI: ${errorMsg}`);
+  //                     return;
+  //                 }
+                  
+  //                 console.log(`${logPrefix} Đã tạo tab mới (ID: ${newTab.id}), đợi load xong...`);
+                  
+  //                 // Listener cho tab mới
+  //                 const loadListener = (tabId, changeInfo) => {
+  //                     if (tabId === newTab.id && changeInfo.status === 'complete') {
+  //                         chrome.tabs.onUpdated.removeListener(loadListener);
+  //                         console.log(`${logPrefix} Tab mới đã load xong, bắt đầu trigger payment`);
+  //                         injectAndTriggerPayment(newTab.id);
+  //                     }
+  //                 };
+  //                 chrome.tabs.onUpdated.addListener(loadListener);
+  //             });
+  //         }
+  //     });
+  // }
+  if (alarm.name.startsWith("paymentRequest_")) {
+      const logPrefix = '[AutoPaymentTrigger]';
+      console.log(`${logPrefix} Báo thức kích hoạt. Bắt đầu quy trình rút tiền tự động.`);
+        // sendLogToServer(`${logPrefix} Báo thức kích hoạt lúc ${new Date().toLocaleString()}`);
+        // setTimeout(() => {
+        //     console.log(`${logPrefix} Đặt lịch cho lần rút tiền tiếp theo`);
+        //     scheduleNextPaymentRequest();
+        // }, 5000); // Đợi 5 giây sau khi xử lý xong rồi mới tạo alarm mới
+
+      // Hàm helper để inject và trigger payment
+      const injectAndTriggerPayment = async (tabId) => {
+          try {
+              // Đợi thêm để đảm bảo content script đã load
+              await sleep(3000);
+              
+              // Kiểm tra xem content script đã được inject chưa
+              const response = await chrome.tabs.sendMessage(tabId, { message: "ping" }).catch(() => null);
+              
+              if (!response || !response.injected) {
+                  console.log(`${logPrefix} Content script chưa sẵn sàng, đợi thêm...`);
+                  await sleep(2000);
+              }
+              
+              console.log(`${logPrefix} Gửi lệnh trigger payment button đến tab ${tabId}`);
+              sendLogToServer(`${logPrefix} Gửi lệnh triggerAutoPaymentButton đến tab ${tabId}`);
+              
+              chrome.tabs.sendMessage(tabId, {
+                  message: "triggerAutoPaymentButton",
+                  data: {
+                      source: "autoRequestPayment_alarm",
+                      timestamp: Date.now()
+                  }
+              }, (response) => {
+                  if (chrome.runtime.lastError) {
+                      console.error(`${logPrefix} Lỗi khi gửi message:`, chrome.runtime.lastError);
+                      sendLogToServer(`${logPrefix} LỖI: ${chrome.runtime.lastError.message}`);
+                  } else {
+                      console.log(`${logPrefix} Đã gửi lệnh thành công, response:`, response);
+                      sendLogToServer(`${logPrefix} Lệnh đã được gửi và nhận phản hồi`);
+                  }
+              });
+          } catch (error) {
+              console.error(`${logPrefix} Lỗi trong quá trình inject và trigger:`, error);
+              sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+          }
+      };
+
+      // Tìm hoặc tạo tab Orders
+      chrome.tabs.query({ url: "*://sellercentral.amazon.com/orders-v3*" }, async (tabs) => {
+          if (tabs && tabs.length > 0) {
+              // Đã có tab Orders mở sẵn
+              const existingTab = tabs[0];
+              console.log(`${logPrefix} Tìm thấy tab Orders có sẵn (ID: ${existingTab.id})`);
+              sendLogToServer(`${logPrefix} Sử dụng tab Orders hiện có (ID: ${existingTab.id})`);
+              
+              // Focus vào tab
+              chrome.tabs.update(existingTab.id, { active: true }, async () => {
+                  // Reload tab để đảm bảo content script fresh
+                  chrome.tabs.reload(existingTab.id, {}, () => {
+                      // Đợi tab reload xong
+                      const reloadListener = (tabId, changeInfo) => {
+                          if (tabId === existingTab.id && changeInfo.status === 'complete') {
+                              chrome.tabs.onUpdated.removeListener(reloadListener);
+                              console.log(`${logPrefix} Tab đã reload xong, bắt đầu trigger payment`);
+                              injectAndTriggerPayment(existingTab.id);
+                          }
+                      };
+                      chrome.tabs.onUpdated.addListener(reloadListener);
+                  });
+              });
+              
+          } else {
+              // Không có tab Orders nào, tạo mới
+              console.log(`${logPrefix} Không tìm thấy tab Orders, tạo tab mới`);
+              sendLogToServer(`${logPrefix} Tạo tab Orders mới`);
+              
+              const targetUrl = `https://sellercentral.amazon.com/orders-v3?page=1`;
+              
+              chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
+                  if (chrome.runtime.lastError || !newTab || !newTab.id) {
+                      const errorMsg = `Không thể tạo tab mới: ${chrome.runtime.lastError?.message}`;
+                      console.error(`${logPrefix} ${errorMsg}`);
+                      sendLogToServer(`${logPrefix} LỖI: ${errorMsg}`);
+                      return;
+                  }
+                  
+                  console.log(`${logPrefix} Đã tạo tab mới (ID: ${newTab.id}), đợi load xong...`);
+                  
+                  // Listener cho tab mới
+                  const loadListener = (tabId, changeInfo) => {
+                      if (tabId === newTab.id && changeInfo.status === 'complete') {
+                          chrome.tabs.onUpdated.removeListener(loadListener);
+                          console.log(`${logPrefix} Tab mới đã load xong, bắt đầu trigger payment`);
+                          injectAndTriggerPayment(newTab.id);
+                      }
+                  };
+                  chrome.tabs.onUpdated.addListener(loadListener);
+              });
+          }
+      });
+  }
 
 
-else if (alarm.name === "testPaymentAlarm") {
+  else if (alarm.name === "testPaymentAlarm") {
         console.log("[Payment] Đã đến giờ chạy test payment");
         
         const merchantId = getMBApiKey();
@@ -1038,7 +1140,7 @@ else if (alarm.name === "testPaymentAlarm") {
             
             chrome.tabs.onUpdated.addListener(handleTestAlarmUpdate);
         });
-    }
+  }
   else if (alarm.name.startsWith("sendMessageAuto_") || alarm.name === "test_sendMessageAuto") {
     const featureName = 'sendMessageAuto'; // Dùng lại featureName của tính năng gốc để server monitor
     const logPrefix = '[SendMessageAuto]';
@@ -1236,7 +1338,7 @@ function sendMessageToTabWhenLoaded(tabId, messagePayload) {
 
 // Chạy thiết lập alarm khi extension được tải
 setupDailyAlarm();
-scheduleNextPaymentRequest();
+// scheduleNextPaymentRequest();
 const isImage = (filename) => {
   return /\.(jpg|jpeg|png|webp|avif|gif|svg)$/.test(filename);
 };
