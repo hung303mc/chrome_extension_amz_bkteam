@@ -174,43 +174,94 @@ const setupDailyAlarm = async () => {
   const GMT7_OFFSET_HOURS = 7;
 
 // Hàm helper để tính toán và đặt lịch
-  const scheduleAlarm = (name, config) => {
-    const MAX_RANDOM_DELAY_MS = 5 * 60 * 1000; // 5 phút, tính bằng mili giây
-    // Thêm một khoảng thời gian ngẫu nhiên từ 0 đến 300 giây (5 phút)
-    const randomDelayInSeconds = Math.floor(Math.random() * 301);
+  // const scheduleAlarm = (name, config) => {
+  //   const MAX_RANDOM_DELAY_MS = 5 * 60 * 1000; // 5 phút, tính bằng mili giây
+  //   // Thêm một khoảng thời gian ngẫu nhiên từ 0 đến 300 giây (5 phút)
+  //   const randomDelayInSeconds = Math.floor(Math.random() * 301);
 
+  //   const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
+  //   const alarmTime = new Date();
+  //   alarmTime.setUTCHours(targetHourUTC, config.minute, 0, 0);
+
+  //   // --- LOGIC SỬA ĐỔI ---
+  //   // Chỉ dời sang ngày mai nếu thời gian hiện tại đã qua MỐC ALARM + 5 PHÚT.
+  //   // Ví dụ: Alarm đặt lúc 4:00, thì chỉ khi nào sau 4:05 mà nó mới chạy lại, nó mới bị dời.
+  //   if (now.getTime() > alarmTime.getTime() + MAX_RANDOM_DELAY_MS) {
+  //     alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
+  //   }
+  //   // Nếu không, alarmTime vẫn được giữ cho ngày hôm nay.
+
+  //   // Cộng thêm thời gian ngẫu nhiên vào thời gian báo thức
+  //   alarmTime.setSeconds(alarmTime.getSeconds() + randomDelayInSeconds);
+
+  //   // Tính toán delay cuối cùng
+  //   const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
+
+  //   // Nếu vì lý do nào đó mà delay vẫn âm (ví dụ: máy tính bị lag),
+  //   // ta sẽ cho nó chạy ngay lập tức thay vì bỏ lỡ.
+  //   const finalDelay = Math.max(0.1, delayInMinutes); // Chạy ngay sau 0.1 phút nếu bị âm
+
+  //   chrome.alarms.create(name, {
+  //     delayInMinutes: finalDelay,
+  //     periodInMinutes: config.periodInMinutes, // Thường sẽ là 1440 (24h)
+  //   });
+
+  //   // Cập nhật log để hiển thị cả giây cho chính xác
+  //   const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
+  //   console.log(`✅ Đã đặt lịch cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
+  // };
+const scheduleAlarm = (name, config) => {
+    // --- LOGIC MỚI ĐỂ XỬ LÝ CẢ LỊCH HÀNG NGÀY VÀ LỊCH THEO NGÀY CỐ ĐỊNH TRONG TUẦN ---
+    const now = new Date();
+    const GMT7_OFFSET_HOURS = 7;
+    const randomDelayInSeconds = Math.floor(Math.random() * 301); // Thêm độ trễ ngẫu nhiên 0-5 phút
+
+    // Tính toán giờ mục tiêu theo múi giờ UTC
     const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
-    const alarmTime = new Date();
-    alarmTime.setUTCHours(targetHourUTC, config.minute, 0, 0);
 
-    // --- LOGIC SỬA ĐỔI ---
-    // Chỉ dời sang ngày mai nếu thời gian hiện tại đã qua MỐC ALARM + 5 PHÚT.
-    // Ví dụ: Alarm đặt lúc 4:00, thì chỉ khi nào sau 4:05 mà nó mới chạy lại, nó mới bị dời.
-    if (now.getTime() > alarmTime.getTime() + MAX_RANDOM_DELAY_MS) {
-      alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
+    let alarmTime = new Date();
+    alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
+
+    // Kiểm tra xem đây có phải là lịch theo ngày trong tuần không
+    if (typeof config.dayOfWeek === 'number') {
+        // ---- Đây là logic mới cho lịch theo ngày trong tuần (ví dụ: paymentRequest_*) ----
+        const currentDayUTC = now.getUTCDay(); // Lấy ngày hiện tại theo UTC
+        let daysToAdd = (config.dayOfWeek - currentDayUTC + 7) % 7;
+
+        // Nếu ngày đặt lịch là hôm nay nhưng thời gian đã qua, thì đặt cho tuần tới
+        if (daysToAdd === 0 && alarmTime.getTime() < now.getTime()) {
+            daysToAdd = 7;
+        }
+        
+        alarmTime.setUTCDate(now.getUTCDate() + daysToAdd);
+        alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
+
+        // Đối với lịch hàng tuần, chúng ta không đặt "periodInMinutes"
+        // vì hàm setupDailyAlarm sẽ tự động đặt lại lịch cho tuần tiếp theo.
+        chrome.alarms.create(name, {
+            when: alarmTime.getTime()
+        });
+        
+        console.log(`✅ Đã đặt lịch (theo ngày) cho '${name}' vào lúc: ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+
+    } else {
+        // ---- Đây là logic cũ cho các lịch hàng ngày (ví dụ: syncOrder_*) ----
+        if (now.getTime() > alarmTime.getTime()) {
+            alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
+        }
+        
+        const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
+        const finalDelay = Math.max(0.1, delayInMinutes);
+
+        chrome.alarms.create(name, {
+            delayInMinutes: finalDelay,
+            periodInMinutes: config.periodInMinutes || 1440, // Mặc định là 24 giờ
+        });
+        
+        const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
+        console.log(`✅ Đã đặt lịch (hàng ngày) cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
     }
-    // Nếu không, alarmTime vẫn được giữ cho ngày hôm nay.
-
-    // Cộng thêm thời gian ngẫu nhiên vào thời gian báo thức
-    alarmTime.setSeconds(alarmTime.getSeconds() + randomDelayInSeconds);
-
-    // Tính toán delay cuối cùng
-    const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
-
-    // Nếu vì lý do nào đó mà delay vẫn âm (ví dụ: máy tính bị lag),
-    // ta sẽ cho nó chạy ngay lập tức thay vì bỏ lỡ.
-    const finalDelay = Math.max(0.1, delayInMinutes); // Chạy ngay sau 0.1 phút nếu bị âm
-
-    chrome.alarms.create(name, {
-      delayInMinutes: finalDelay,
-      periodInMinutes: config.periodInMinutes, // Thường sẽ là 1440 (24h)
-    });
-
-    // Cập nhật log để hiển thị cả giây cho chính xác
-    const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
-    console.log(`✅ Đã đặt lịch cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
-  };
-
+};
   // --- LOGIC MỚI: Duyệt qua danh sách và đặt lịch ---
   console.log("--- Bắt đầu kiểm tra và đặt lịch cho các alarm ---");
   for (const alarmName of ALL_POSSIBLE_ALARMS) {
@@ -477,10 +528,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   if (alarm.name === 'ipUpdateCheck') {
     // Bước 1: Đọc cài đặt từ storage
-    const settings = await chrome.storage.local.get({ [ipTrackingKey]: false });
+    const settings = await chrome.storage.local.get({ [ipTrackingKey]: true });
 
     // Bước 2: Nếu người dùng không bật, thoát ra ngay, KHÔNG làm gì cả
     if (!settings[ipTrackingKey]) {
+      console.log("Tính năng gửi IP đang tắt (do người dùng chọn). Bỏ qua.");
       return;
     }
 
@@ -1186,7 +1238,7 @@ const getPublicIP = async () => {
  */
 const sendIPUpdateRequest = async () => {
   // BƯỚC QUAN TRỌNG NHẤT: Đọc cài đặt từ storage
-  const settings = await chrome.storage.local.get({ [ipTrackingKey]: false });
+  const settings = await chrome.storage.local.get({ [ipTrackingKey]: true });
 
   // Nếu người dùng không bật tính năng này, dừng lại ngay
   if (!settings[ipTrackingKey]) {
@@ -5457,23 +5509,43 @@ if (request.message === "executeRealPayment") {
     return true;
 }
 // Handler cho Toggle Auto Schedule
-    if (request.message === "toggleAutoSchedule") {
-        chrome.storage.local.get(['autoPaymentEnabled'], async (result) => {
-            const newState = !result.autoPaymentEnabled;
-            await chrome.storage.local.set({ autoPaymentEnabled: newState });
-            
-            if (newState) {
-                // Bật - tạo alarm
-                scheduleNextPaymentRequest();
-                sendResponse({ enabled: true });
-            } else {
-                // Tắt - xóa alarm
-                await chrome.alarms.clear("autoRequestPayment");
-                sendResponse({ enabled: false });
-            }
-        });
-        return true; // Keep message channel open
-    }
+  if (request.message === "toggleAutoSchedule") {
+          // Sử dụng async/await để mã dễ đọc hơn
+          (async () => {
+              try {
+                  // Lấy trạng thái hiện tại, mặc định là false (tắt)
+                  const result = await chrome.storage.local.get({ autoPaymentEnabled: false });
+                  const newState = !result.autoPaymentEnabled;
+
+                  // Lưu trạng thái mới
+                  await chrome.storage.local.set({ autoPaymentEnabled: newState });
+                  console.log(`[AutoPayment] Trạng thái được cập nhật thành: ${newState ? 'BẬT' : 'TẮT'}`);
+
+                  if (newState) {
+                      // Bật: Gọi hàm setup chính để tải và đặt lại tất cả các lịch từ server
+                      console.log("[AutoPayment] Đang bật... Gọi setupDailyAlarm() để đặt lịch.");
+                      await setupDailyAlarm(); // Hàm này sẽ thiết lập các alarm 'paymentRequest_*'
+                      sendResponse({ enabled: true, message: "Đã bật và đặt lịch rút tiền tự động." });
+                  } else {
+                      // Tắt: Xóa tất cả các alarm liên quan đến rút tiền
+                      console.log("[AutoPayment] Đang tắt... Xóa các lịch rút tiền.");
+                      const allAlarms = await chrome.alarms.getAll();
+                      for (const alarm of allAlarms) {
+                          if (alarm.name.startsWith("paymentRequest_")) {
+                              await chrome.alarms.clear(alarm.name);
+                              console.log(` -> Đã xóa alarm: ${alarm.name}`);
+                          }
+                      }
+                      sendResponse({ enabled: false, message: "Đã tắt và xóa lịch rút tiền tự động." });
+                  }
+              } catch (error) {
+                  console.error("[AutoPayment] Lỗi khi chuyển đổi trạng thái:", error);
+                  sendResponse({ error: error.message });
+              }
+          })();
+
+          return true; // Giữ kênh message mở cho phản hồi bất đồng bộ
+      }
 // Handler để lấy merchant ID
 if (request.message === "getMerchantId") {
     const merchantId = getMBApiKey(); // Sử dụng function có sẵn

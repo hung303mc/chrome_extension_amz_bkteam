@@ -684,8 +684,8 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
 
     // Bước 1: Kiểm tra xem có phải đang ở trang orders không
     const currentUrl = window.location.href;
-    if (currentUrl.includes("/orders-v3/")) {
-        console.log("[Content] Đang ở trang Orders. Thực hiện click tab Payment...");
+    if (currentUrl.includes("sellercentral.amazon.com")) {
+        console.log("[Content] Đang ở trang Amaz không. Thực hiện click tab Payment...");
         sendToServerLog("[Content] Đang ở trang Orders. Bắt đầu click tab Payment.");
         
         // Bước 2: Tìm và click vào tab "Payment"
@@ -725,8 +725,8 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
 
     res({ status: "triggered" });
     return true; // Giữ message port mở
-}
-  
+   }
+
     const { message, data } = req || {};
     
     // Xử lý message tự động update tracking

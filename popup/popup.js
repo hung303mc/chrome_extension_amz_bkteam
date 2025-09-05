@@ -47,7 +47,7 @@ const saveIpTrackingSetting = (isEnabled) =>
 
 const getIpTrackingSetting = () =>
     new Promise((resolve) => {
-        chrome.storage.local.get({ [ipTrackingKey]: false }).then((result) => {
+        chrome.storage.local.get({ [ipTrackingKey]: true }).then((result) => {
             resolve(result[ipTrackingKey]);
         });
     });
