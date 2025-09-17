@@ -322,7 +322,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // --- BƯỚC 7 (QUAN TRỌNG): Xác nhận gửi thành công thực sự ---
     logToServer("Đang chờ thông báo 'Your message has been sent' từ Amazon...");
     // Selector này tìm div màu xanh lá cây có chứa thông báo thành công
-    const successConfirmation = await waitForElement('div.kat-alert-success-content', 15000); 
+    const successConfirmation = await waitForElement('kat-alert[variant="success"]', 15000); 
 
     if (successConfirmation && successConfirmation.textContent.includes("Your message has been sent")) {
       logToServer("🎉 XÁC NHẬN THÀNH CÔNG! Amazon đã báo tin nhắn được gửi đi.");

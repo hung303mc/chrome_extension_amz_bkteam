@@ -114,7 +114,7 @@ const setupDailyAlarm = async () => {
     'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
     'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
     'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5',
-    'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Wednesday', 'paymentRequest_Friday'
+    'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Tue', 'paymentRequest_Wednesday', 'paymentRequest_Thu', 'paymentRequest_Friday'
   ];
 
   // let savedPaymentAlarm = null;
