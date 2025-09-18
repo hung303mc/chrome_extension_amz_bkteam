@@ -57,10 +57,51 @@
         return new Promise((resolve) => {
             let attempts = 0;
             const check = () => {
-                const button = document.querySelector('.custom-child-available-balance kat-button[label="Request Payment"]');
-                if (button) {
-                    resolve({ found: true, element: button });
-                } else if (attempts < 5) {
+                // Bước 1: Tìm tất cả các nút "Request Payment" có thể nhấn được
+                const allButtons = document.querySelectorAll(
+                    '.custom-child-available-balance kat-button[label="Request Payment"]:not([disabled])'
+                );
+
+                if (allButtons.length === 1) {
+                    // Trường hợp đơn giản: chỉ có 1 nút, chọn ngay
+                    console.log("[Payment Script] Tìm thấy 1 nút Request Payment duy nhất.");
+                    resolve({ found: true, element: allButtons[0] });
+                    return;
+                }
+
+                if (allButtons.length > 1) {
+                    // Trường hợp phức tạp: có nhiều nút, cần tìm nút có số dư lớn nhất
+                    console.log(`[Payment Script] Tìm thấy ${allButtons.length} nút. Bắt đầu tìm nút có số dư lớn nhất.`);
+                    let maxBalance = -1;
+                    let bestButton = null;
+
+                    allButtons.forEach(button => {
+                        // Đi ngược cây DOM để tìm thẻ cha chứa cả nút và số dư
+                        const parentContainer = button.closest('.payment-card-row-container');
+                        if (parentContainer) {
+                            // Tìm số dư trong thẻ cha đó
+                            const balanceElement = parentContainer.querySelector('.currency-display-amount');
+                            if (balanceElement) {
+                                // Chuyển đổi số dư thành dạng số để so sánh
+                                const currentBalance = parseFloat(balanceElement.textContent.replace(/[^0-9.]/g, '')) || 0;
+
+                                if (currentBalance > maxBalance) {
+                                    maxBalance = currentBalance;
+                                    bestButton = button;
+                                }
+                            }
+                        }
+                    });
+
+                    if (bestButton) {
+                        console.log(`[Payment Script] Đã chọn nút có số dư cao nhất: $${maxBalance}`);
+                        resolve({ found: true, element: bestButton });
+                        return;
+                    }
+                }
+
+                // Nếu không tìm thấy nút nào, hoặc không xác định được nút tốt nhất, thử lại
+                if (attempts < 5) {
                     attempts++;
                     setTimeout(check, 1000);
                 } else {
