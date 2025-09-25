@@ -102,40 +102,267 @@ const setupTestAlarms = async () => {
 };
 
 // Thiết lập alarm để tự động sync order, lấy cấu hình từ server
+// const setupDailyAlarm = async () => {
+//   const SETTINGS_URL = "https://bkteam.top/dungvuong-admin/data_files/alarm_setting/alarm-settings.json";
+
+//   // Danh sách TẤT CẢ các alarm có thể có trong hệ thống.
+//   // Thêm hoặc bớt tên alarm ở đây nếu mày muốn.
+//   const ALL_POSSIBLE_ALARMS = [
+//     'ipUpdateCheck',
+//     'syncOrder_1', 'syncOrder_2', 'syncOrder_3', 'syncOrder_4', 'syncOrder_5',
+//     'updateTracking_1', 'updateTracking_2', 'updateTracking_3', 'updateTracking_4', 'updateTracking_5',
+//     'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
+//     'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
+//     'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5',
+//     'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Tue', 'paymentRequest_Wednesday', 'paymentRequest_Thu', 'paymentRequest_Friday'
+//   ];
+
+//   // let savedPaymentAlarm = null;
+//   // await chrome.alarms.get("autoRequestPayment", (alarm) => {
+//   //     if (alarm) {
+//   //         savedPaymentAlarm = alarm;
+//   //         console.log("[Payment] Đã lưu alarm payment hiện tại");
+//   //     }
+//   // });
+//   let settings = {};
+//   try {
+//     const response = await fetch(SETTINGS_URL, { cache: "no-store" });
+//     if (response.ok) {
+//       settings = await response.json();
+//       console.log("Đã tải cài đặt alarm từ server.", settings);
+
+//       await chrome.storage.local.set({ alarmSettings: settings });
+//       console.log("Đã lưu cài đặt vào storage."); // Thêm log để xác nhận
+//     } else {
+//       console.error("Lỗi HTTP khi tải cài đặt, sẽ không có alarm nào được đặt.");
+//       return;
+//     }
+//   } catch (error) {
+//     console.error("Không thể tải cài đặt từ server, sẽ không có alarm nào được đặt:", error);
+//     await chrome.storage.local.remove('alarmSettings');
+//     return;
+//   }
+
+//   // Xóa TẤT CẢ các alarm tác vụ cũ (trừ settingsRefresher) để đảm bảo sạch sẽ.
+//   const allCurrentAlarms = await chrome.alarms.getAll();
+//     for (const alarm of allCurrentAlarms) {
+//         const isTaskAlarm = !['settingsRefresher', 'cleanupZombieTabs'].includes(alarm.name) &&
+//                             !alarm.name.startsWith('test_') &&
+//                             !alarm.name.startsWith('retry_');
+//         if (isTaskAlarm) {
+//             await chrome.alarms.clear(alarm.name);
+//         }
+//     }
+//     console.log("🧹 Đã xoá các alarm tác vụ cũ.");
+
+//     console.log("--- Bắt đầu đặt lịch cho các alarm mới ---");
+//     for (const alarmName in settings) {
+//         if (Object.prototype.hasOwnProperty.call(settings, alarmName) && alarmName !== 'settingsRefresher') {
+//             const config = settings[alarmName];
+//             if (config && typeof config.hour === 'number') {
+//                 scheduleAlarm(alarmName, config);
+//             }
+//         }
+//     }
+//     console.log("--- Hoàn tất quá trình đặt lịch ---");
+
+//     await setupRefresherAlarm(settings.settingsRefresher);
+  
+//   const now = new Date();
+//   const GMT7_OFFSET_HOURS = 7;
+
+//   // Tạo alarm dọn dẹp định kỳ
+//   chrome.alarms.create('cleanupZombieTabs', { periodInMinutes: 30 });
+//   console.log("✅ Đã đặt lịch dọn dẹp tab zombie mỗi 30 phút.");
+
+//   chrome.alarms.getAll(alarms => console.log("Danh sách tất cả alarm hiện tại:", alarms));
+// const scheduleAlarm = (name, config) => {
+//     // --- LOGIC MỚI ĐỂ XỬ LÝ CẢ LỊCH HÀNG NGÀY VÀ LỊCH THEO NGÀY CỐ ĐỊNH TRONG TUẦN ---
+//     const now = new Date();
+//     const GMT7_OFFSET_HOURS = 7;
+//     const randomDelayInSeconds = Math.floor(Math.random() * 301); // Thêm độ trễ ngẫu nhiên 0-5 phút
+
+//     // Tính toán giờ mục tiêu theo múi giờ UTC
+//     const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
+
+//     let alarmTime = new Date();
+//     alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
+
+//     // Kiểm tra xem đây có phải là lịch theo ngày trong tuần không
+//     if (typeof config.dayOfWeek === 'number') {
+//         // ---- Đây là logic mới cho lịch theo ngày trong tuần (ví dụ: paymentRequest_*) ----
+//         const currentDayUTC = now.getUTCDay(); // Lấy ngày hiện tại theo UTC
+//         let daysToAdd = (config.dayOfWeek - currentDayUTC + 7) % 7;
+
+//         // Nếu ngày đặt lịch là hôm nay nhưng thời gian đã qua, thì đặt cho tuần tới
+//         if (daysToAdd === 0 && alarmTime.getTime() < now.getTime()) {
+//             daysToAdd = 7;
+//         }
+        
+//         alarmTime.setUTCDate(now.getUTCDate() + daysToAdd);
+//         alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
+
+//         // Đối với lịch hàng tuần, chúng ta không đặt "periodInMinutes"
+//         // vì hàm setupDailyAlarm sẽ tự động đặt lại lịch cho tuần tiếp theo.
+//         chrome.alarms.create(name, {
+//             when: alarmTime.getTime()
+//         });
+        
+//         console.log(`✅ Đã đặt lịch (theo ngày) cho '${name}' vào lúc: ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+
+//     } else {
+//         // ---- Đây là logic cũ cho các lịch hàng ngày (ví dụ: syncOrder_*) ----
+//         if (now.getTime() > alarmTime.getTime()) {
+//             alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
+//         }
+        
+//         const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
+//         const finalDelay = Math.max(0.1, delayInMinutes);
+
+//         chrome.alarms.create(name, {
+//             delayInMinutes: finalDelay,
+//             periodInMinutes: config.periodInMinutes || 1440, // Mặc định là 24 giờ
+//         });
+        
+//         const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
+//         console.log(`✅ Đã đặt lịch (hàng ngày) cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
+//     }
+// };
+// async function setupRefresherAlarm(config) {
+//         await chrome.alarms.clear('settingsRefresher');
+//         if (config && typeof config.runAtMinute === 'number' && typeof config.periodInHours === 'number') {
+//             const now = new Date();
+//             let nextRefreshTime = new Date();
+//             nextRefreshTime.setMinutes(config.runAtMinute, 0, 0);
+//             while (nextRefreshTime.getTime() <= now.getTime()) {
+//                 nextRefreshTime.setHours(nextRefreshTime.getHours() + config.periodInHours);
+//             }
+//             const delayInMinutes = (nextRefreshTime.getTime() - now.getTime()) / 60000;
+//             chrome.alarms.create('settingsRefresher', { delayInMinutes });
+//             console.log(`🔄 [Refresher] Đã đặt lịch cập nhật tiếp theo vào lúc: ${nextRefreshTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+//         } else {
+//             console.log("❌ [Refresher] Cấu hình không đúng, sẽ không đặt lịch.");
+//         }
+//     }
+//   // --- LOGIC MỚI: Duyệt qua danh sách và đặt lịch ---
+//   console.log("--- Bắt đầu kiểm tra và đặt lịch cho các alarm ---");
+//   for (const alarmName of ALL_POSSIBLE_ALARMS) {
+//     // Kiểm tra xem trong file JSON tải về có định nghĩa cho alarm này không và không phải là null
+//     if (settings[alarmName]) {
+//       // Nếu có, đặt lịch cho nó
+//       scheduleAlarm(alarmName, settings[alarmName]);
+//     } else {
+//       // Nếu không, chỉ log ra để biết là nó bị bỏ qua (có thể bỏ comment nếu cần debug)
+//       console.log(`❌ Bỏ qua alarm '${alarmName}' vì không được định nghĩa trên server.`);
+//     }
+//   }
+//   console.log("--- Hoàn tất quá trình đặt lịch ---");
+
+//   // Tạo hoặc cập nhật alarm 'settingsRefresher'
+//   await chrome.alarms.clear('settingsRefresher');
+
+//   const refresherConfig = settings.settingsRefresher;
+//   if (refresherConfig && typeof refresherConfig.runAtMinute === 'number' && typeof refresherConfig.periodInHours === 'number') {
+
+//     // Lấy các giá trị từ config, hoặc đặt giá trị mặc định an toàn
+//     const runAtMinute = refresherConfig.runAtMinute;
+//     const periodInHours = refresherConfig.periodInHours;
+//     console.log(`[Refresher] Đặt lịch chạy vào phút thứ ${runAtMinute}, lặp lại mỗi ${periodInHours} giờ.`);
+
+//     let nextRefreshTime = new Date(); // Bắt đầu tính từ bây giờ
+
+//     // Đặt mốc phút và giây mong muốn
+//     nextRefreshTime.setMinutes(runAtMinute, 0, 0);
+
+//     // Vòng lặp để đảm bảo thời gian tính được luôn ở tương lai
+//     // Nếu thời gian tính ra đã ở trong quá khứ, ta cứ cộng thêm `periodInHours` cho đến khi nó ở tương lai thì thôi.
+//     while (nextRefreshTime.getTime() <= now.getTime()) {
+//       nextRefreshTime.setHours(nextRefreshTime.getHours() + periodInHours);
+//     }
+
+//     // Tính toán độ trễ còn lại (tính bằng phút)
+//     const delayInMinutes = (nextRefreshTime.getTime() - now.getTime()) / (1000 * 60);
+
+//     // Tạo alarm một lần duy nhất. Khi nó chạy, nó sẽ tự tính lại mốc tiếp theo.
+//     chrome.alarms.create('settingsRefresher', {
+//       delayInMinutes: delayInMinutes
+//     });
+
+//     console.log(`✅ [Refresher] Đã đặt lịch cập nhật tiếp theo vào lúc: ${nextRefreshTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+
+//   } else {
+//     console.log("❌ [Refresher] Cấu hình không đúng định dạng, sẽ không đặt lịch. Cần có 'runAtMinute' và 'periodInHours'.");
+//   }
+
+//   chrome.alarms.getAll((alarms) => {
+//     console.log("Danh sách tất cả alarm hiện tại:", alarms);
+//   });
+// };
 const setupDailyAlarm = async () => {
   const SETTINGS_URL = "https://bkteam.top/dungvuong-admin/data_files/alarm_setting/alarm-settings.json";
 
-  // Danh sách TẤT CẢ các alarm có thể có trong hệ thống.
-  // Thêm hoặc bớt tên alarm ở đây nếu mày muốn.
-  const ALL_POSSIBLE_ALARMS = [
-    'ipUpdateCheck',
-    'syncOrder_1', 'syncOrder_2', 'syncOrder_3', 'syncOrder_4', 'syncOrder_5',
-    'updateTracking_1', 'updateTracking_2', 'updateTracking_3', 'updateTracking_4', 'updateTracking_5',
-    'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
-    'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
-    'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5',
-    'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Tue', 'paymentRequest_Wednesday', 'paymentRequest_Thu', 'paymentRequest_Friday'
-  ];
+  // --- CÁC HÀM HELPER ĐƯỢC DI CHUYỂN LÊN ĐẦU ---
+  const scheduleAlarm = (name, config) => {
+    const now = new Date();
+    const GMT7_OFFSET_HOURS = 7;
+    const randomDelayInSeconds = Math.floor(Math.random() * 301); // Thêm độ trễ ngẫu nhiên 0-5 phút
+    const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
+    let alarmTime = new Date();
+    alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
 
-  // let savedPaymentAlarm = null;
-  // await chrome.alarms.get("autoRequestPayment", (alarm) => {
-  //     if (alarm) {
-  //         savedPaymentAlarm = alarm;
-  //         console.log("[Payment] Đã lưu alarm payment hiện tại");
-  //     }
-  // });
+    if (typeof config.dayOfWeek === 'number') {
+        const currentDayUTC = now.getUTCDay();
+        let daysToAdd = (config.dayOfWeek - currentDayUTC + 7) % 7;
+        if (daysToAdd === 0 && alarmTime.getTime() < now.getTime()) {
+            daysToAdd = 7;
+        }
+        alarmTime.setUTCDate(now.getUTCDate() + daysToAdd);
+        alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
+        chrome.alarms.create(name, { when: alarmTime.getTime() });
+        console.log(`✅ Đã đặt lịch (theo ngày) cho '${name}' vào lúc: ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+    } else {
+        if (now.getTime() > alarmTime.getTime()) {
+            alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
+        }
+        const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
+        const finalDelay = Math.max(0.1, delayInMinutes);
+        chrome.alarms.create(name, {
+            delayInMinutes: finalDelay,
+            periodInMinutes: config.periodInMinutes || 1440,
+        });
+        const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
+        console.log(`✅ Đã đặt lịch (hàng ngày) cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
+    }
+  };
+
+  async function setupRefresherAlarm(config) {
+    await chrome.alarms.clear('settingsRefresher');
+    if (config && typeof config.runAtMinute === 'number' && typeof config.periodInHours === 'number') {
+        const now = new Date();
+        let nextRefreshTime = new Date();
+        nextRefreshTime.setMinutes(config.runAtMinute, 0, 0);
+        while (nextRefreshTime.getTime() <= now.getTime()) {
+            nextRefreshTime.setHours(nextRefreshTime.getHours() + config.periodInHours);
+        }
+        const delayInMinutes = (nextRefreshTime.getTime() - now.getTime()) / 60000;
+        chrome.alarms.create('settingsRefresher', { delayInMinutes });
+        console.log(`🔄 [Refresher] Đã đặt lịch cập nhật tiếp theo vào lúc: ${nextRefreshTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
+    } else {
+        console.log("❌ [Refresher] Cấu hình không đúng, sẽ không đặt lịch.");
+    }
+  }
+
+  // --- LOGIC CHÍNH BẮT ĐẦU TỪ ĐÂY ---
   let settings = {};
   try {
     const response = await fetch(SETTINGS_URL, { cache: "no-store" });
     if (response.ok) {
-      settings = await response.json();
-      console.log("Đã tải cài đặt alarm từ server.", settings);
-
-      await chrome.storage.local.set({ alarmSettings: settings });
-      console.log("Đã lưu cài đặt vào storage."); // Thêm log để xác nhận
+        settings = await response.json();
+        console.log("Đã tải cài đặt alarm từ server.", settings);
+        await chrome.storage.local.set({ alarmSettings: settings });
     } else {
-      console.error("Lỗi HTTP khi tải cài đặt, sẽ không có alarm nào được đặt.");
-      return;
+        console.error("Lỗi HTTP khi tải cài đặt, sẽ không có alarm nào được đặt.");
+        return;
     }
   } catch (error) {
     console.error("Không thể tải cài đặt từ server, sẽ không có alarm nào được đặt:", error);
@@ -143,180 +370,39 @@ const setupDailyAlarm = async () => {
     return;
   }
 
-  // Xóa TẤT CẢ các alarm tác vụ cũ (trừ settingsRefresher) để đảm bảo sạch sẽ.
-  const allAlarms = await chrome.alarms.getAll();
-  for (const alarm of allAlarms) {
-      // QUAN TRỌNG: Không xóa alarm payment
-      // if (alarm.name === "autoRequestPayment") {
-      //     console.log("[Payment] Giữ nguyên alarm autoRequestPayment");
-      //     continue;
-      // }
-      
-      if (alarm.name.includes('_') && 
-          !alarm.name.startsWith('test_') && 
-          !alarm.name.startsWith('retry_')) {
+  // Xóa TẤT CẢ các alarm tác vụ cũ
+  const allCurrentAlarms = await chrome.alarms.getAll();
+  for (const alarm of allCurrentAlarms) {
+      const isTaskAlarm = !['settingsRefresher', 'cleanupZombieTabs'].includes(alarm.name) &&
+                          !alarm.name.startsWith('test_') &&
+                          !alarm.name.startsWith('retry_');
+      if (isTaskAlarm) {
           await chrome.alarms.clear(alarm.name);
       }
   }
-  console.log("Đã xoá các alarm tác vụ cũ.");
-  // chrome.alarms.get("autoRequestPayment", (alarm) => {
-  //       if (!alarm && savedPaymentAlarm) {
-  //           console.log("[Payment] Khôi phục alarm payment đã bị xóa");
-  //           chrome.alarms.create("autoRequestPayment", {
-  //               when: savedPaymentAlarm.scheduledTime
-  //           });
-  //       } else if (!alarm) {
-  //           console.log("[Payment] Tạo mới alarm payment");
-  //           scheduleNextPaymentRequest();
-  //       }
-  //   });
-  const now = new Date();
-  const GMT7_OFFSET_HOURS = 7;
+  console.log("🧹 Đã xoá các alarm tác vụ cũ.");
 
-// Hàm helper để tính toán và đặt lịch
-  // const scheduleAlarm = (name, config) => {
-  //   const MAX_RANDOM_DELAY_MS = 5 * 60 * 1000; // 5 phút, tính bằng mili giây
-  //   // Thêm một khoảng thời gian ngẫu nhiên từ 0 đến 300 giây (5 phút)
-  //   const randomDelayInSeconds = Math.floor(Math.random() * 301);
-
-  //   const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
-  //   const alarmTime = new Date();
-  //   alarmTime.setUTCHours(targetHourUTC, config.minute, 0, 0);
-
-  //   // --- LOGIC SỬA ĐỔI ---
-  //   // Chỉ dời sang ngày mai nếu thời gian hiện tại đã qua MỐC ALARM + 5 PHÚT.
-  //   // Ví dụ: Alarm đặt lúc 4:00, thì chỉ khi nào sau 4:05 mà nó mới chạy lại, nó mới bị dời.
-  //   if (now.getTime() > alarmTime.getTime() + MAX_RANDOM_DELAY_MS) {
-  //     alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
-  //   }
-  //   // Nếu không, alarmTime vẫn được giữ cho ngày hôm nay.
-
-  //   // Cộng thêm thời gian ngẫu nhiên vào thời gian báo thức
-  //   alarmTime.setSeconds(alarmTime.getSeconds() + randomDelayInSeconds);
-
-  //   // Tính toán delay cuối cùng
-  //   const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
-
-  //   // Nếu vì lý do nào đó mà delay vẫn âm (ví dụ: máy tính bị lag),
-  //   // ta sẽ cho nó chạy ngay lập tức thay vì bỏ lỡ.
-  //   const finalDelay = Math.max(0.1, delayInMinutes); // Chạy ngay sau 0.1 phút nếu bị âm
-
-  //   chrome.alarms.create(name, {
-  //     delayInMinutes: finalDelay,
-  //     periodInMinutes: config.periodInMinutes, // Thường sẽ là 1440 (24h)
-  //   });
-
-  //   // Cập nhật log để hiển thị cả giây cho chính xác
-  //   const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
-  //   console.log(`✅ Đã đặt lịch cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
-  // };
-const scheduleAlarm = (name, config) => {
-    // --- LOGIC MỚI ĐỂ XỬ LÝ CẢ LỊCH HÀNG NGÀY VÀ LỊCH THEO NGÀY CỐ ĐỊNH TRONG TUẦN ---
-    const now = new Date();
-    const GMT7_OFFSET_HOURS = 7;
-    const randomDelayInSeconds = Math.floor(Math.random() * 301); // Thêm độ trễ ngẫu nhiên 0-5 phút
-
-    // Tính toán giờ mục tiêu theo múi giờ UTC
-    const targetHourUTC = (config.hour - GMT7_OFFSET_HOURS + 24) % 24;
-
-    let alarmTime = new Date();
-    alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
-
-    // Kiểm tra xem đây có phải là lịch theo ngày trong tuần không
-    if (typeof config.dayOfWeek === 'number') {
-        // ---- Đây là logic mới cho lịch theo ngày trong tuần (ví dụ: paymentRequest_*) ----
-        const currentDayUTC = now.getUTCDay(); // Lấy ngày hiện tại theo UTC
-        let daysToAdd = (config.dayOfWeek - currentDayUTC + 7) % 7;
-
-        // Nếu ngày đặt lịch là hôm nay nhưng thời gian đã qua, thì đặt cho tuần tới
-        if (daysToAdd === 0 && alarmTime.getTime() < now.getTime()) {
-            daysToAdd = 7;
-        }
-        
-        alarmTime.setUTCDate(now.getUTCDate() + daysToAdd);
-        alarmTime.setUTCHours(targetHourUTC, config.minute, randomDelayInSeconds, 0);
-
-        // Đối với lịch hàng tuần, chúng ta không đặt "periodInMinutes"
-        // vì hàm setupDailyAlarm sẽ tự động đặt lại lịch cho tuần tiếp theo.
-        chrome.alarms.create(name, {
-            when: alarmTime.getTime()
-        });
-        
-        console.log(`✅ Đã đặt lịch (theo ngày) cho '${name}' vào lúc: ${alarmTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
-
-    } else {
-        // ---- Đây là logic cũ cho các lịch hàng ngày (ví dụ: syncOrder_*) ----
-        if (now.getTime() > alarmTime.getTime()) {
-            alarmTime.setUTCDate(alarmTime.getUTCDate() + 1);
-        }
-        
-        const delayInMinutes = (alarmTime.getTime() - now.getTime()) / (1000 * 60);
-        const finalDelay = Math.max(0.1, delayInMinutes);
-
-        chrome.alarms.create(name, {
-            delayInMinutes: finalDelay,
-            periodInMinutes: config.periodInMinutes || 1440, // Mặc định là 24 giờ
-        });
-        
-        const scheduledFireTime = new Date(Date.now() + finalDelay * 60 * 1000);
-        console.log(`✅ Đã đặt lịch (hàng ngày) cho '${name}' vào khoảng ${scheduledFireTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false })} (GMT+7)`);
-    }
-};
-  // --- LOGIC MỚI: Duyệt qua danh sách và đặt lịch ---
-  console.log("--- Bắt đầu kiểm tra và đặt lịch cho các alarm ---");
-  for (const alarmName of ALL_POSSIBLE_ALARMS) {
-    // Kiểm tra xem trong file JSON tải về có định nghĩa cho alarm này không và không phải là null
-    if (settings[alarmName]) {
-      // Nếu có, đặt lịch cho nó
-      scheduleAlarm(alarmName, settings[alarmName]);
-    } else {
-      // Nếu không, chỉ log ra để biết là nó bị bỏ qua (có thể bỏ comment nếu cần debug)
-      console.log(`❌ Bỏ qua alarm '${alarmName}' vì không được định nghĩa trên server.`);
-    }
+  console.log("--- Bắt đầu đặt lịch cho các alarm mới ---");
+  for (const alarmName in settings) {
+      if (Object.prototype.hasOwnProperty.call(settings, alarmName) && alarmName !== 'settingsRefresher') {
+          const config = settings[alarmName];
+          if (config && typeof config.hour === 'number') {
+              // Bây giờ lời gọi này là hợp lệ vì hàm đã được định nghĩa ở trên
+              scheduleAlarm(alarmName, config);
+          }
+      }
   }
   console.log("--- Hoàn tất quá trình đặt lịch ---");
 
-  // Tạo hoặc cập nhật alarm 'settingsRefresher'
-  await chrome.alarms.clear('settingsRefresher');
+  // Thiết lập alarm để làm mới cài đặt
+  await setupRefresherAlarm(settings.settingsRefresher);
 
-  const refresherConfig = settings.settingsRefresher;
-  if (refresherConfig && typeof refresherConfig.runAtMinute === 'number' && typeof refresherConfig.periodInHours === 'number') {
+  // Tạo alarm dọn dẹp định kỳ
+  chrome.alarms.create('cleanupZombieTabs', { periodInMinutes: 180 });
+  console.log("✅ Đã đặt lịch dọn dẹp tab zombie mỗi 3 tiếng.");
 
-    // Lấy các giá trị từ config, hoặc đặt giá trị mặc định an toàn
-    const runAtMinute = refresherConfig.runAtMinute;
-    const periodInHours = refresherConfig.periodInHours;
-    console.log(`[Refresher] Đặt lịch chạy vào phút thứ ${runAtMinute}, lặp lại mỗi ${periodInHours} giờ.`);
-
-    let nextRefreshTime = new Date(); // Bắt đầu tính từ bây giờ
-
-    // Đặt mốc phút và giây mong muốn
-    nextRefreshTime.setMinutes(runAtMinute, 0, 0);
-
-    // Vòng lặp để đảm bảo thời gian tính được luôn ở tương lai
-    // Nếu thời gian tính ra đã ở trong quá khứ, ta cứ cộng thêm `periodInHours` cho đến khi nó ở tương lai thì thôi.
-    while (nextRefreshTime.getTime() <= now.getTime()) {
-      nextRefreshTime.setHours(nextRefreshTime.getHours() + periodInHours);
-    }
-
-    // Tính toán độ trễ còn lại (tính bằng phút)
-    const delayInMinutes = (nextRefreshTime.getTime() - now.getTime()) / (1000 * 60);
-
-    // Tạo alarm một lần duy nhất. Khi nó chạy, nó sẽ tự tính lại mốc tiếp theo.
-    chrome.alarms.create('settingsRefresher', {
-      delayInMinutes: delayInMinutes
-    });
-
-    console.log(`✅ [Refresher] Đã đặt lịch cập nhật tiếp theo vào lúc: ${nextRefreshTime.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`);
-
-  } else {
-    console.log("❌ [Refresher] Cấu hình không đúng định dạng, sẽ không đặt lịch. Cần có 'runAtMinute' và 'periodInHours'.");
-  }
-
-  chrome.alarms.getAll((alarms) => {
-    console.log("Danh sách tất cả alarm hiện tại:", alarms);
-  });
+  chrome.alarms.getAll(alarms => console.log("Danh sách tất cả alarm hiện tại:", alarms));
 };
-
 async function fetchAndProcessDesignTasks() {
   // Dùng lại hàm sendLogToServer có sẵn của mày
   const logPrefix = '[SendMessageAuto]';
@@ -447,13 +533,7 @@ async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
     console.error(`[BG] Lỗi nghiêm trọng khi gọi API updateTaskStatus:`, error);
   }
 }
-/**
- * Tính toán và đặt báo thức cho lần rút tiền tiếp theo.
- * Lịch rút: 12:30 các ngày T2, T4, T6 và 8:00 ngày Chủ Nhật.
- */
 
-// async function scheduleNextPaymentRequest() {
-//     try {
 //         // Xóa alarm cũ nếu có
 //         await chrome.alarms.clear("autoRequestPayment");
         
@@ -519,12 +599,63 @@ async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
 // Xử lý alarm khi kích hoạt
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   // Nếu là alarm tự cập nhật setting, thì chạy setup và dừng lại ngay
+
+  // Check login cho các alarm quan trọng
+  const needsLoginCheck = [
+    'syncOrder_', 'test_syncOrder',
+    'updateTracking_', 'test_updateTracking', 
+    'accountHealth_', 'test_accountHealth',
+    'downloadAdsReports_', 'test_downloadAdsReports',
+    'sendMessageAuto_', 'test_sendMessageAuto',
+    'paymentRequest_'
+  ];
+
+  const shouldCheckLogin = needsLoginCheck.some(prefix => 
+    alarm.name.startsWith(prefix) || alarm.name === prefix
+  );
+
+  if (shouldCheckLogin) {
+    console.log(`[Alarm] Checking login status for ${alarm.name}...`);
+    const isLoggedIn = await checkAmazonLoginStatus();
+    
+    if (!isLoggedIn) {
+      const skipMessage = `Skipped ${alarm.name}: User not logged in to Amazon`;
+      console.log(skipMessage);
+      sendLogToServer(skipMessage);
+      
+      // Report skip status cho từng feature
+      const match = alarm.name.match(/^(?:test_)?([a-zA-Z]+)/);
+      const featureName = match ? match[1] : alarm.name.split('_')[0];
+      await reportStatusToServer(featureName, 'SKIPPED', 'Session expired or not logged in');
+      
+      // Dọn dẹp tất cả tab Amazon đang mở để tránh rác
+      const amazonTabs = await chrome.tabs.query({ 
+        url: "*://sellercentral.amazon.com/*" 
+      });
+      for (const tab of amazonTabs) {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+      }
+      
+      return; // Dừng xử lý alarm
+    }
+  }
   if (alarm.name === 'settingsRefresher') {
     console.log(`🔥🔥🔥 KÍCH HOẠT ALARM TỰ CẬP NHẬT SETTINGS 🔥🔥🔥`);
     sendLogToServer(`Alarm triggered: ${alarm.name}`);
     await setupDailyAlarm(); // Chạy lại toàn bộ quá trình setup
     return; // Rất quan trọng: Dừng lại ở đây
   }
+  // Dọn dẹp tab zombie định kỳ (chạy mỗi 30 phút)
+  if (alarm.name === 'cleanupZombieTabs') {
+    sendLogToServer("[Cleanup] Running zombie tab cleanup...");
+    const amazonLoginTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/ap/signin*" });
+    for (const tab of amazonLoginTabs) {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+        console.log(`[Cleanup] Removed zombie login tab: ${tab.id}`);
+    }
+    return;
+}
+  // Trong alarm listener
 
   if (alarm.name === 'ipUpdateCheck') {
     // Bước 1: Đọc cài đặt từ storage
@@ -594,75 +725,83 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name.startsWith("syncOrder_") || alarm.name === "test_syncOrder") {
     const featureName = 'syncOrder';
     await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
-    console.log("Đã tới giờ tự động sync order...");
-
-    try {
-      // Bước 1: Dùng `await` để chờ hàm openOrderPage() hoàn thành và lấy về đối tượng tab
-      const tab = await openOrderPage();
-
-      if (tab && tab.id) {
-        console.log(`[BG] Đã mở/focus tab Orders (ID: ${tab.id}). Bắt đầu quá trình reload.`);
-        
-        // Bước 2: Tạo một trình lắng nghe để bắt sự kiện sau khi reload xong
-        const reloadListener = (tabId, changeInfo) => {
-          // Chỉ hành động khi đúng tab đó và tab đã tải xong hoàn toàn
-          if (tabId === tab.id && changeInfo.status === 'complete') {
-            console.log(`[BG] Tab ${tabId} đã reload xong. Chờ 3 giây trước khi gửi lệnh sync.`);
-            
-            // Gỡ bỏ listener này để tránh bị gọi lại
+    
+    await executeWithTabCleanup(featureName, 
+      // Tab creator
+      async () => {
+        return await openOrderPage();
+      },
+      // Tab handler
+      async (tab) => {
+        // Tạo listener và xử lý
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
             chrome.tabs.onUpdated.removeListener(reloadListener);
-
-            // Chờ một vài giây để đảm bảo tất cả script trên trang đã chạy
-            setTimeout(() => {
-              console.log("[BG] Gửi lệnh 'autoSyncOrders' đến content script.");
-              // Bước 4: Gửi lệnh sync tới content script
-              sendMessage(tab.id, "autoSyncOrders", {
-                autoMark: true,
-                useSelectAllSync: true
+            reject(new Error('Timeout waiting for page load'));
+          }, 30000);
+          
+          const reloadListener = (tabId, changeInfo) => {
+            if (tabId === tab.id && changeInfo.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(reloadListener);
+              clearTimeout(timeout);
+              
+              // Check lại URL một lần nữa
+              chrome.tabs.get(tab.id, (updatedTab) => {
+                if (updatedTab.url.includes('/ap/signin')) {
+                  reject(new Error('Redirected to login page'));
+                } else {
+                  setTimeout(() => {
+                    sendMessage(tab.id, "autoSyncOrders", {
+                      autoMark: true,
+                      useSelectAllSync: true
+                    });
+                    resolve();
+                  }, 3000);
+                }
               });
-            }, 3000); // Đợi 3 giây
-          }
-        };
-
-        // Đăng ký listener TRƯỚC KHI reload
-        chrome.tabs.onUpdated.addListener(reloadListener);
-
-        // Bước 3: Thực hiện reload tab
-        chrome.tabs.reload(tab.id, () => {
-          if (chrome.runtime.lastError) {
-            console.error(`[BG] Lỗi khi reload tab: ${chrome.runtime.lastError.message}`);
-            // Gỡ listener nếu reload thất bại
-            chrome.tabs.onUpdated.removeListener(reloadListener);
-          }
+            }
+          };
+          
+          chrome.tabs.onUpdated.addListener(reloadListener);
+          chrome.tabs.reload(tab.id);
         });
-
-      } else {
-        console.error("Không thể mở hoặc tìm thấy tab order page để reload.");
+        
+        await reportStatusToServer(featureName, 'SUCCESS', 'Sync completed');
       }
-    } catch (error) {
-      sendLogToServer(`ERROR in dailySyncOrder: ${error.message}`); // Log khi có lỗi
-      await reportStatusToServer(featureName, 'FAILED', error.message);
-      console.error("[BG] Đã xảy ra lỗi trong quá trình tự động sync order:", error);
-    }
+    );
   }
   else if (alarm.name.startsWith("updateTracking_") || alarm.name === "test_updateTracking") {
     const featureName = 'updateTracking';
     await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
     console.log("Đang chạy tự động update tracking theo lịch lúc 9h10 sáng...");
     // Mở trang order details
-    openOrderDetailPage(); // Reverted to correct function call for update tracking
-    
-    // Chờ 5 giây để trang load xong
-    setTimeout(() => {
-      // Gửi message đến content script để thực hiện auto update tracking
-      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          sendMessage(tabs[0].id, "autoUpdateTracking", {
-            autoMark: true  // Đánh dấu auto update tracking
-          });
+    await executeWithTabCleanup(
+      featureName,
+      // Hàm tạo tab: Mở trang "Manage Orders" được lọc sẵn cho việc update tracking
+      () => openOrderDetailPage(), 
+      // Hàm xử lý tab
+      async (tab) => {
+        // Chờ tab load xong hoàn toàn
+        const loadedTab = await waitForTabComplete(tab.id, 30000);
+
+        // Kiểm tra lại lần nữa để chắc chắn không bị điều hướng về trang đăng nhập
+        if (loadedTab.url.includes('/ap/signin')) {
+          throw new Error('Bị chuyển về trang đăng nhập khi đang thực hiện update tracking.');
         }
-      });
-    }, 5000);
+
+        // Chờ một chút để giao diện ổn định
+        await sleep(3000); 
+        
+        // Gửi lệnh cho content script để bắt đầu quá trình tự động
+        sendMessage(tab.id, "autoUpdateTracking", {
+          autoMark: true
+        });
+
+        // Lưu ý: Báo cáo SUCCESS nên được gửi từ content script khi thực sự hoàn thành.
+        // Ở đây chúng ta chỉ ghi nhận là đã khởi tạo tác vụ thành công.
+        await reportStatusToServer(featureName, 'SUCCESS', 'Tác vụ Update Tracking đã được khởi tạo.');
+      }
+    );
   }
   else if (alarm.name.startsWith("accountHealth_") || alarm.name === "test_accountHealth") {
     const featureName = 'accountHealth';
@@ -671,280 +810,472 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     console.log("Đang chạy tự động kiểm tra account health theo lịch.");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình kiểm tra tự động theo lịch.`);
 
-    (async () => {
-      try {
-        // Dùng await để chờ cho đến khi tab được mở/focus xong
-        const tab = await openPerformanceDashboardPage();
+    // Áp dụng hàm executeWithTabCleanup để quản lý tab và xử lý lỗi
+    await executeWithTabCleanup(
+      featureName,
+      // Hàm tạo tab: Mở trang performance dashboard
+      () => openPerformanceDashboardPage(),
+      // Hàm xử lý tab sau khi được tạo
+      async (tab) => {
+        // Chờ cho tab tải xong hoàn toàn với timeout 30 giây
+        const loadedTab = await waitForTabComplete(tab.id, 30000);
 
-        if (!tab || !tab.id) {
-          console.error("[BG] Không thể mở hoặc tạo tab Account Health.");
-          sendLogToServer(`${logPrefix} LỖI: Không thể mở hoặc tạo tab Account Health.`);
-          return;
+        // Kiểm tra lại để chắc chắn không bị điều hướng về trang đăng nhập
+        if (loadedTab.url.includes('/ap/signin')) {
+          throw new Error('Bị chuyển về trang đăng nhập khi đang thực hiện kiểm tra account health.');
         }
 
-        console.log(`[BG] Đã mở tab Account Health (ID: ${tab.id}). Chờ tab load xong...`);
-        sendLogToServer(`${logPrefix} Đã mở tab (ID: ${tab.id}). Đang chờ tab load xong...`);
+        // Chờ một chút để giao diện ổn định
+        await sleep(3000);
 
-        // Tạo một listener để chỉ lắng nghe sự kiện của đúng tab này
-        const listener = (tabId, changeInfo, updatedTab) => {
-          // Chỉ hành động khi đúng tab và tab đã tải xong hoàn toàn
-          if (tabId === tab.id && changeInfo.status === 'complete') {
-            console.log(`[BG] Tab ${tab.id} đã load xong. Gửi message 'autoGetAccountHealth'.`);
-            sendLogToServer(`${logPrefix} Tab (ID: ${tab.id}) đã load xong. Gửi lệnh 'autoGetAccountHealth'.`);
+        // Gửi lệnh cho content script để bắt đầu quá trình tự động
+        console.log(`[BG] Tab ${tab.id} đã load xong. Gửi message 'autoGetAccountHealth'.`);
+        sendLogToServer(`${logPrefix} Tab (ID: ${tab.id}) đã load xong. Gửi lệnh 'autoGetAccountHealth'.`);
+        sendMessage(tab.id, "autoGetAccountHealth");
 
-            // Gửi message đến đúng tab ID đã có
-            sendMessage(tab.id, "autoGetAccountHealth");
-
-            // Gỡ bỏ listener này đi để nó không chạy lại nữa
-            chrome.tabs.onUpdated.removeListener(listener);
-          }
-        };
-
-        // Đăng ký listener
-        chrome.tabs.onUpdated.addListener(listener);
-
-      } catch (error) {
-        console.error("[BG] Lỗi trong quá trình tự động lấy account health:", error);
-        sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
-        await reportStatusToServer(featureName, 'FAILED', error.message);
+        // Lưu ý: Việc báo cáo SUCCESS và đóng tab sẽ được xử lý khi background.js
+        // nhận được message 'accountHealthProcessFinished' từ content_script.js.
+        // Hàm executeWithTabCleanup sẽ tự động đóng tab trong khối `finally`.
       }
-    })();
+    );
   }
+  // else if (alarm.name.startsWith("accountHealth_") || alarm.name === "test_accountHealth") {
+  //   const featureName = 'accountHealth';
+  //   const logPrefix = '[AccHealth]';
+  //   await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
+  //   console.log("Đang chạy tự động kiểm tra account health theo lịch.");
+  //   sendLogToServer(`${logPrefix} Bắt đầu quy trình kiểm tra tự động theo lịch.`);
+    
+  //   (async () => {
+  //     try {
+  //       // Dùng await để chờ cho đến khi tab được mở/focus xong
+  //       const tab = await openPerformanceDashboardPage();
 
+  //       if (!tab || !tab.id) {
+  //         console.error("[BG] Không thể mở hoặc tạo tab Account Health.");
+  //         sendLogToServer(`${logPrefix} LỖI: Không thể mở hoặc tạo tab Account Health.`);
+  //         return;
+  //       }
+
+  //       console.log(`[BG] Đã mở tab Account Health (ID: ${tab.id}). Chờ tab load xong...`);
+  //       sendLogToServer(`${logPrefix} Đã mở tab (ID: ${tab.id}). Đang chờ tab load xong...`);
+
+  //       // Tạo một listener để chỉ lắng nghe sự kiện của đúng tab này
+  //       const listener = (tabId, changeInfo, updatedTab) => {
+  //         // Chỉ hành động khi đúng tab và tab đã tải xong hoàn toàn
+  //         if (tabId === tab.id && changeInfo.status === 'complete') {
+  //           console.log(`[BG] Tab ${tab.id} đã load xong. Gửi message 'autoGetAccountHealth'.`);
+  //           sendLogToServer(`${logPrefix} Tab (ID: ${tab.id}) đã load xong. Gửi lệnh 'autoGetAccountHealth'.`);
+
+  //           // Gửi message đến đúng tab ID đã có
+  //           sendMessage(tab.id, "autoGetAccountHealth");
+
+  //           // Gỡ bỏ listener này đi để nó không chạy lại nữa
+  //           chrome.tabs.onUpdated.removeListener(listener);
+  //         }
+  //       };
+
+  //       // Đăng ký listener
+  //       chrome.tabs.onUpdated.addListener(listener);
+
+  //     } catch (error) {
+  //       console.error("[BG] Lỗi trong quá trình tự động lấy account health:", error);
+  //       sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+  //       await reportStatusToServer(featureName, 'FAILED', error.message);
+  //     }
+  //   })();
+  // }
   else if (alarm.name.startsWith("downloadAdsReports_") || alarm.name === "test_downloadAdsReports") {
     const featureName = 'downloadAdsReports';
-    const logPrefix = '[AdsReport]'; // Tạo prefix cho dễ lọc log
+    const logPrefix = '[AdsReport]';
     await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
     console.log("Đang chạy tự động tải và tải lên báo cáo quảng cáo theo lịch...");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động theo lịch.`);
 
-  // 1. Kiểm tra khóa
-  if (isDownloadingAdsReport) {
-    const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
-    console.log(skipMessage);
-    sendLogToServer(`${logPrefix} ${skipMessage}`);
-    await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
-    return;
-  }
-  // 2. Đặt khóa và bắt đầu
-  isDownloadingAdsReport = true;
-  console.log("Đã khóa isDownloadingAdsReport.");
+    // 1. Kiểm tra khóa
+    if (isDownloadingAdsReport) {
+        const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
+        console.log(skipMessage);
+        sendLogToServer(`${logPrefix} ${skipMessage}`);
+        await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+        return;
+    }
+    
+    // 2. Đặt khóa và bắt đầu
+    isDownloadingAdsReport = true;
+    console.log("Đã khóa isDownloadingAdsReport.");
 
-  (async () => {
-      try {
-          console.log("Bắt đầu quá trình tải và tải lên báo cáo quảng cáo tự động...");
+    // Sử dụng hàm quản lý tab và lỗi tập trung
+    await executeWithTabCleanup(
+      featureName,
+      // Hàm tạo tab: Lấy merchantId và tạo tab báo cáo
+      async () => {
+        const merchantId = await getMBApiKey();
+        if (!merchantId) {
+            throw new Error("Không thể lấy được merchantId để chạy tác vụ tự động.");
+        }
+        sendLogToServer(`${logPrefix} Đã lấy được merchantId. Bắt đầu mở tab báo cáo.`);
+        const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
+        return chrome.tabs.create({ url: reportsUrl, active: false });
+      },
+      // Hàm xử lý tab sau khi được tạo và tải xong
+      async (tab) => {
+        const reportTabId = tab.id;
+        sendLogToServer(`${logPrefix} Đã tạo tab xử lý (ID: ${reportTabId}). Đang chờ load...`);
 
-          // Lấy API key (merchantId) và URL của máy chủ
-          const merchantId = await getMBApiKey();
-          if (!merchantId) {
-              throw new Error("Không thể lấy được merchantId để chạy tác vụ tự động.");
-          }
-          const UPLOAD_HANDLER_URL = "http://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
-          console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
-          sendLogToServer(`${logPrefix} Đã lấy được merchantId. Bắt đầu mở tab báo cáo.`);
+        await waitForTabComplete(reportTabId, 30000); // Chờ tab load xong
+        
+        sendLogToServer(`${logPrefix} Tab (ID: ${reportTabId}) đã load xong. Đang trích xuất link báo cáo.`);
+        await sleep(5000); // Đợi trang render
 
-          const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
-
-          // Tạo tab mới (không active) để xử lý trong nền
-          chrome.tabs.create({ url: reportsUrl, active: false }, async (newTab) => {
-              if (!newTab || !newTab.id) {
-                  throw new Error("Không thể tạo tab mới cho báo cáo quảng cáo.");
-              }
-
-              const reportTabId = newTab.id;
-              sendLogToServer(`${logPrefix} Đã tạo tab xử lý (ID: ${reportTabId}). Đang chờ load...`);
-
-              await new Promise(resolve => {
-                  let listener = (tabId, changeInfo) => {
-                      if (tabId === reportTabId && changeInfo.status === 'complete') {
-                          chrome.tabs.onUpdated.removeListener(listener);
-                          resolve();
-                      }
-                  };
-                  chrome.tabs.onUpdated.addListener(listener);
-                  setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 30000);
-              });
-              sendLogToServer(`${logPrefix} Tab (ID: ${reportTabId}) đã load xong. Đang trích xuất link báo cáo.`);
-
-              await sleep(5000); // Đợi trang render
-
-              // Lấy thông tin URL và tên báo cáo
-            chrome.scripting.executeScript({
-              target: { tabId: reportTabId },
-              function: () => {
+        // Lấy thông tin URL và tên báo cáo từ content script
+        const injectionResults = await chrome.scripting.executeScript({
+            target: { tabId: reportTabId },
+            function: () => {
                 const scheduledReports = [];
-                // Lấy tất cả các dòng trong bảng báo cáo
-                const allRows = document.querySelectorAll('.ag-row');
+                document.querySelectorAll('.ag-row').forEach(row => {
+                    const statusElements = row.querySelectorAll('div[col-id="status"] p');
+                    let isScheduled = false, isDaily = false;
+                    statusElements.forEach(p => {
+                        const statusText = p.textContent.trim();
+                        if (statusText === 'Scheduled') isScheduled = true;
+                        if (statusText === 'Daily') isDaily = true;
+                    });
 
-                allRows.forEach(row => {
-                  // Trong mỗi dòng, tìm thẻ p chứa text của status
-                  const statusElements = row.querySelectorAll('div[col-id="status"] p');
-                  let isScheduled = false;
-                  let isDaily = false;
-
-                  statusElements.forEach(p => {
-                    const statusText = p.textContent.trim();
-                    if (statusText === 'Scheduled') {
-                      isScheduled = true;
+                    if (isScheduled && isDaily) {
+                        const downloadLinkElement = row.querySelector('a[href*="/download-report/"]');
+                        const reportNameElement = row.querySelector('a.sc-fqkvVR, a.sc-jdAMXn');
+                        if (downloadLinkElement && reportNameElement) {
+                            scheduledReports.push({
+                                url: downloadLinkElement.href,
+                                reportName: reportNameElement.textContent.trim()
+                            });
+                        }
                     }
-                    if (statusText === 'Daily') {
-                      isDaily = true;
-                    }
-                  });
-
-                  // Nếu dòng này có cả "Scheduled" và "Daily"
-                  if (isScheduled && isDaily) {
-                    // Thì mới tìm đến link download và report name trong dòng đó
-                    const downloadLinkElement = row.querySelector('a[href*="/download-report/"]');
-                    const reportNameElement = row.querySelector('a.sc-fqkvVR, a.sc-jdAMXn');
-
-                    if (downloadLinkElement && reportNameElement) {
-                      scheduledReports.push({
-                        url: downloadLinkElement.href,
-                        reportName: reportNameElement.textContent.trim()
-                      });
-                    }
-                  }
                 });
-
                 return scheduledReports;
-              }
-            }, async (injectionResults) => {
-                try{
-                  // Đóng tab ngay sau khi có dữ liệu
-                  try { await chrome.tabs.remove(reportTabId); } catch (e) { console.error("Lỗi khi đóng tab báo cáo:", e); }
+            }
+        });
 
-                  if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
-                      console.error("Tự động: Không thể tìm thấy báo cáo để tải lên.");
-                      sendLogToServer(`${logPrefix} LỖI: Không thể tìm thấy link báo cáo trên trang.`);
-                      throw new Error("Không tìm thấy link báo cáo trên trang."); // Sửa ở đây
-                  }
+        if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
+            throw new Error("Không thể tìm thấy báo cáo để tải lên từ trang.");
+        }
 
-                  const reportsToUpload = injectionResults[0].result;
-                  if (reportsToUpload.length === 0) {
-                    const skipMessage = "Không có báo cáo mới nào để xử lý.";
-                    console.log(`Tự động: ${skipMessage}`);
-                    sendLogToServer(`${logPrefix} ${skipMessage}`);
-                    // Gửi trạng thái SKIPPED về server
-                    await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
-                    // Thoát khỏi hàm ngay tại đây, không chạy code bên dưới nữa
-                    return;
-                  }
-                  sendLogToServer(`${logPrefix} Tìm thấy ${reportsToUpload.length} báo cáo. Bắt đầu tải và upload...`);
-                  console.log(`Tự động: Tìm thấy ${reportsToUpload.length} báo cáo để xử lý.`);
-                  let successCount = 0;
+        const reportsToUpload = injectionResults[0].result;
+        if (reportsToUpload.length === 0) {
+            const skipMessage = "Không có báo cáo mới nào để xử lý.";
+            console.log(`Tự động: ${skipMessage}`);
+            sendLogToServer(`${logPrefix} ${skipMessage}`);
+            await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+            return; // Kết thúc sớm nếu không có báo cáo
+        }
 
-                  // Tải lên từng báo cáo
-                  for (const { url, reportName } of reportsToUpload) {
-                      try {
-                          const response = await fetch(url);
-                          if (!response.ok) throw new Error(`Lỗi tải báo cáo ${reportName}: ${response.statusText}`);
-                          console.log("Content-Type:", response.headers.get('Content-Type'));
-                          console.log("Content-Disposition:", response.headers.get('Content-Disposition'));
-                          let finalFilename = '';
+        sendLogToServer(`${logPrefix} Tìm thấy ${reportsToUpload.length} báo cáo. Bắt đầu tải và upload...`);
+        console.log(`Tự động: Tìm thấy ${reportsToUpload.length} báo cáo để xử lý.`);
+        
+        let successCount = 0;
+        const merchantId = await getMBApiKey();
+        const UPLOAD_HANDLER_URL = "http://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
 
-                          // --- BEGIN: LOGIC LẤY TÊN FILE ĐÃ SỬA ---
+        // Vòng lặp tải và upload từng báo cáo
+        for (const { url, reportName } of reportsToUpload) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Lỗi tải báo cáo ${reportName}: ${response.statusText}`);
 
-                          // ƯU TIÊN 1: Lấy từ header 'Content-Disposition'
-                          const disposition = response.headers.get('Content-Disposition');
-                          if (disposition && disposition.includes('filename=')) {
-                            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-                            const matches = filenameRegex.exec(disposition);
-                            if (matches != null && matches[1]) {
-                              finalFilename = matches[1].replace(/['"]/g, '');
-                              sendLogToServer(`${logPrefix} Lấy tên file từ Content-Disposition: '${finalFilename}'`);
-                            }
-                          }
+                // Logic lấy tên file đã được cải tiến
+                let finalFilename = '';
+                const disposition = response.headers.get('Content-Disposition');
+                if (disposition && disposition.includes('filename=')) {
+                    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+                    if (matches != null && matches[1]) {
+                        finalFilename = matches[1].replace(/['"]/g, '');
+                        sendLogToServer(`${logPrefix} Lấy tên file từ Content-Disposition: '${finalFilename}'`);
+                    }
+                }
+                if (!finalFilename && response.url) {
+                    try {
+                        const finalUrl = new URL(response.url);
+                        const pathParts = finalUrl.pathname.split('/');
+                        const filenameFromUrl = pathParts[pathParts.length - 1];
+                        if (filenameFromUrl && (filenameFromUrl.toLowerCase().endsWith('.xlsx') || filenameFromUrl.toLowerCase().endsWith('.csv'))) {
+                            finalFilename = filenameFromUrl;
+                            sendLogToServer(`${logPrefix} Lấy tên file từ URL cuối cùng: '${finalFilename}'`);
+                        }
+                    } catch (e) { /* Bỏ qua nếu URL không hợp lệ */ }
+                }
+                if (!finalFilename) {
+                    finalFilename = reportName;
+                    sendLogToServer(`${logPrefix} Không có header/URL, dùng tên file từ trang web: '${finalFilename}'`);
+                }
+                if (!finalFilename.toLowerCase().endsWith('.csv') && !finalFilename.toLowerCase().endsWith('.xlsx')) {
+                    finalFilename += '.csv';
+                }
 
-                          // ƯU TIÊN 2: Nếu không có, lấy từ URL cuối cùng (sau khi redirect)
-                          if (!finalFilename && response.url) {
-                            try {
-                              const finalUrl = new URL(response.url);
-                              // Tách lấy phần path, ví dụ: /2025/.../report.xlsx
-                              const pathParts = finalUrl.pathname.split('/');
-                              // Lấy phần cuối cùng
-                              const filenameFromUrl = pathParts[pathParts.length - 1];
+                const fileBlob = await response.blob();
+                const formData = new FormData();
+                formData.append('report_file', fileBlob, finalFilename);
+                formData.append('merchant_id', merchantId);
 
-                              // Kiểm tra xem nó có phải là một tên file hợp lệ không
-                              if (filenameFromUrl && (filenameFromUrl.toLowerCase().endsWith('.xlsx') || filenameFromUrl.toLowerCase().endsWith('.csv'))) {
-                                finalFilename = filenameFromUrl;
-                                sendLogToServer(`${logPrefix} Lấy tên file từ URL cuối cùng: '${finalFilename}'`);
-                              }
-                            } catch(e) { /* Bỏ qua nếu URL không hợp lệ */ }
-                          }
+                const uploadResponse = await fetch(UPLOAD_HANDLER_URL, { method: 'POST', body: formData });
+                const uploadResult = await uploadResponse.json();
+                if (uploadResult.status !== 'success') {
+                    throw new Error(`Lỗi từ máy chủ cho tệp ${reportName}: ${uploadResult.message}`);
+                }
+                successCount++;
+                sendLogToServer(`${logPrefix} Đã upload thành công file: ${reportName}`);
+            } catch (error) {
+                console.error(`Tự động: Lỗi xử lý báo cáo ${reportName}:`, error);
+                sendLogToServer(`${logPrefix} LỖI khi xử lý file '${reportName}': ${error.message}`);
+            }
+            await sleep(1000); // Tránh request dồn dập
+        }
 
-                          // ƯU TIÊN 3: Nếu vẫn không có, dùng tên lấy từ trang web
-                          if (!finalFilename) {
-                            finalFilename = reportName;
-                            sendLogToServer(`${logPrefix} Không có header/URL, dùng tên file từ trang web: '${finalFilename}'`);
-                          }
-
-                          // --- END: LOGIC LẤY TÊN FILE ĐÃ SỬA ---
-
-                          // Logic kiểm tra Content-Type và dự phòng giữ nguyên
-                          const contentType = response.headers.get('Content-Type');
-                          if (contentType) {
-                            if (contentType.includes('text/csv') && !finalFilename.toLowerCase().endsWith('.csv')) {
-                              finalFilename += '.csv';
-                            } else if (contentType.includes('spreadsheetml') && !finalFilename.toLowerCase().endsWith('.xlsx')) {
-                              finalFilename += '.xlsx';
-                            }
-                          }
-                          
-                          // Nếu tên tệp vẫn không có đuôi, thêm đuôi mặc định là .csv
-                          console.log("Kiểm tra cả CSV và XLSX");
-                          if (!finalFilename.toLowerCase().endsWith('.csv') && !finalFilename.toLowerCase().endsWith('.xlsx')) {
-                              sendLogToServer(`${logPrefix} CẢNH BÁO: Tên file từ Amazon ('${finalFilename}') không có đuôi .csv/.xlsx. Tự động thêm đuôi .csv.`);
-                              finalFilename += '.csv';
-                          }
-                          const fileBlob = await response.blob();
-                          
-                          const formData = new FormData();
-                          // **QUAN TRỌNG: Sử dụng `reportName` để giữ tên tệp gốc**
-                          formData.append('report_file', fileBlob, finalFilename);
-                          formData.append('merchant_id', merchantId);
-
-                          const uploadResponse = await fetch(UPLOAD_HANDLER_URL, { method: 'POST', body: formData });
-                          const uploadResult = await uploadResponse.json();
-
-                          if (uploadResult.status !== 'success') throw new Error(`Lỗi từ máy chủ cho tệp ${reportName}: ${uploadResult.message}`);
-                          
-                          successCount++;
-                          console.log(`Tự động: Tải lên thành công: ${reportName}`);
-                          sendLogToServer(`${logPrefix} Đã upload thành công file: ${reportName}`);
-                      } catch (error) {
-                          console.error(`Tự động: Lỗi xử lý báo cáo ${reportName}:`, error);
-                          sendLogToServer(`${logPrefix} LỖI khi xử lý file '${reportName}': ${error.message}`);
-                      }
-                      await sleep(1000); // Tránh request dồn dập
-                  }
-                  
-                  console.log(`Tự động: Hoàn tất. Đã tải lên thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
-                  sendLogToServer(`${logPrefix} Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
-                  const finalMessage = `Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`;
-                  await reportStatusToServer(featureName, 'SUCCESS', finalMessage);
-                  saveLog("adsReportsLog", { type: "Auto Ads Reports Upload", date: new Date().toISOString(), successCount: successCount, totalFound: reportsToUpload.length });
-              } catch (error) {
-                console.error("Lỗi nghiêm trọng trong quá trình tự động tải báo cáo:", error);
-                sendLogToServer(`${logPrefix} LỖI NGHIÊM TRỌNG: ${error.message}`);
-                await reportStatusToServer(featureName, 'FAILED', error.message);
-              } finally {
-                // 3. Mở khóa
-                isDownloadingAdsReport = false;
-                console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
-                sendLogToServer(`${logPrefix} Đã bỏ khóa. Kết thúc quy trình.`);
-              }
-              });
-          });
-      } catch (error) {
-        console.error("Lỗi nghiêm trọng xảy ra ở bước setup:", error);
-        sendLogToServer(`${logPrefix} LỖI NGHIÊM TRỌNG (SETUP): ${error.message}`);
-        await reportStatusToServer(featureName, 'FAILED', error.message);
-        // Đảm bảo mở khóa nếu có lỗi sớm
-        isDownloadingAdsReport = false;
+        const finalMessage = `Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`;
+        await reportStatusToServer(featureName, 'SUCCESS', finalMessage);
+        saveLog("adsReportsLog", { type: "Auto Ads Reports Upload", date: new Date().toISOString(), successCount: successCount, totalFound: reportsToUpload.length });
       }
-  })();
+    ).finally(() => {
+        // 3. Mở khóa sau khi toàn bộ quy trình kết thúc (dù thành công hay thất bại)
+        isDownloadingAdsReport = false;
+        console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
+        sendLogToServer(`${logPrefix} Đã bỏ khóa. Kết thúc quy trình.`);
+    });
   }
+  // else if (alarm.name.startsWith("downloadAdsReports_") || alarm.name === "test_downloadAdsReports") {
+  //   const featureName = 'downloadAdsReports';
+  //   const logPrefix = '[AdsReport]'; // Tạo prefix cho dễ lọc log
+  //   await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
+  //   console.log("Đang chạy tự động tải và tải lên báo cáo quảng cáo theo lịch...");
+  //   sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động theo lịch.`);
+
+  // // 1. Kiểm tra khóa
+  // if (isDownloadingAdsReport) {
+  //   const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
+  //   console.log(skipMessage);
+  //   sendLogToServer(`${logPrefix} ${skipMessage}`);
+  //   await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+  //   return;
+  // }
+  // // 2. Đặt khóa và bắt đầu
+  // isDownloadingAdsReport = true;
+  // console.log("Đã khóa isDownloadingAdsReport.");
+
+  // (async () => {
+  //     try {
+  //         console.log("Bắt đầu quá trình tải và tải lên báo cáo quảng cáo tự động...");
+
+  //         // Lấy API key (merchantId) và URL của máy chủ
+  //         const merchantId = await getMBApiKey();
+  //         if (!merchantId) {
+  //             throw new Error("Không thể lấy được merchantId để chạy tác vụ tự động.");
+  //         }
+  //         const UPLOAD_HANDLER_URL = "http://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
+  //         console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
+  //         sendLogToServer(`${logPrefix} Đã lấy được merchantId. Bắt đầu mở tab báo cáo.`);
+
+  //         const reportsUrl = `https://advertising.amazon.com/reports/ref=xx_perftime_dnav_xx?merchantId=${merchantId}&locale=en_US&ref=RedirectedFromSellerCentralByRoutingService&entityId=ENTITY2G3AJUF27SG3C`;
+
+  //         // Tạo tab mới (không active) để xử lý trong nền
+  //         chrome.tabs.create({ url: reportsUrl, active: false }, async (newTab) => {
+  //             if (!newTab || !newTab.id) {
+  //                 throw new Error("Không thể tạo tab mới cho báo cáo quảng cáo.");
+  //             }
+
+  //             const reportTabId = newTab.id;
+  //             sendLogToServer(`${logPrefix} Đã tạo tab xử lý (ID: ${reportTabId}). Đang chờ load...`);
+
+  //             await new Promise(resolve => {
+  //                 let listener = (tabId, changeInfo) => {
+  //                     if (tabId === reportTabId && changeInfo.status === 'complete') {
+  //                         chrome.tabs.onUpdated.removeListener(listener);
+  //                         resolve();
+  //                     }
+  //                 };
+  //                 chrome.tabs.onUpdated.addListener(listener);
+  //                 setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 30000);
+  //             });
+  //             sendLogToServer(`${logPrefix} Tab (ID: ${reportTabId}) đã load xong. Đang trích xuất link báo cáo.`);
+
+  //             await sleep(5000); // Đợi trang render
+
+  //             // Lấy thông tin URL và tên báo cáo
+  //           chrome.scripting.executeScript({
+  //             target: { tabId: reportTabId },
+  //             function: () => {
+  //               const scheduledReports = [];
+  //               // Lấy tất cả các dòng trong bảng báo cáo
+  //               const allRows = document.querySelectorAll('.ag-row');
+
+  //               allRows.forEach(row => {
+  //                 // Trong mỗi dòng, tìm thẻ p chứa text của status
+  //                 const statusElements = row.querySelectorAll('div[col-id="status"] p');
+  //                 let isScheduled = false;
+  //                 let isDaily = false;
+
+  //                 statusElements.forEach(p => {
+  //                   const statusText = p.textContent.trim();
+  //                   if (statusText === 'Scheduled') {
+  //                     isScheduled = true;
+  //                   }
+  //                   if (statusText === 'Daily') {
+  //                     isDaily = true;
+  //                   }
+  //                 });
+
+  //                 // Nếu dòng này có cả "Scheduled" và "Daily"
+  //                 if (isScheduled && isDaily) {
+  //                   // Thì mới tìm đến link download và report name trong dòng đó
+  //                   const downloadLinkElement = row.querySelector('a[href*="/download-report/"]');
+  //                   const reportNameElement = row.querySelector('a.sc-fqkvVR, a.sc-jdAMXn');
+
+  //                   if (downloadLinkElement && reportNameElement) {
+  //                     scheduledReports.push({
+  //                       url: downloadLinkElement.href,
+  //                       reportName: reportNameElement.textContent.trim()
+  //                     });
+  //                   }
+  //                 }
+  //               });
+
+  //               return scheduledReports;
+  //             }
+  //           }, async (injectionResults) => {
+  //               try{
+  //                 // Đóng tab ngay sau khi có dữ liệu
+  //                 try { await chrome.tabs.remove(reportTabId); } catch (e) { console.error("Lỗi khi đóng tab báo cáo:", e); }
+
+  //                 if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
+  //                     console.error("Tự động: Không thể tìm thấy báo cáo để tải lên.");
+  //                     sendLogToServer(`${logPrefix} LỖI: Không thể tìm thấy link báo cáo trên trang.`);
+  //                     throw new Error("Không tìm thấy link báo cáo trên trang."); // Sửa ở đây
+  //                 }
+
+  //                 const reportsToUpload = injectionResults[0].result;
+  //                 if (reportsToUpload.length === 0) {
+  //                   const skipMessage = "Không có báo cáo mới nào để xử lý.";
+  //                   console.log(`Tự động: ${skipMessage}`);
+  //                   sendLogToServer(`${logPrefix} ${skipMessage}`);
+  //                   // Gửi trạng thái SKIPPED về server
+  //                   await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+  //                   // Thoát khỏi hàm ngay tại đây, không chạy code bên dưới nữa
+  //                   return;
+  //                 }
+  //                 sendLogToServer(`${logPrefix} Tìm thấy ${reportsToUpload.length} báo cáo. Bắt đầu tải và upload...`);
+  //                 console.log(`Tự động: Tìm thấy ${reportsToUpload.length} báo cáo để xử lý.`);
+  //                 let successCount = 0;
+
+  //                 // Tải lên từng báo cáo
+  //                 for (const { url, reportName } of reportsToUpload) {
+  //                     try {
+  //                         const response = await fetch(url);
+  //                         if (!response.ok) throw new Error(`Lỗi tải báo cáo ${reportName}: ${response.statusText}`);
+  //                         console.log("Content-Type:", response.headers.get('Content-Type'));
+  //                         console.log("Content-Disposition:", response.headers.get('Content-Disposition'));
+  //                         let finalFilename = '';
+
+  //                         // --- BEGIN: LOGIC LẤY TÊN FILE ĐÃ SỬA ---
+
+  //                         // ƯU TIÊN 1: Lấy từ header 'Content-Disposition'
+  //                         const disposition = response.headers.get('Content-Disposition');
+  //                         if (disposition && disposition.includes('filename=')) {
+  //                           const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+  //                           const matches = filenameRegex.exec(disposition);
+  //                           if (matches != null && matches[1]) {
+  //                             finalFilename = matches[1].replace(/['"]/g, '');
+  //                             sendLogToServer(`${logPrefix} Lấy tên file từ Content-Disposition: '${finalFilename}'`);
+  //                           }
+  //                         }
+
+  //                         // ƯU TIÊN 2: Nếu không có, lấy từ URL cuối cùng (sau khi redirect)
+  //                         if (!finalFilename && response.url) {
+  //                           try {
+  //                             const finalUrl = new URL(response.url);
+  //                             // Tách lấy phần path, ví dụ: /2025/.../report.xlsx
+  //                             const pathParts = finalUrl.pathname.split('/');
+  //                             // Lấy phần cuối cùng
+  //                             const filenameFromUrl = pathParts[pathParts.length - 1];
+
+  //                             // Kiểm tra xem nó có phải là một tên file hợp lệ không
+  //                             if (filenameFromUrl && (filenameFromUrl.toLowerCase().endsWith('.xlsx') || filenameFromUrl.toLowerCase().endsWith('.csv'))) {
+  //                               finalFilename = filenameFromUrl;
+  //                               sendLogToServer(`${logPrefix} Lấy tên file từ URL cuối cùng: '${finalFilename}'`);
+  //                             }
+  //                           } catch(e) { /* Bỏ qua nếu URL không hợp lệ */ }
+  //                         }
+
+  //                         // ƯU TIÊN 3: Nếu vẫn không có, dùng tên lấy từ trang web
+  //                         if (!finalFilename) {
+  //                           finalFilename = reportName;
+  //                           sendLogToServer(`${logPrefix} Không có header/URL, dùng tên file từ trang web: '${finalFilename}'`);
+  //                         }
+
+  //                         // --- END: LOGIC LẤY TÊN FILE ĐÃ SỬA ---
+
+  //                         // Logic kiểm tra Content-Type và dự phòng giữ nguyên
+  //                         const contentType = response.headers.get('Content-Type');
+  //                         if (contentType) {
+  //                           if (contentType.includes('text/csv') && !finalFilename.toLowerCase().endsWith('.csv')) {
+  //                             finalFilename += '.csv';
+  //                           } else if (contentType.includes('spreadsheetml') && !finalFilename.toLowerCase().endsWith('.xlsx')) {
+  //                             finalFilename += '.xlsx';
+  //                           }
+  //                         }
+                          
+  //                         // Nếu tên tệp vẫn không có đuôi, thêm đuôi mặc định là .csv
+  //                         console.log("Kiểm tra cả CSV và XLSX");
+  //                         if (!finalFilename.toLowerCase().endsWith('.csv') && !finalFilename.toLowerCase().endsWith('.xlsx')) {
+  //                             sendLogToServer(`${logPrefix} CẢNH BÁO: Tên file từ Amazon ('${finalFilename}') không có đuôi .csv/.xlsx. Tự động thêm đuôi .csv.`);
+  //                             finalFilename += '.csv';
+  //                         }
+  //                         const fileBlob = await response.blob();
+                          
+  //                         const formData = new FormData();
+  //                         // **QUAN TRỌNG: Sử dụng `reportName` để giữ tên tệp gốc**
+  //                         formData.append('report_file', fileBlob, finalFilename);
+  //                         formData.append('merchant_id', merchantId);
+
+  //                         const uploadResponse = await fetch(UPLOAD_HANDLER_URL, { method: 'POST', body: formData });
+  //                         const uploadResult = await uploadResponse.json();
+
+  //                         if (uploadResult.status !== 'success') throw new Error(`Lỗi từ máy chủ cho tệp ${reportName}: ${uploadResult.message}`);
+                          
+  //                         successCount++;
+  //                         console.log(`Tự động: Tải lên thành công: ${reportName}`);
+  //                         sendLogToServer(`${logPrefix} Đã upload thành công file: ${reportName}`);
+  //                     } catch (error) {
+  //                         console.error(`Tự động: Lỗi xử lý báo cáo ${reportName}:`, error);
+  //                         sendLogToServer(`${logPrefix} LỖI khi xử lý file '${reportName}': ${error.message}`);
+  //                     }
+  //                     await sleep(1000); // Tránh request dồn dập
+  //                 }
+                  
+  //                 console.log(`Tự động: Hoàn tất. Đã tải lên thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
+  //                 sendLogToServer(`${logPrefix} Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`);
+  //                 const finalMessage = `Hoàn tất. Đã upload thành công ${successCount}/${reportsToUpload.length} báo cáo.`;
+  //                 await reportStatusToServer(featureName, 'SUCCESS', finalMessage);
+  //                 saveLog("adsReportsLog", { type: "Auto Ads Reports Upload", date: new Date().toISOString(), successCount: successCount, totalFound: reportsToUpload.length });
+  //             } catch (error) {
+  //               console.error("Lỗi nghiêm trọng trong quá trình tự động tải báo cáo:", error);
+  //               sendLogToServer(`${logPrefix} LỖI NGHIÊM TRỌNG: ${error.message}`);
+  //               await reportStatusToServer(featureName, 'FAILED', error.message);
+  //             } finally {
+  //               // 3. Mở khóa
+  //               isDownloadingAdsReport = false;
+  //               console.log("[Ads Report] Bỏ khóa isDownloadingAdsReport.");
+  //               sendLogToServer(`${logPrefix} Đã bỏ khóa. Kết thúc quy trình.`);
+  //             }
+  //             });
+  //         });
+  //     } catch (error) {
+  //       console.error("Lỗi nghiêm trọng xảy ra ở bước setup:", error);
+  //       sendLogToServer(`${logPrefix} LỖI NGHIÊM TRỌNG (SETUP): ${error.message}`);
+  //       await reportStatusToServer(featureName, 'FAILED', error.message);
+  //       // Đảm bảo mở khóa nếu có lỗi sớm
+  //       isDownloadingAdsReport = false;
+  //     }
+  // })();
+  // }
   // else if (alarm.name === "autoRequestPayment") {
   //     const logPrefix = '[AutoPaymentTrigger]';
   //     console.log(`${logPrefix} Báo thức kích hoạt. Bắt đầu quy trình rút tiền tự động.`);
@@ -1789,8 +2120,204 @@ async function checkPaymentAlarm() {
         return false;
     }
 }
-checkPaymentAlarm();
 
+checkPaymentAlarm();
+async function executeWithTabCleanup(actionName, tabCreator, tabHandler) {
+    const logPrefix = `[${actionName}]`;
+    let workerTab = null;
+
+    try {
+        console.log(`${logPrefix} Starting...`);
+        workerTab = await tabCreator();
+        if (!workerTab?.id) {
+            throw new Error('Không thể tạo hoặc mở tab làm việc.');
+        }
+        await tabHandler(workerTab);
+    } catch (error) {
+        console.error(`${logPrefix} Error:`, error);
+        sendLogToServer(`${logPrefix} Error: ${error.message}`);
+        await reportStatusToServer(actionName, 'FAILED', error.message);
+    } finally {
+        if (workerTab?.id) {
+            try {
+                // Thử đóng tab, nếu không tồn tại cũng không sao
+                await chrome.tabs.remove(workerTab.id);
+                console.log(`${logPrefix} Closed tab ${workerTab.id}`);
+            } catch (e) {
+                console.warn(`${logPrefix} Không thể đóng tab ${workerTab.id}. Nó có thể đã được đóng trước đó.`);
+            }
+        }
+    }
+}
+/**
+ * --- ADDED: Hàm chờ một tab tải xong hoàn toàn ---
+ * @param {number} tabId - ID của tab cần chờ.
+ * @param {number} [timeout=20000] - Thời gian chờ tối đa (ms).
+ * @returns {Promise<chrome.tabs.Tab>}
+ */
+function waitForTabComplete(tabId, timeout = 20000) {
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            reject(new Error(`Timeout: Tab ${tabId} không tải xong trong ${timeout / 1000}s`));
+        }, timeout);
+
+        const listener = (updatedTabId, changeInfo, tab) => {
+            if (updatedTabId === tabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                clearTimeout(timeoutId);
+                resolve(tab);
+            }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+    });
+}
+/**
+ * --- ADDED: Hàm kiểm tra trạng thái đăng nhập Amazon ---
+ * @returns {Promise<boolean>} - Trả về true nếu đã đăng nhập.
+ */
+async function checkAmazonLoginStatus() {
+    const logPrefix = '[LoginCheck]';
+    let checkTab = null;
+    let isNewTab = false;
+
+    try {
+        const existingTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/*" });
+        if (existingTabs.length > 0) {
+            checkTab = existingTabs[0];
+            await chrome.tabs.update(checkTab.id, { url: "https://sellercentral.amazon.com/home", active: false });
+        } else {
+            isNewTab = true;
+            checkTab = await chrome.tabs.create({ url: "https://sellercentral.amazon.com/home", active: false });
+        }
+
+        const loadedTab = await waitForTabComplete(checkTab.id);
+
+        if (loadedTab.url.includes('/ap/signin')) {
+            sendLogToServer(`${logPrefix} Login status: NOT LOGGED IN (Redirected)`);
+            if (isNewTab) await chrome.tabs.remove(checkTab.id).catch(() => {});
+            return false;
+        }
+
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: checkTab.id },
+            func: () => {
+                const navBar = document.getElementById('sc-navbar-container');
+                const passwordField = document.getElementById('ap_password');
+                return !!navBar && !passwordField;
+            }
+        });
+
+        const isLoggedIn = results[0]?.result || false;
+        sendLogToServer(`${logPrefix} Login status: ${isLoggedIn ? 'LOGGED IN' : 'NOT LOGGED IN'}`);
+        
+        if (!isLoggedIn && isNewTab) {
+            await chrome.tabs.remove(checkTab.id).catch(() => {});
+        }
+
+        return isLoggedIn;
+    } catch (error) {
+        console.error(`${logPrefix} Error:`, error);
+        sendLogToServer(`${logPrefix} Error: ${error.message}`);
+        if (checkTab?.id && isNewTab) {
+            await chrome.tabs.remove(checkTab.id).catch(() => {});
+        }
+        return false;
+    }
+}
+// Hàm kiểm tra trạng thái đăng nhập
+// async function checkAmazonLoginStatus() {
+//   const logPrefix = '[LoginCheck]';
+//   let checkTab = null;
+  
+//   try {
+//     // Tìm tab Amazon đang mở nếu có
+//     const existingTabs = await chrome.tabs.query({ 
+//       url: "*://sellercentral.amazon.com/*" 
+//     });
+    
+//     if (existingTabs.length > 0) {
+//       // Sử dụng tab có sẵn để kiểm tra
+//       checkTab = existingTabs[0];
+//       await chrome.tabs.update(checkTab.id, { 
+//         url: "https://sellercentral.amazon.com/home",
+//         active: false 
+//       });
+//     } else {
+//       // Tạo tab mới nếu chưa có
+//       checkTab = await chrome.tabs.create({ 
+//         url: "https://sellercentral.amazon.com/home", 
+//         active: false 
+//       });
+//     }
+
+//     // Chờ tab load xong (tối đa 15 giây)
+//     const isLoggedIn = await new Promise((resolve) => {
+//       const timeout = setTimeout(() => {
+//         chrome.tabs.onUpdated.removeListener(listener);
+//         resolve(false); // Timeout = coi như chưa login
+//       }, 15000);
+
+//       const listener = (tabId, changeInfo, tab) => {
+//         if (tabId === checkTab.id && changeInfo.status === 'complete') {
+//           // Kiểm tra URL sau khi load
+//           if (tab.url.includes('/ap/signin') || tab.url.includes('/sign-in')) {
+//             // Bị redirect về trang login
+//             chrome.tabs.onUpdated.removeListener(listener);
+//             clearTimeout(timeout);
+//             resolve(false);
+//           } else if (tab.url.includes('sellercentral.amazon.com')) {
+//             // Vẫn ở trong seller central, chờ thêm để check element
+//             setTimeout(() => {
+//               chrome.scripting.executeScript({
+//                 target: { tabId: checkTab.id },
+//                 func: () => {
+//                   // Kiểm tra các element đặc trưng của trang đã login
+//                   const navBar = document.getElementById('sc-navbar-container');
+//                   const logoContainer = document.querySelector('[data-test-tag="logo-container"]');
+//                   const passwordField = document.getElementById('ap_password');
+//                   const signInHeader = document.querySelector('h1.a-spacing-small');
+                  
+//                   // Nếu có navbar hoặc logo và KHÔNG có password field = đã login
+//                   const isLoggedIn = (navBar || logoContainer) && !passwordField && !signInHeader;
+//                   return isLoggedIn;
+//                 }
+//               }).then(results => {
+//                 chrome.tabs.onUpdated.removeListener(listener);
+//                 clearTimeout(timeout);
+//                 resolve(results[0]?.result || false);
+//               }).catch(() => {
+//                 chrome.tabs.onUpdated.removeListener(listener);
+//                 clearTimeout(timeout);
+//                 resolve(false);
+//               });
+//             }, 2000); // Đợi 2s để page render xong
+//           }
+//         }
+//       };
+      
+//       chrome.tabs.onUpdated.addListener(listener);
+//     });
+
+//     // Không đóng tab nếu đã login (có thể tái sử dụng)
+//     if (!isLoggedIn && checkTab && !existingTabs.length) {
+//       // Chỉ đóng tab mới tạo nếu chưa login
+//       await chrome.tabs.remove(checkTab.id).catch(() => {});
+//     }
+
+//     sendLogToServer(`${logPrefix} Login status: ${isLoggedIn ? 'LOGGED IN' : 'NOT LOGGED IN'}`);
+//     return isLoggedIn;
+
+//   } catch (error) {
+//     console.error(`${logPrefix} Error:`, error);
+//     sendLogToServer(`${logPrefix} Error: ${error.message}`);
+//     // Dọn dẹp nếu có lỗi
+//     if (checkTab?.id && !existingTabs?.length) {
+//       await chrome.tabs.remove(checkTab.id).catch(() => {});
+//     }
+//     return false;
+//   }
+// }
 let stopProcess = false;
 
 // Sử dụng hàm async IIFE để xử lý và đảm bảo finally luôn được gọi
