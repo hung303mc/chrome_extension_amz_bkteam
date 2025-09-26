@@ -4563,6 +4563,9 @@ function getRealTime(dateStr) {
 const detectCarrierCode = (tracking = "") => {
   tracking = String(tracking).trim();
   const trackingLen = tracking.length;
+  if (tracking.startsWith("4PX")) {
+    return "4px";
+  }
   if (tracking.startsWith("RS")) {
     return "deutsche-post";
   }
