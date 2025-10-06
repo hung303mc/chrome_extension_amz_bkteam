@@ -728,75 +728,38 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
    }
 
     const { message, data } = req || {};
-    
+
     // Xử lý message tự động update tracking
     if (message === "autoUpdateTracking") {
       res({ message: "received" });
-      console.log("[CS] Đang thực hiện auto update tracking...");
-      
-      // Đợi để đảm bảo giao diện đã load
-      setTimeout(() => {
-        // Kích hoạt tab Update Tracking
-        $('[data-name="update_tracking"]').click();
-        console.log("[CS] Kích hoạt tab Update Tracking");
-        
-        // Đợi thêm một chút để dữ liệu tab tải xong và hiển thị
-        setTimeout(() => {
-          // Đảm bảo tab content đã hiển thị đúng
-          $("#update_tracking").css("display", "block");
-          
-          console.log("Tìm kiếm nút Start Update...");
-          console.log("Selector 1 - #update-tracking: ", $("#update-tracking").length);
-          console.log("Selector 2 - button#update-tracking: ", $("button#update-tracking").length);
-          console.log("Selector 3 - .btn-updatetracking-wrap button: ", $(".btn-updatetracking-wrap button").length);
-          console.log("Selector 4 - .om-btn: ", $(".om-btn").length);
-          
-          // Thử tất cả các selector có thể
-          const btn1 = $("#update-tracking");
-          if (btn1.length > 0) {
-            console.log("Click nút bằng selector #update-tracking");
-            btn1.click();
+
+      // Bọc toàn bộ logic trong một hàm async để xử lý tuần tự và bắt lỗi
+      (async () => {
+        try {
+          // Bước 1: Chờ và click vào tab "Update Tracking" để mở nó ra
+          const updateTrackingTab = await waitForElement('[data-name="update_tracking"]', 5000);
+          updateTrackingTab.click();
+
+          // Bước 2: Chờ cho nút "Start Update" bên trong tab đó xuất hiện
+          // Dùng ID là cách chính xác và duy nhất, không cần thử các cách khác
+          const startButton = await waitForElement('#update-tracking', 5000);
+
+          // Bước 3: Click đúng 1 lần duy nhất vào nút đó
+          startButton.click();
+
+          // Bước 4: Đánh dấu trạng thái đang chạy tự động
+          await setStorage("_mb_auto_tracking", true);
+
+        } catch (error) {
+          // Nếu có bất kỳ lỗi nào xảy ra (ví dụ: không tìm thấy nút), báo lỗi
+          console.error(error);
+          if (typeof notifyError === 'function') {
+            notifyError(`Auto-Update failed: ${error.message}`);
           }
-          
-          const btn2 = $("button#update-tracking");
-          if (btn2.length > 0) {
-            console.log("Click nút bằng selector button#update-tracking");
-            btn2.click();
-          }
-          
-          const btn3 = $(".btn-updatetracking-wrap button");
-          if (btn3.length > 0) {
-            console.log("Click nút bằng selector .btn-updatetracking-wrap button");
-            btn3.click();
-          }
-          
-          // Thử bằng cách lộ trình khác - click trực tiếp vào nút dựa trên text
-          $(".om-btn").each(function() {
-            if ($(this).text().trim() === "Start Update") {
-              console.log("Tìm thấy nút Start Update dựa vào text content");
-              $(this).click();
-            }
-          });
-          
-          // Thử cách cuối cùng - dùng JavaScript thuần
-          document.querySelectorAll('#update-tracking, .btn-updatetracking-wrap button, .om-btn').forEach(btn => {
-            if (btn.innerText.trim() === 'Start Update') {
-              console.log("Click bằng querySelector và dispatchEvent");
-              btn.dispatchEvent(new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                view: window
-              }));
-            }
-          });
-          
-          // Lưu thông tin để đánh dấu đang trong chế độ tự động
-          setStorage("_mb_auto_tracking", true);
-          console.log("Đã đặt _mb_auto_tracking = true");
-        }, 4000); // Tăng thời gian chờ lên 4 giây để đảm bảo tab đã hoàn toàn load xong
-      }, 2000);
-      
-      return true;
+        }
+      })();
+
+      return true; // Giữ message port mở cho xử lý bất đồng bộ
     }
     console.log(`[Content] Nhận tin nhắn từ background.js: ${message}`, { url: window.location.href });
   
