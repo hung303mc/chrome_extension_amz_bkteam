@@ -429,6 +429,7 @@ const handleTracking = async (trackingInfo, confirmType) => {
    const RECONFIRM_SHIPMENT_BTN_XPATH = 'input.a-button-input[value="Re-confirm Shipment"]';
    const CONTINUE_BTN_XPATH = 'input[value="YES, please continue with this shipping service name"]';
    const ALERT_HEADING_SELECTOR = ".a-alert-heading";
+   const DEFAULT_SHIPPING_CHECKBOX_SELECTOR = '[data-test-id="select-default-shipping-method"] input[type="checkbox"]';
 
    try {
       if (!trackingInfo) throw Error("Invalid tracking info");
@@ -603,6 +604,35 @@ const handleTracking = async (trackingInfo, confirmType) => {
          await sleep(2000);
       }
       // 4. Confirm Action
+
+      if (confirmType === 'add' && trackingCode === "") {
+         console.log("[handleTracking] ADD mode with EMPTY tracking detected. Checking if carrier needs to be set.");
+         try {
+            const $carrierSelect = await _waitForElement(CARRIER_XPATH, 5000);
+            if ($carrierSelect.val() === "Select an option") {
+               console.log("[handleTracking] Carrier is not selected. Setting to USPS and making it default.");
+
+               // 1. Chọn USPS
+               $carrierSelect.val("USPS");
+               $carrierSelect[0].dispatchEvent(new Event('change', { bubbles: true }));
+               $carrierSelect[0].dispatchEvent(new Event('input', { bubbles: true }));
+               await sleep(500); // Chờ UI phản hồi
+
+               // 2. Tick vào ô "Use this as my default..."
+               const $defaultCheckbox = await _waitForElement(DEFAULT_SHIPPING_CHECKBOX_SELECTOR, 5000);
+               if ($defaultCheckbox.length && !$defaultCheckbox.is(':checked')) {
+                  // Dùng .click() là an toàn nhất để trigger mọi event của trang
+                  await _scrollToAndClick($defaultCheckbox);
+                  console.log("[handleTracking] 'Use as default' checkbox clicked.");
+                  await sleep(500);
+               }
+            } else {
+               console.log(`[handleTracking] Carrier already selected ('${$carrierSelect.val()}'), skipping auto-selection.`);
+            }
+         } catch (e) {
+            console.warn(`[handleTracking] Could not auto-set default carrier for empty tracking: ${e.message}. Proceeding anyway.`);
+         }
+      }
 
       if (confirmType === 'add') {
          // confirmBtnXpath = '[data-test-id="confirm-shipment-button-action"] input[value="Confirm shipment"]';

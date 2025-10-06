@@ -1,5 +1,5 @@
 const isProduction = true;
-const MBUrl = "http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php";
+const MBUrl = "https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php";
 const ipTrackingKey = "ipTrackingEnabled";
 
 //  "http://127.0.0.1:8080/query";
@@ -31,7 +31,7 @@ const reportStatusToServer = async (featureName, status, message = '') => {
     if (!merchantId) {
       return;
     }
-    const MONITORING_URL = "http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=updateMonitoringStatus";
+    const MONITORING_URL = "https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=updateMonitoringStatus";
     await fetch(MONITORING_URL, {
       method: "POST",
       headers: {
@@ -326,7 +326,7 @@ async function fetchAndProcessDesignTasks() {
     console.log("[BG] Đang hỏi server xem có task gửi design nào không...");
     const merchantId = await getMBApiKey();
 
-    const response = await fetch("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=getPendingDesignTasks", {
+    const response = await fetch("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=getPendingDesignTasks", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ "merchant_id": merchantId })
@@ -424,7 +424,7 @@ async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
       error_message: errorMessage
     };
 
-    const response = await fetch("http://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=updateMessageTaskStatus", {
+    const response = await fetch("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=updateMessageTaskStatus", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -739,7 +739,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
           if (!merchantId) {
               throw new Error("Không thể lấy được merchantId để chạy tác vụ tự động.");
           }
-          const UPLOAD_HANDLER_URL = "http://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
+          const UPLOAD_HANDLER_URL = "https://bkteam.top/dungvuong-admin/api/upload_ads_report_handler.php";
           console.log("Sử dụng merchantId cho URL báo cáo:", merchantId);
           sendLogToServer(`${logPrefix} Đã lấy được merchantId. Bắt đầu mở tab báo cáo.`);
 
@@ -3169,7 +3169,10 @@ const waitForData = (key, timeout = 30000) => {
  */
 
 const handleSyncOrders = async (orders, options, apiKey, domain, retryCount = 0) => {
-    const featureName = 'syncOrder'; // <--- Tên này dùng làm key
+  await chrome.storage.local.remove("UnshippedOrders");
+  console.log("✅ Đã dọn dẹp UnshippedOrders cũ trước khi bắt đầu sync.");
+
+  const featureName = 'syncOrder'; // <--- Tên này dùng làm key
 
     // SỬA ĐOẠN NÀY
     const { alarmSettings } = await chrome.storage.local.get('alarmSettings');
