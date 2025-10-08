@@ -518,6 +518,41 @@ async function updateTaskStatusOnServer(taskId, status, errorMessage = null) {
 // }
 // Xử lý alarm khi kích hoạt
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+
+  const IGNORE_LOGIN_CHECK = [
+    'settingsRefresher',
+    'ipUpdateCheck'
+  ];
+
+  // Nếu tên alarm KHÔNG nằm trong danh sách loại trừ thì mới cần check
+  const shouldCheckLogin = !IGNORE_LOGIN_CHECK.includes(alarm.name);
+
+  if (shouldCheckLogin) {
+    console.log(`[Alarm] Checking login status for ${alarm.name}...`);
+    const isLoggedIn = await checkAmazonLoginStatus();
+
+    if (!isLoggedIn) {
+      // Tao cũng sửa lại message log cho nó hợp lý hơn
+      const statusMessage = `[${alarm.name}] Stopped: LOGIN REQUIRED.`;
+      console.log(statusMessage);
+      sendLogToServer(statusMessage);
+
+      const match = alarm.name.match(/^(?:test_)?([a-zA-Z]+)/);
+      const featureName = match ? match[1] : alarm.name.split('_')[0];
+
+      await reportStatusToServer(featureName, 'LOGIN_REQUIRED', 'User is not logged in to Amazon Seller Central.');
+
+      // Dọn dẹp tab Amazon đang mở nếu cần
+      const amazonTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/*" });
+      for (const tab of amazonTabs) {
+        if (tab.url.includes('/ap/signin')) {
+          await chrome.tabs.remove(tab.id).catch(() => {});
+        }
+      }
+      return; // Dừng xử lý alarm này
+    }
+  }
+
   // Nếu là alarm tự cập nhật setting, thì chạy setup và dừng lại ngay
   if (alarm.name === 'settingsRefresher') {
     console.log(`🔥🔥🔥 KÍCH HOẠT ALARM TỰ CẬP NHẬT SETTINGS 🔥🔥🔥`);
@@ -1873,46 +1908,34 @@ async function processTrackingUpdates(ordersToProcess, retryCount = 0, initialSe
     // 3. SỬ DỤNG VÒNG LẶP FOR...OF
     for (const order of orders) {
       try {
-        sendLogToServer(`[Update Tracking][${order.orderId}] Bắt đầu xử lý.`);
-        console.log(`[BG] Đang xử lý đơn hàng: ${order.orderId} trên tab ${workerTab.id}`);
-        // =================================================================Add commentMore actions
-        // LOGIC MỚI: XỬ LÝ ĐƠN CÓ TRACKING RỖNG - Confirm đơn
-        // =================================================================
-        // Nếu tracking rỗng, thử xác minh trực tiếp xem đơn đã được ship chưa.
-        if (!order.tracking || String(order.tracking).trim() === '') {
-          console.log(`[BG] Tracking rỗng cho đơn ${order.orderId}. Thử xác minh trạng thái 'Shipped' trước.`);
+        // --- BƯỚC 1: LẤY TRẠNG THÁI THỰC TẾ TỪ WEB LÀM NGUỒN CHÂN LÝ ---
+        sendLogToServer(`[Update Tracking][${order.orderId}] Đang xác minh trạng thái thực tế trên web...`);
 
-          // Thao tác 2 (Xác minh): Điều hướng và kiểm tra trạng thái
-          const verifyUrl = `${globalDomain}/orders-v3/order/${order.orderId}`;
-          await openAndEnsureTabReady(verifyUrl, workerTab.id);
+        const verifyUrl = `${globalDomain}/orders-v3/order/${order.orderId}`;
+        await openAndEnsureTabReady(verifyUrl, workerTab.id);
 
-          // Gửi yêu cầu xác minh với tracking rỗng. Content script sẽ hiểu là cần check status "Shipped".
-          const verificationResult = await sendMessageAndPromiseResponse(workerTab.id, "verifyAddTracking", { orderId: order.orderId, trackingCode: "" }, "verifyAddTracking", order.orderId);
+        const verificationResult = await sendMessageAndPromiseResponse(workerTab.id, "verifyAddTracking", { orderId: order.orderId, trackingCode: "" }, "verifyAddTracking", order.orderId);
 
-          // Nếu xác minh thành công (tức là đã "Shipped")
-          if (verificationResult.status === "success") {
-            console.log(`[BG] Đơn ${order.orderId} đã ở trạng thái "Shipped". Bỏ qua bước điền form.`);
+        // `isUnshipped` bây giờ đáng tin cậy 100%
+        const isUnshipped = verificationResult.status !== 'success';
+        console.log(`[BG] Đơn ${order.orderId}: Trạng thái thực tế là ${isUnshipped ? 'Unshipped' : 'Shipped'}.`);
 
-            // Thao tác 3 (Gửi kết quả về server): Báo cho server là đã xong
-            const queryUpdate = JSON.stringify({ orderId: order.orderId, trackingCode: "" });
-            await sendRequestToMB("addedTrackingCode", apiKey, queryUpdate);
-            console.log(`[BG] Order ${order.orderId} - Cập nhật trạng thái (đã ship, không tracking) lên MB thành công.`);
+        // --- BƯỚC 2: PHÂN LUỒNG XỬ LÝ DỰA TRÊN TRẠNG THÁI THỰC TẾ ---
 
-            // Chuyển sang xử lý đơn hàng tiếp theo
-            successCount++;
-            sendLogToServer(`[Update Tracking][${order.orderId}] Xử lý thành công (đã shipped, không tracking).`);
-            continue;
-          } else {
-            // Nếu xác minh thất bại (chưa "Shipped"), sẽ tiếp tục quy trình điền form như bình thường bên dưới
-            console.log(`[BG] Xác minh trực tiếp thất bại cho đơn ${order.orderId}. Tiến hành quy trình điền form để confirm.`);
-          }
+        // TÌNH HUỐNG A: Đơn đã SHIP và DB không có tracking => Chỉ cần báo server, không cần làm gì thêm.
+        if (!isUnshipped && (!order.tracking || String(order.tracking).trim() === '')) {
+          sendLogToServer(`[Update Tracking][${order.orderId}] Tình huống tối ưu: Đơn đã Shipped, tracking rỗng. Bỏ qua điền form.`);
+
+          const queryUpdate = JSON.stringify({ orderId: order.orderId, trackingCode: "" });
+          await sendRequestToMB("addedTrackingCode", apiKey, queryUpdate);
+
+          successCount++;
+          continue; // Xong, xử lý đơn tiếp theo
         }
-        // =================================================================
-        // KẾT THÚC LOGIC MỚI
-        // =================================================================
-        // Chuẩn bị thông tin
+
+        // TÌNH HUỐNG B: Đơn chưa SHIP hoặc Đơn đã SHIP nhưng cần điền tracking mới => Tiến hành điền form.
         order.carrier = detectCarrier(order.carrier?.toLowerCase()) || detectCarrier(detectCarrierCode(order.tracking));
-        const isUnshipped = UnshippedOrders.includes(order.orderId);
+
         const actionUrl = isUnshipped
           ? `${globalDomain}/orders-v3/order/${order.orderId}/confirm-shipment`
           : `${globalDomain}/orders-v3/order/${order.orderId}/edit-shipment`;
@@ -1921,36 +1944,29 @@ async function processTrackingUpdates(ordersToProcess, retryCount = 0, initialSe
         // Thao tác 1: Điều hướng và điền form
         await openAndEnsureTabReady(actionUrl, workerTab.id);
         const addedTrackingData = await sendMessageAndPromiseResponse(workerTab.id, formFillMessageType, order, "addedTrackingCode", order.orderId);
-
-        if(addedTrackingData.status === 'error'){
+        if (addedTrackingData.status === 'error') {
           throw new Error(addedTrackingData.message || `Lỗi từ content script khi xử lý đơn ${order.orderId}`);
         }
 
-        // Thao tác 2: Điều hướng và xác minh
-        const verifyUrl = `${globalDomain}/orders-v3/order/${order.orderId}`;
+        // Thao tác 2: Điều hướng lại và xác minh lần cuối
         await openAndEnsureTabReady(verifyUrl, workerTab.id);
-        const verificationResult = await sendMessageAndPromiseResponse(workerTab.id, "verifyAddTracking", { orderId: order.orderId, trackingCode: addedTrackingData.trackingCode }, "verifyAddTracking", order.orderId);
+        const finalVerificationResult = await sendMessageAndPromiseResponse(workerTab.id, "verifyAddTracking", { orderId: order.orderId, trackingCode: addedTrackingData.trackingCode }, "verifyAddTracking", order.orderId);
 
         // Thao tác 3: Gửi kết quả về server nếu thành công
-        if (verificationResult.status === "success") {
+        if (finalVerificationResult.status === "success") {
           const queryUpdate = JSON.stringify({ orderId: order.orderId, trackingCode: addedTrackingData.trackingCode });
           await sendRequestToMB("addedTrackingCode", apiKey, queryUpdate);
-          console.log(`[BG] Order ${order.orderId} - Cập nhật tracking lên MB thành công.`);
           successCount++;
-
           sendLogToServer(`[Update Tracking][${order.orderId}] Xử lý thành công.`);
         } else {
-          throw new Error(verificationResult.message || `Xác minh thất bại cho đơn hàng ${order.orderId}`);
+          throw new Error(finalVerificationResult.message || `Xác minh thất bại cho đơn hàng ${order.orderId}`);
         }
 
       } catch (e) {
-        // 4. XỬ LÝ LỖI CHO TỪNG ĐƠN HÀNG
         failedOrdersForRetry.push(order);
         sendLogToServer(`[Update Tracking] Lỗi xử lý đơn ${order.orderId}: ${e.message}`);
         console.error(`[BG] Lỗi khi xử lý đơn hàng ${order.orderId}: ${e.message}`);
-        overallErrorMessage = e.message; // Lưu lỗi cuối cùng để báo cáo
-        saveLog("trackingProcessingError", { orderId: order.orderId, error: e.message });
-        await sleep(2000); // Chờ một chút trước khi tiếp tục
+        await sleep(2000);
       }
     } // Kết thúc vòng lặp for
 
@@ -5613,3 +5629,74 @@ chrome.runtime.onStartup.addListener(() => {
   console.log("Extension starting up - setting up daily alarms");
   setupDailyAlarm();
 });
+
+/**
+ * Hàm chờ một tab tải xong hoàn toàn
+ * @param {number} tabId - ID của tab cần chờ.
+ * @param {number} [timeout=20000] - Thời gian chờ tối đa (ms).
+ * @returns {Promise<chrome.tabs.Tab>}
+ */
+function waitForTabComplete(tabId, timeout = 60000) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error(`Timeout: Tab ${tabId} không tải xong trong ${timeout / 1000}s`));
+    }, timeout);
+
+    const listener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timeoutId);
+        resolve(tab);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+/**
+ * Hàm kiểm tra trạng thái đăng nhập Amazon
+ * @returns {Promise<boolean>} - Trả về true nếu đã đăng nhập.
+ */
+async function checkAmazonLoginStatus() {
+  const logPrefix = '[LoginCheck]';
+  let checkTab = null;
+  let isNewTab = false; // Cờ để biết tab này có phải do mình tạo ra không
+
+  try {
+    // Ưu tiên dùng lại tab đang mở để đỡ phải tạo tab mới
+    const existingTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/*" });
+    if (existingTabs.length > 0) {
+      checkTab = existingTabs[0];
+      // Điều hướng nó về trang home để kiểm tra, không active
+      await chrome.tabs.update(checkTab.id, { url: "https://sellercentral.amazon.com/home", active: false });
+    } else {
+      isNewTab = true; // Đánh dấu là tab mới
+      checkTab = await chrome.tabs.create({ url: "https://sellercentral.amazon.com/home", active: false });
+    }
+
+    const loadedTab = await waitForTabComplete(checkTab.id);
+
+    // Cách kiểm tra đơn giản và hiệu quả nhất
+    if (loadedTab.url.includes('/ap/signin')) {
+      sendLogToServer(`${logPrefix} Login status: NOT LOGGED IN (Redirected)`);
+      // Nếu là tab mới tạo ra để check, và không login, thì đóng nó đi
+      if (isNewTab) await chrome.tabs.remove(checkTab.id).catch(() => {});
+      return false;
+    }
+
+    sendLogToServer(`${logPrefix} Login status: LOGGED IN`);
+    // Nếu đã login và là tab mới tạo, cũng có thể đóng đi cho gọn
+    if (isNewTab) await chrome.tabs.remove(checkTab.id).catch(() => {});
+    return true;
+
+  } catch (error) {
+    console.error(`${logPrefix} Error:`, error);
+    sendLogToServer(`${logPrefix} Error: ${error.message}`);
+    // Dọn dẹp tab nếu có lỗi và tab đó là do mình tạo ra
+    if (checkTab?.id && isNewTab) {
+      await chrome.tabs.remove(checkTab.id).catch(() => {});
+    }
+    return false;
+  }
+}
