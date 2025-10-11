@@ -31,6 +31,10 @@
       <div id="test-settings">
          <p style="margin-top: 0;">Chọn các tác vụ muốn test:</p>
          <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 5px;">
+            <input type="checkbox" id="test_get_phone" checked style="margin-right: 8px;">
+            <label for="test_get_phone" style="margin: 0;">Test Lấy sđt</label>
+         </div>
+         <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 5px;">
             <input type="checkbox" id="test_sync_order" style="margin-right: 8px;">
             <label for="test_sync_order" style="margin: 0;">Test Lấy đơn</label>
          </div>
@@ -58,6 +62,21 @@
             <label for="test_delay" style="margin: 0 8px 0 0;">Chạy sau (phút):</label>
             <input type="number" id="test_delay" value="0.1" min="0.1" step="0.1" style="width: 60px;">
          </div>
+         <hr>
+         <!-- <div id="check-order" style="margin-top: 15px;">
+            <label for="check_order_id" style="display:block; margin-bottom:5px;">🔍 Kiểm tra Order ID:</label>
+            <input type="text" id="check_order_id" placeholder="Nhập Order ID..." style="width: 100%; margin-bottom:8px; padding:5px;">
+            <button id="btn_check_order" class="om-btn" style="background-color:#28a745;">Kiểm Tra</button>
+
+            <pre id="check_order_result" style="background:#f9f9f9; padding:8px; margin-top:10px; display:none; border-radius:4px; font-size:12px;"></pre>
+
+            <hr style="margin: 15px 0;">
+
+            <label for="update_phone_input" style="display:block; margin-bottom:5px;">📱 Nhập SĐT mới:</label>
+            <input type="text" id="update_phone_input" placeholder="Nhập số điện thoại..." style="width:100%; margin-bottom:8px; padding:5px;">
+            <button id="btn_update_phone" class="om-btn" style="background-color:#007bff;">Cập Nhật SĐT</button>
+            <pre id="update_phone_result" style="background:#f9f9f9; padding:8px; margin-top:10px; display:none; border-radius:4px; font-size:12px;"></pre>
+         </div> -->
 
          <div class="wrap-btn" style="margin-top: 15px;">
             <button id="run_test" class="om-btn">Chạy Test</button>

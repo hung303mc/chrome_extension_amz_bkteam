@@ -196,7 +196,8 @@ $(document).on("click", "#run_test", async function () {
         accountHealth: $('#test_account_health').is(':checked'),
         downloadAds: $('#test_download_ads').is(':checked'),
         sendMessageAuto: $('#test_send_message_auto').is(':checked'), 
-        payment: $('#test_payment').is(':checked') // Thêm checkbox mới
+        payment: $('#test_payment').is(':checked'), // Thêm checkbox mới
+        getPhone: $('#test_get_phone').is(':checked'), // thêm get sdt
     };
 
     // Đọc giá trị thời gian chờ (delay)
@@ -235,8 +236,99 @@ $(document).on("click", "#run_test", async function () {
         });
     }
 
+    // Nếu tick “Test Lấy sđt” thì hiển thị alert test
+    if (settings.getPhone) {
+        console.log("[POPUP] Chuẩn bị hỏi tải 1 hay tất cả...");
+
+        const downloadAll = confirm("Bạn muốn tải TẤT CẢ file Download?\nChọn OK = tải tất cả, Cancel = chỉ tải 1 file");
+
+        console.log(`[POPUP] Người dùng chọn: ${downloadAll ? "Tải tất cả" : "Tải 1 file"}`);
+
+        chrome.runtime.sendMessage(
+            { 
+                message: "runGetPhone",
+                mode: downloadAll ? "all" : "single" // gửi mode sang background
+            },
+            (response) => {
+                console.log("[POPUP] Đã gửi xong message runGetPhone. Phản hồi:", response);
+            }
+        );
+    }
+
+
+
     $('#test_status').text("Đã gửi lệnh chạy test!").css('color', 'green');
     setTimeout(() => { $('#test_status').text(''); }, 3000);
+});
+
+
+$(document).on("click", "#btn_check_order", async function() {
+    const orderId = $("#check_order_id").val().trim();
+    if (!orderId) {
+        alert("Vui lòng nhập Order ID cần kiểm tra!");
+        return;
+    }
+
+    $("#check_order_result").text("⏳ Đang kiểm tra...").show();
+
+    // Gửi message sang background để fetch dữ liệu từ server
+    chrome.runtime.sendMessage(
+        {
+            message: "checkOrderInfo",
+            orderId: orderId
+        },
+        (response) => {
+            if (!response) {
+                $("#check_order_result").text("❌ Không nhận được phản hồi từ background.").show();
+                return;
+            }
+
+            if (response.ok && response.data) {
+                $("#check_order_result").text(JSON.stringify(response.data, null, 2)).show();
+            } else {
+                $("#check_order_result").text("❌ Lỗi: " + (response.error || "Không rõ")).show();
+            }
+
+            $("#check_order_result").text(JSON.stringify(response.data, null, 2)).show();
+        }
+    );
+});
+
+// 🆕 Nút cập nhật SĐT
+$(document).on("click", "#btn_update_phone", async function() {
+    const orderId = $("#check_order_id").val().trim();
+    const phone = $("#update_phone_input").val().trim();
+
+    if (!orderId) {
+        alert("Vui lòng nhập Order ID!");
+        return;
+    }
+    if (!phone) {
+        alert("Vui lòng nhập số điện thoại!");
+        return;
+    }
+
+    $("#update_phone_result").text("⏳ Đang cập nhật...").show();
+
+    chrome.runtime.sendMessage(
+        {
+            message: "updateBuyerPhone",
+            orderId: orderId,
+            phone: phone
+        },
+        (response) => {
+            if (!response) {
+                $("#update_phone_result").text("❌ Không nhận được phản hồi từ background.").show();
+                return;
+            }
+
+            if (response.ok && response.data) {
+                $("#update_phone_result").text(JSON.stringify(response.data, null, 2)).show();
+            } else {
+                $("#update_phone_result").text("❌ Lỗi: " + (response.error || "Không rõ")).show();
+            }
+        }
+    );
 });
 // ====================================================================
 // CÁC TRÌNH XỬ LÝ SỰ KIỆN MỚI TỪ CODE 1 (THÊM MỚI)
