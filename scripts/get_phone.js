@@ -95,6 +95,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
 
         if (buttons.length === 0) {
             alert("❌ Không tìm thấy nút Download nào!");
+            await reportStatusToServer("syncPhone", "FAILED", `Không tìm thấy nut Download nào!`);
             sendResponse({ status: "no_download_button" });
             chrome.runtime.sendMessage({
                 message: "uploadGetPhoneFile",
@@ -113,7 +114,10 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
         // get_phone.js
         if (req.mode === "single") {
             // 🔹 Với single mode — tạo batchId riêng
-            const batchId = `batch_${Date.now()}`;
+            const now = new Date();
+            const timestamp = now.toISOString().replace(/[-:T.Z]/g, "_").slice(0, 19); 
+            // Kết quả ví dụ: 2025_10_10_09_42_52
+            const batchId = `batch_${timestamp}`;
 
             const btn = buttons[0];
             const link = btn.href;
@@ -144,7 +148,10 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
             console.log(`[ContentScript] Bắt đầu tải tất cả ${buttons.length} file qua fetch...`);
 
             // 🔹 Tạo batchId duy nhất cho toàn bộ đợt này
-            const batchId = `batch_${Date.now()}`;
+            const now = new Date();
+            const timestamp = now.toISOString().replace(/[-:T.Z]/g, "_").slice(0, 19); 
+            // Kết quả ví dụ: 2025_10_10_09_42_52
+            const batchId = `batch_${timestamp}`;
 
             // 📦 Mảng chứa các file để upload
             const uploadQueue = [];
@@ -187,8 +194,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
                 alert(`✅ Đã upload ${buttons.length} file và sync xong!\nThành công: ${res?.result?.summary?.updated ?? 0}, Thất bại: ${res?.result?.summary?.failed ?? 0}`);
             });
         }
-
-
 
         sendResponse({ status: "ok", count: buttons.length });
     }

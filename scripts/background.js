@@ -17,8 +17,7 @@ let globalDomain = AMZDomain;
 let globalMBApiKey = null;
 let isSyncing = false;
 
-// Xử lý get_buyer_phone.js lấy thông tin report và gửi về server
-importScripts("get_buyer_phone.js");
+
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -52,6 +51,10 @@ const reportStatusToServer = async (featureName, status, message = '') => {
     console.error(`[Monitor] Failed to report status for ${featureName}:`, error);
   }
 };
+
+// Xử lý get_buyer_phone.js lấy thông tin report và gửi về server
+// để dưới reportStatusToServer vì nó cũng cần hàm này
+importScripts("get_buyer_phone.js");
 
 const setupTestAlarms = async () => {
   // Lấy cài đặt test từ storage
@@ -628,7 +631,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     return; // Dừng lại sau khi xử lý alarm retry
   }
 
-
   if (alarm.name.startsWith("syncOrder_") || alarm.name === "test_syncOrder") {
     const featureName = 'syncOrder';
     await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
@@ -683,6 +685,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       console.error("[BG] Đã xảy ra lỗi trong quá trình tự động sync order:", error);
     }
   }
+
   else if (alarm.name.startsWith("updateTracking_") || alarm.name === "test_updateTracking") {
     const featureName = 'updateTracking';
     await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
@@ -702,6 +705,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       });
     }, 5000);
   }
+
   else if (alarm.name.startsWith("accountHealth_") || alarm.name === "test_accountHealth") {
     const featureName = 'accountHealth';
     const logPrefix = '[AccHealth]';
@@ -756,19 +760,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     console.log("Đang chạy tự động tải và tải lên báo cáo quảng cáo theo lịch...");
     sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động theo lịch.`);
 
-  // 1. Kiểm tra khóa
-  if (isDownloadingAdsReport) {
-    const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
-    console.log(skipMessage);
-    sendLogToServer(`${logPrefix} ${skipMessage}`);
-    await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
-    return;
-  }
-  // 2. Đặt khóa và bắt đầu
-  isDownloadingAdsReport = true;
-  console.log("Đã khóa isDownloadingAdsReport.");
+    // 1. Kiểm tra khóa
+    if (isDownloadingAdsReport) {
+      const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
+      console.log(skipMessage);
+      sendLogToServer(`${logPrefix} ${skipMessage}`);
+      await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+      return;
+    }
+    // 2. Đặt khóa và bắt đầu
+    isDownloadingAdsReport = true;
+    console.log("Đã khóa isDownloadingAdsReport.");
 
-  (async () => {
+    (async () => {
       try {
           console.log("Bắt đầu quá trình tải và tải lên báo cáo quảng cáo tự động...");
 
@@ -1186,7 +1190,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       });
   }
 
-
   else if (alarm.name === "testPaymentAlarm") {
         console.log("[Payment] Đã đến giờ chạy test payment");
         
@@ -1231,6 +1234,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
             chrome.tabs.onUpdated.addListener(handleTestAlarmUpdate);
         });
   }
+  
   else if (alarm.name.startsWith("sendMessageAuto_") || alarm.name === "test_sendMessageAuto") {
     const featureName = 'sendMessageAuto'; // Dùng lại featureName của tính năng gốc để server monitor
     const logPrefix = '[SendMessageAuto]';
@@ -1252,6 +1256,23 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       await reportStatusToServer(featureName, 'FAILED', error.message);
     }
   }
+
+  // alarm lấy SĐT tự động
+  else if (alarm.name.startsWith("syncPhone_")) {
+    const logPrefix = '[SyncPhone]';
+    console.log(`${logPrefix} Alarm triggered: ${alarm.name}`);
+    sendLogToServer(`${logPrefix} Báo thức kích hoạt, bắt đầu tự động lấy SĐT.`);
+
+    chrome.runtime.sendMessage(
+        { 
+            message: "runGetPhone",
+            mode: "all"
+        },
+        (response) => {
+            console.log(`${logPrefix} Đã gửi message runGetPhone từ alarm. Response:`, response);
+        }
+    );
+}
 });
 
 /**
@@ -5720,3 +5741,21 @@ async function checkAmazonLoginStatus() {
     return false;
   }
 }
+
+chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
+  if (req.action === "reportStatusToServer_action") {
+    const { featureName, status, message } = req.data || {};
+
+    console.log(`[BG] 🧾 Nhận yêu cầu reportStatusToServer cho ${featureName} (${status})`);
+    try {
+      await reportStatusToServer(featureName, status, message);
+      console.log(`[BG] ✅ Gửi reportStatusToServer thành công (${status})`);
+      sendResponse({ ok: true });
+    } catch (err) {
+      console.error("[BG] ❌ reportStatusToServer lỗi:", err);
+      sendResponse({ ok: false, error: err.message || String(err) });
+    }
+
+    return true; // Giữ channel mở cho async
+  }
+});

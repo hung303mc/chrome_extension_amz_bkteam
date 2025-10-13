@@ -2,81 +2,140 @@
 // Chứa code xử lý background nhưng tách ra file riêng
 // một lát nữa thêm hàm sync tự động vào đây
 chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
-    // 📦 Xử lý cả 2 trường hợp upload (single & multi)
+  const featureName = "syncPhone"; // tên feature dùng khi report trạng thái lên server
+  try {
+    // ========== CASE 1: Upload file (single & multi) ==========
     if (req.message === "uploadGetPhoneFile" || req.message === "uploadGetPhoneFile_only") {
-        // 🧭 Xác định xem đây là upload-only (multi mode) hay upload + sync (single)
-        const uploadOnly = req.message === "uploadGetPhoneFile_only";
-        console.log(`[GetPhone] 📩 Nhận message ${req.message}`);
+      const uploadOnly = req.message === "uploadGetPhoneFile_only";
+      console.log(`[GetPhone] 📩 Nhận message ${req.message}`);
 
-        // 📄 Giải nén dữ liệu gửi từ content script
-        const { blobBase64, fileName, note, batchId } = req.data;
+      const { blobBase64, fileName, note, batchId } = req.data || {};
 
-        // 🔄 Chuyển base64 → Blob → File (để append vào FormData)
-        const blob = Uint8Array.from(atob(blobBase64), c => c.charCodeAt(0));
-        const file = new File([blob], fileName, { type: "text/plain" });
-
-        // 🧾 Chuẩn bị formData để gửi lên server
-        const formData = new FormData();
-        formData.append("merchant_id", "TEST_MERCHANT_123");
-        formData.append("log_message", note);
-        formData.append("batch_id", batchId || `batch_${Date.now()}`); // 🔹 batch_id: dùng chung cho nhiều file nếu multi
-        formData.append("report_file", file);
-
-        try {
-            // 🚀 Upload file lên server (upload_getphone_handler.php)
-            console.log("[GetPhone] 🔄 Đang upload file...");
-            const uploadRes = await fetch("https://bkteam.top/dungvuong-admin/api/upload_getphone_handler.php", {
-                method: "POST",
-                body: formData,
-            });
-
-            const uploadResult = await uploadRes.json();
-            console.log("[GetPhone] ✅ Upload thành công:", uploadResult);
-
-            // 🌀 Nếu là single mode → upload xong thì gọi API sync luôn
-            if (!uploadOnly) {
-                console.log("[GetPhone] 🔁 Gọi API sync buyer phones...");
-                const syncRes = await fetch("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=syncBuyerPhones");
-                const syncResult = await syncRes.json();
-                console.log("[GetPhone] ✅ Sync hoàn tất:", syncResult);
-
-                // 📤 Trả kết quả về content script
-                sendResponse({ ok: true, upload: uploadResult, sync: syncResult });
-            } 
-            // 🧩 Ngược lại (multi mode) thì chỉ upload thôi
-            else {
-                sendResponse({ ok: true, upload: uploadResult });
-            }
-
-        } catch (err) {
-            console.error("[GetPhone] 💥 Lỗi khi upload hoặc sync:", err);
-            sendResponse({ ok: false, error: err.message });
-        }
-
+      // Validate input tối thiểu
+      if (!blobBase64 || !fileName) {
+        const errMsg = "[Get_Buyer_Phone] Không có data để download.";
+        console.error(errMsg);
+        sendLogToServer(errMsg);
+        await reportStatusToServer(featureName, "FAILED", errMsg);
+        sendResponse({ ok: false, error: errMsg });
         return true;
+      }
+
+      // Chuyển base64 -> Blob -> File
+      const blob = Uint8Array.from(atob(blobBase64), c => c.charCodeAt(0));
+      const file = new File([blob], fileName, { type: "text/plain" });
+
+      const merchantId = "TEST_MERCHANT_123"; // nếu có thể, replace bằng giá trị thực từ storage hoặc req.data
+      const formData = new FormData();
+      formData.append("merchant_id", merchantId);
+      formData.append("log_message", note || "");
+      formData.append("batch_id", batchId || `batch_${Date.now()}`);
+      formData.append("report_file", file);
+
+      try {
+        // Start upload
+        sendLogToServer(`[GetPhone] 🔄 Đang upload file: ${fileName}`);
+        await reportStatusToServer(featureName, "RUNNING", "Bắt đầu upload file tới Server.");
+
+        const uploadRes = await fetch("https://bkteam.top/dungvuong-admin/api/upload_getphone_handler.php", {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadResult = await uploadRes.json();
+        console.log("[GetPhone] ✅ Upload thành công:", uploadResult);
+
+        // Nếu là single mode -> sync ngay
+        if (!uploadOnly) {
+          try {
+            sendLogToServer("[GetPhone] 🔁 Gọi API sync buyer phones...");
+            await reportStatusToServer(featureName, "RUNNING", "Bắt đầu sync buyer phones...");
+
+            const syncRes = await fetch("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=syncBuyerPhones", {
+              method: "GET"
+            });
+            const syncResult = await syncRes.json();
+            console.log("[GetPhone] ✅ Sync hoàn tất:", syncResult);
+
+            sendLogToServer("[GetPhone] ✅ Sync hoàn tất.");
+            await reportStatusToServer(featureName, "SUCCESS", "Sync buyer phones hoàn tất.");
+
+            sendResponse({ ok: true, upload: uploadResult, sync: syncResult });
+          } catch (syncErr) {
+            console.error("[GetPhone] 💥 Lỗi khi sync:", syncErr);
+            sendLogToServer(`[GetPhone] 💥 Sync error: ${syncErr.message || syncErr}`);
+            await reportStatusToServer(featureName, "FAILED", `Sync error: ${syncErr.message || syncErr}`);
+            sendResponse({ ok: false, upload: uploadResult, error: syncErr.message || String(syncErr) });
+          }
+        } else {
+          // multi-mode -> chỉ upload
+          sendResponse({ ok: true, upload: uploadResult });
+        }
+      } catch (uploadErr) {
+        console.error("[GetPhone] 💥 Lỗi khi upload:", uploadErr);
+        sendLogToServer(`[GetPhone] 💥 Upload error: ${uploadErr.message || uploadErr}`);
+        await reportStatusToServer(featureName, "FAILED", `Upload error: ${uploadErr.message || uploadErr}`);
+        sendResponse({ ok: false, error: uploadErr.message || String(uploadErr) });
+      }
+
+      return true; // giữ channel mở cho sendResponse async
     }
 
-
-    // 2️⃣ Sync Buyer Phones manually
+    // ========== CASE 2: Sync Buyer Phones manually ==========
     if (req.message === "syncBuyerPhonesNow") {
         console.log("[GetPhone] 🔁 Thực hiện syncBuyerPhonesFromFiles...");
+        sendLogToServer("[GetPhone] 🔁 Manual sync requested.");
+
+        // 🧩 Gửi trạng thái RUNNING
+        console.log("[GetPhone][reportStatusToServer] → Gửi trạng thái RUNNING...");
+        await reportStatusToServer(featureName, "RUNNING", "Đang thực hiện Sync Phone-number");
+        console.log("[GetPhone][reportStatusToServer] ✅ RUNNING sent.");
+
         try {
-            const syncRes = await fetch("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=syncBuyerPhones");
+            const syncRes = await fetch(
+                "https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=syncBuyerPhones",
+                { method: "GET" }
+            );
             const result = await syncRes.json();
             console.log("[GetPhone] ✅ Sync Done:", result);
+
+            sendLogToServer("[GetPhone] ✅ Manual sync completed.");
+
+            // 🧩 Gửi trạng thái SUCCESS
+            console.log("[GetPhone][reportStatusToServer] → Gửi trạng thái SUCCESS...");
+            await reportStatusToServer(featureName, "SUCCESS", "Sync Phone-number thành công.");
+            console.log("[GetPhone][reportStatusToServer] ✅ SUCCESS sent.");
 
             sendResponse({ ok: true, result });
         } catch (err) {
             console.error("[GetPhone] 💥 Sync lỗi:", err);
-            
-            sendResponse({ ok: false, error: err.message });
+            sendLogToServer(`[GetPhone] 💥 Manual sync error: ${err.message || err}`);
+
+            // 🧩 Gửi trạng thái FAILED
+            console.log("[GetPhone][reportStatusToServer] → Gửi trạng thái FAILED...");
+            await reportStatusToServer(featureName, "FAILED", `Sync Phone-number thất bại: ${err.message || err}`);
+            console.log("[GetPhone][reportStatusToServer] ✅ FAILED sent.");
+
+            sendResponse({ ok: false, error: err.message || String(err) });
         }
 
         return true;
     }
 
 
+
+    // Nếu không phải case liên quan -> trả về false để không chiếm channel
+    return false;
+  } catch (outerErr) {
+    console.error("[GetPhone] 💥 Unexpected error in message handler:", outerErr);
+    sendLogToServer(`[GetPhone] 💥 Unexpected error: ${outerErr.message || outerErr}`);
+    // Cố gắng báo server nếu có thể
+    try { await reportStatusToServer(featureName, "FAILED", `Unexpected error: ${outerErr.message || outerErr}`); } catch(e){/* ignore */ }
+    sendResponse({ ok: false, error: outerErr.message || String(outerErr) });
+    return true;
+  }
 });
+
 
 
 

@@ -238,16 +238,12 @@ $(document).on("click", "#run_test", async function () {
 
     // Nếu tick “Test Lấy sđt” thì hiển thị alert test
     if (settings.getPhone) {
-        console.log("[POPUP] Chuẩn bị hỏi tải 1 hay tất cả...");
-
-        const downloadAll = confirm("Bạn muốn tải TẤT CẢ file Download?\nChọn OK = tải tất cả, Cancel = chỉ tải 1 file");
-
-        console.log(`[POPUP] Người dùng chọn: ${downloadAll ? "Tải tất cả" : "Tải 1 file"}`);
+        console.log("[POPUP] Tự động chạy chế độ tải TẤT CẢ file (mode: all)");
 
         chrome.runtime.sendMessage(
             { 
                 message: "runGetPhone",
-                mode: downloadAll ? "all" : "single" // gửi mode sang background
+                mode: "all" // luôn auto tải tất cả
             },
             (response) => {
                 console.log("[POPUP] Đã gửi xong message runGetPhone. Phản hồi:", response);
