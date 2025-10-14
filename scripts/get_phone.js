@@ -94,22 +94,53 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
             .filter(el => el.innerText.trim().toLowerCase() === 'download');
 
         if (buttons.length === 0) {
-            alert("❌ Không tìm thấy nút Download nào!");
-            await reportStatusToServer("syncPhone", "FAILED", `Không tìm thấy nut Download nào!`);
+            let retryCount = parseInt(sessionStorage.getItem('getPhoneRetryCount') || "0", 10);
+            retryCount++;
+            sessionStorage.setItem('getPhoneRetryCount', retryCount);
+
+            console.warn(`[GetPhone] ❌ Không thấy nút Download (lần ${retryCount}/5)`);
+
+            if (retryCount <= 5) {
+                console.log("[GetPhone] ⏳ Yêu cầu background reload lại tab...");
+
+                chrome.runtime.sendMessage({ message: "reloadCurrentTab" });
+
+                return;
+            }
+
+            // --- Nếu quá 5 lần vẫn không thấy nút Download ---
+            chrome.runtime.sendMessage({
+                action: "reportStatusToServer_action",
+                data: {
+                    featureName: "syncPhone",
+                    status: "FAILED",
+                    message: "Không tìm thấy nút Download sau 5 lần thử."
+                }
+            }, (res) => {
+                console.log("[ContentScript] Đã gửi yêu cầu reportStatusToServer_action, phản hồi:", res);
+            });
+
+            sessionStorage.removeItem('getPhoneRetryCount');
+
+
             sendResponse({ status: "no_download_button" });
             chrome.runtime.sendMessage({
                 message: "uploadGetPhoneFile",
                 data: {
-                    note: "Không tìm thấy nút Download nào!",
+                    note: "Không tìm thấy nút Download sau 5 lần thử!",
                     fileName: null
                 }
-                }, (res) => {
+            }, (res) => {
                 console.log("[ContentScript] Đã gửi message uploadGetPhoneFile xong, phản hồi:", res);
-                });
+            });
 
-                console.log("[ContentScript] Đã gọi chrome.runtime.sendMessage()");
+            console.log("[ContentScript] Dừng lại sau 5 lần refresh thất bại");
             return;
         }
+
+        // Nếu đến đây nghĩa là tìm thấy nút Download
+        sessionStorage.removeItem('getPhoneRetryCount');
+
 
         // get_phone.js
         if (req.mode === "single") {
@@ -191,7 +222,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
             // 🔁 Sau khi upload hết → yêu cầu background gọi sync 1 lần duy nhất
             chrome.runtime.sendMessage({ message: "syncBuyerPhonesNow" }, (res) => {
                 console.log("[ContentScript] 🔁 Sync Buyer Phones Result:", res);
-                alert(`✅ Đã upload ${buttons.length} file và sync xong!\nThành công: ${res?.result?.summary?.updated ?? 0}, Thất bại: ${res?.result?.summary?.failed ?? 0}`);
+                alert(`✅ Đã upload ${buttons.length} file và sync xong!`);
             });
         }
 

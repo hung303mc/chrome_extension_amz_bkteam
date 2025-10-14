@@ -35,7 +35,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
       try {
         // Start upload
         sendLogToServer(`[GetPhone] 🔄 Đang upload file: ${fileName}`);
-        await reportStatusToServer(featureName, "RUNNING", "Bắt đầu upload file tới Server.");
 
         const uploadRes = await fetch("https://bkteam.top/dungvuong-admin/api/upload_getphone_handler.php", {
           method: "POST",
@@ -87,9 +86,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
         sendLogToServer("[GetPhone] 🔁 Manual sync requested.");
 
         // 🧩 Gửi trạng thái RUNNING
-        console.log("[GetPhone][reportStatusToServer] → Gửi trạng thái RUNNING...");
         await reportStatusToServer(featureName, "RUNNING", "Đang thực hiện Sync Phone-number");
-        console.log("[GetPhone][reportStatusToServer] ✅ RUNNING sent.");
 
         try {
             const syncRes = await fetch(
@@ -102,9 +99,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
             sendLogToServer("[GetPhone] ✅ Manual sync completed.");
 
             // 🧩 Gửi trạng thái SUCCESS
-            console.log("[GetPhone][reportStatusToServer] → Gửi trạng thái SUCCESS...");
             await reportStatusToServer(featureName, "SUCCESS", "Sync Phone-number thành công.");
-            console.log("[GetPhone][reportStatusToServer] ✅ SUCCESS sent.");
 
             sendResponse({ ok: true, result });
         } catch (err) {
@@ -112,9 +107,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
             sendLogToServer(`[GetPhone] 💥 Manual sync error: ${err.message || err}`);
 
             // 🧩 Gửi trạng thái FAILED
-            console.log("[GetPhone][reportStatusToServer] → Gửi trạng thái FAILED...");
             await reportStatusToServer(featureName, "FAILED", `Sync Phone-number thất bại: ${err.message || err}`);
-            console.log("[GetPhone][reportStatusToServer] ✅ FAILED sent.");
 
             sendResponse({ ok: false, error: err.message || String(err) });
         }
@@ -135,10 +128,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
     return true;
   }
 });
-
-
-
-
 
 
 // Kiểm tra order ID có hợp lệ không và cập nhật SĐT để test
@@ -196,4 +185,73 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
 
         return true;
     }
+});
+
+// Hàm reload lại tab hiện tại (nếu cần) với giới hạn 5 lần
+chrome.runtime.onMessage.addListener(async (req, sender, res) => {
+    if (req.message === "reloadCurrentTab") {
+        console.log("[BG] Nhận yêu cầu reloadCurrentTab");
+
+        const { retryCount = 0 } = await chrome.storage.session.get(["retryCount"]);
+        const newCount = retryCount + 1;
+
+        if (newCount > 5) {
+            console.warn("[BG] ⚠️ Đã reload quá 5 lần, dừng lại!");
+            await chrome.storage.session.remove(["autoRunGetPhone", "retryCount"]);
+            return res({ status: "max_retry_reached" });
+        }
+
+        await chrome.storage.session.set({
+            autoRunGetPhone: true,
+            retryCount: newCount
+        });
+
+        console.log(`[BG] 🔁 Reload lần ${newCount}/5`);
+
+        if (sender.tab?.id) chrome.tabs.reload(sender.tab.id);
+        res({ status: "reloading", attempt: newCount });
+    }
+});
+
+
+// lắng nghe reload tab xong để tự động gửi lại getPhoneNow
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status === "complete" && tab.url?.includes("order-reports-and-feeds")) {
+        const { autoRunGetPhone, retryCount = 0 } = await chrome.storage.session.get(["autoRunGetPhone", "retryCount"]);
+
+        if (autoRunGetPhone) {
+            console.log(`[BG] ✅ Trang reload xong → gửi lại getPhoneNow (lần ${retryCount}/5)`);
+
+            // Reset flag để tránh vòng lặp
+            await chrome.storage.session.set({ autoRunGetPhone: false });
+
+            // Gửi lại message sang content script
+            chrome.tabs.sendMessage(tabId, { message: "getPhoneNow", mode: "all" });
+        }
+
+        // Nếu đã thành công (tức content script không gọi reload nữa) thì reset retryCount
+        if (!autoRunGetPhone && retryCount > 0) {
+            await chrome.storage.session.remove("retryCount");
+        }
+    }
+});
+
+
+// nhận yêu cầu từ file bên ngoài và gửi trạng thái lên server
+chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
+  if (req.action === "reportStatusToServer_action") {
+    const { featureName, status, message } = req.data || {};
+
+    console.log(`[BG] 🧾 Nhận yêu cầu reportStatusToServer cho ${featureName} (${status})`);
+    try {
+      await reportStatusToServer(featureName, status, message);
+      console.log(`[BG] ✅ Gửi reportStatusToServer thành công (${status})`);
+      sendResponse({ ok: true });
+    } catch (err) {
+      console.error("[BG] ❌ reportStatusToServer lỗi:", err);
+      sendResponse({ ok: false, error: err.message || String(err) });
+    }
+
+    return true; // Giữ channel mở cho async
+  }
 });
