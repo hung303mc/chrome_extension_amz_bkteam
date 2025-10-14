@@ -197,7 +197,7 @@ $(document).on("click", "#run_test", async function () {
         downloadAds: $('#test_download_ads').is(':checked'),
         sendMessageAuto: $('#test_send_message_auto').is(':checked'), 
         payment: $('#test_payment').is(':checked'), // Thêm checkbox mới
-        getPhone: $('#test_get_phone').is(':checked'), // thêm get sdt
+        syncPhone: $('#test_get_phone').is(':checked'), // thêm get sdt
     };
 
     // Đọc giá trị thời gian chờ (delay)
@@ -213,7 +213,7 @@ $(document).on("click", "#run_test", async function () {
     }
 
     // Xử lý các tác vụ cũ (Lấy đơn, Update tracking, v.v.)
-    const otherTasks = settings.syncOrder || settings.updateTracking || settings.accountHealth || settings.downloadAds || settings.sendMessageAuto;
+    const otherTasks = settings.syncOrder || settings.updateTracking || settings.accountHealth || settings.downloadAds || settings.sendMessageAuto || settings.syncPhone;
     if (otherTasks) {
         const otherSettings = { ...settings };
         delete otherSettings.payment; // Xóa key payment khỏi object này để không ảnh hưởng logic cũ
@@ -237,19 +237,19 @@ $(document).on("click", "#run_test", async function () {
     }
 
     // Nếu tick “Test Lấy sđt” thì hiển thị alert test
-    if (settings.getPhone) {
-        console.log("[POPUP] Tự động chạy chế độ tải TẤT CẢ file (mode: all)");
+    // if (settings.syncPhone) {
+    //     console.log("[POPUP] Tự động chạy chế độ tải TẤT CẢ file (mode: all)");
 
-        chrome.runtime.sendMessage(
-            { 
-                message: "runGetPhone",
-                mode: "all" // luôn auto tải tất cả
-            },
-            (response) => {
-                console.log("[POPUP] Đã gửi xong message runGetPhone. Phản hồi:", response);
-            }
-        );
-    }
+    //     chrome.runtime.sendMessage(
+    //         { 
+    //             message: "runGetPhone",
+    //             mode: "all" // luôn auto tải tất cả
+    //         },
+    //         (response) => {
+    //             console.log("[POPUP] Đã gửi xong message runGetPhone. Phản hồi:", response);
+    //         }
+    //     );
+    // }
 
 
 

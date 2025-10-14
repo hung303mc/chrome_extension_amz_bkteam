@@ -64,7 +64,7 @@ const setupTestAlarms = async () => {
     return;
   }
 
-  const { syncOrder, updateTracking, accountHealth, downloadAds, sendMessageAuto, delay = 1 } = testSettings;
+  const { syncOrder, updateTracking, accountHealth, downloadAds, sendMessageAuto, syncPhone, delay = 1 } = testSettings;
 
   console.log(`--- CHẠY CHẾ ĐỘ TEST THEO YÊU CẦU ---`);
   console.log(`Cài đặt: Lấy đơn=${syncOrder}, Update Tracking=${updateTracking}, Account Health=${accountHealth}, Gửi Tin Nhắn=${sendMessageAuto}, , Chạy sau=${delay} phút.`);
@@ -75,6 +75,7 @@ const setupTestAlarms = async () => {
   chrome.alarms.clear("test_accountHealth");
   chrome.alarms.clear("test_downloadAdsReports"); // Thêm dòng này
   chrome.alarms.clear("test_sendMessageAuto");
+  chrome.alarms.clear("test_syncPhone");
 
 
   let currentDelay = delay;
@@ -101,9 +102,11 @@ const setupTestAlarms = async () => {
     chrome.alarms.create("test_sendMessageAuto", { delayInMinutes: currentDelay });
     console.log(`- Đã đặt lịch 'test_sendMessageAuto' sau ${currentDelay} phút.`);
   }
-
-
-
+  if (syncPhone) {
+    chrome.alarms.create("test_syncPhone", { delayInMinutes: currentDelay });
+    console.log(`- Đã đặt lịch 'test_syncPhone' sau ${currentDelay} phút.`);
+  }
+    
   console.log("Đã đặt lịch hẹn test thành công!");
 };
 
@@ -120,7 +123,8 @@ const setupDailyAlarm = async () => {
     'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
     'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
     'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5',
-    'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Tue', 'paymentRequest_Wednesday', 'paymentRequest_Thu', 'paymentRequest_Friday'
+    'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Tue', 'paymentRequest_Wednesday', 'paymentRequest_Thu', 'paymentRequest_Friday',
+    'syncPhone_1', 'syncPhone_2', 'syncPhone_3', 'syncPhone_4', 'syncPhone_5',
   ];
 
   // let savedPaymentAlarm = null;
@@ -1256,23 +1260,36 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       await reportStatusToServer(featureName, 'FAILED', error.message);
     }
   }
-
   // alarm lấy SĐT tự động
-  else if (alarm.name.startsWith("syncPhone_")) {
+  else if (alarm.name.startsWith("syncPhone_") || alarm.name === "test_syncPhone") {
+    const featureName = 'syncPhone';
     const logPrefix = '[SyncPhone]';
-    console.log(`${logPrefix} Alarm triggered: ${alarm.name}`);
-    sendLogToServer(`${logPrefix} Báo thức kích hoạt, bắt đầu tự động lấy SĐT.`);
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
+    console.log(`${logPrefix} Báo thức kích hoạt: ${alarm.name}. Bắt đầu tự động lấy SĐT...`);
+    sendLogToServer(`${logPrefix} Bắt đầu quy trình tự động.`);
 
-    chrome.runtime.sendMessage(
-        { 
-            message: "runGetPhone",
-            mode: "all"
-        },
-        (response) => {
-            console.log(`${logPrefix} Đã gửi message runGetPhone từ alarm. Response:`, response);
-        }
-    );
-}
+    try {
+      // Gọi lệnh chạy quy trình lấy SĐT (mở tab Amazon report + trigger content script)
+      const reportUrl = "https://sellercentral.amazon.com/order-reports-and-feeds/reports/ref=xx_orderrpt_dnav_xx";
+      chrome.tabs.create({ url: reportUrl, active: true }, (tab) => {
+        console.log(`${logPrefix} Đã mở tab Amazon reports:`, tab.id);
+        setTimeout(() => {
+          chrome.tabs.sendMessage(tab.id, { message: "getPhoneNow", mode: "all" });
+        }, 5000);
+      });
+
+      // Báo cáo thành công (ở mức trigger, vì không chờ kết quả lấy file)
+      const finalMessage = `Đã kích hoạt quy trình lấy SĐT từ alarm: ${alarm.name}.`;
+      await reportStatusToServer(featureName, 'RUNNING', finalMessage);
+      sendLogToServer(`${logPrefix} ${finalMessage}`);
+
+    } catch (error) {
+      console.error(`${logPrefix} Lỗi trong quá trình kích hoạt lấy SĐT:`, error);
+      sendLogToServer(`${logPrefix} LỖI: ${error.message}`);
+      await reportStatusToServer(featureName, 'FAILED', error.message);
+    }
+  }
+
 });
 
 /**
@@ -2052,22 +2069,23 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     return true;
   }
 
-  if (req.message === "runGetPhone") {
-      console.log("[BG] Nhận yêu cầu Lấy SĐT từ popup, mode =", req.mode);
+    // Không còn dùng nữa do đã gôm chung vào alarm
+  // if (req.message === "runGetPhone") {
+  //     console.log("[BG] Nhận yêu cầu Lấy SĐT từ popup, mode =", req.mode);
 
-      const reportUrl = "https://sellercentral.amazon.com/order-reports-and-feeds/reports/ref=xx_orderrpt_dnav_xx";
+  //     const reportUrl = "https://sellercentral.amazon.com/order-reports-and-feeds/reports/ref=xx_orderrpt_dnav_xx";
 
-      chrome.tabs.create({ url: reportUrl, active: true }, (tab) => {
-          console.log("[BG] Đã mở tab Amazon reports:", tab.id);
-          // Sau 5s (cho trang load xong) → gửi message sang content script
-          setTimeout(() => {
-              chrome.tabs.sendMessage(tab.id, { message: "getPhoneNow", mode: req.mode });
-          }, 5000);
-      });
+  //     chrome.tabs.create({ url: reportUrl, active: true }, (tab) => {
+  //         console.log("[BG] Đã mở tab Amazon reports:", tab.id);
+  //         // Sau 5s (cho trang load xong) → gửi message sang content script
+  //         setTimeout(() => {
+  //             chrome.tabs.sendMessage(tab.id, { message: "getPhoneNow", mode: req.mode });
+  //         }, 5000);
+  //     });
 
-      res({ status: "started_get_phone" });
-      return true;
-  }
+  //     res({ status: "started_get_phone" });
+  //     return true;
+  // }
 
   // Luôn xử lý log trước tiên
   if (req.message === "log_to_server") {
@@ -5742,20 +5760,5 @@ async function checkAmazonLoginStatus() {
   }
 }
 
-chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
-  if (req.action === "reportStatusToServer_action") {
-    const { featureName, status, message } = req.data || {};
 
-    console.log(`[BG] 🧾 Nhận yêu cầu reportStatusToServer cho ${featureName} (${status})`);
-    try {
-      await reportStatusToServer(featureName, status, message);
-      console.log(`[BG] ✅ Gửi reportStatusToServer thành công (${status})`);
-      sendResponse({ ok: true });
-    } catch (err) {
-      console.error("[BG] ❌ reportStatusToServer lỗi:", err);
-      sendResponse({ ok: false, error: err.message || String(err) });
-    }
 
-    return true; // Giữ channel mở cho async
-  }
-});
