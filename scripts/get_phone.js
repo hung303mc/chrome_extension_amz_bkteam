@@ -135,6 +135,9 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
             });
 
             console.log("[ContentScript] Dừng lại sau 5 lần refresh thất bại");
+
+            // ✅ Đóng tab tại đây
+            setTimeout(() => window.close(), 1500);
             return;
         }
 
@@ -172,7 +175,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
                 data: { blobBase64, fileName: localFileName, note, batchId },
             }, (res) => console.log("[ContentScript] 📤 Upload result:", res));
 
-            alert("✅ File đã được tải về và gửi lên server + sync thành công!");
+            // alert("✅ File đã được tải về và gửi lên server + sync thành công!");
         }
 
         else {
@@ -215,14 +218,18 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
                 chrome.runtime.sendMessage({
                     message: "uploadGetPhoneFile_only",
                     data: fileData,
-                }, (res) => console.log("[ContentScript] 📤 Upload-only result:", res));
+                });
                 await new Promise(r => setTimeout(r, 1500));
             }
 
             // 🔁 Sau khi upload hết → yêu cầu background gọi sync 1 lần duy nhất
-            chrome.runtime.sendMessage({ message: "syncBuyerPhonesNow" }, (res) => {
+            chrome.runtime.sendMessage({
+                message: "syncBuyerPhonesNow",
+                data: { batchId } // ✅ Truyền batchId qua
+            }, (res) => {
                 console.log("[ContentScript] 🔁 Sync Buyer Phones Result:", res);
-                alert(`✅ Đã upload ${buttons.length} file và sync xong!`);
+                // ✅ Đóng tab sau khi sync hoàn tất
+                setTimeout(() => window.close(), 2000);
             });
         }
 
