@@ -7,7 +7,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
     // ========== CASE 1: Upload file (single & multi) ==========
     if (req.message === "uploadGetPhoneFile" || req.message === "uploadGetPhoneFile_only") {
       const uploadOnly = req.message === "uploadGetPhoneFile_only";
-      console.log(`[GetPhone] 📩 Nhận message ${req.message}`);
 
       const { blobBase64, fileName, note, batchId } = req.data || {};
 
@@ -48,7 +47,7 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
         if (!uploadOnly) {
           try {
             sendLogToServer("[GetPhone] 🔁 Gọi API sync buyer phones...");
-            await reportStatusToServer(featureName, "RUNNING", "Bắt đầu sync buyer phones...");
+            // await reportStatusToServer(featureName, "RUNNING", "Bắt đầu sync buyer phones...");
 
             const syncRes = await fetch("https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=syncBuyerPhones", {
               method: "GET"
@@ -85,35 +84,50 @@ chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
         console.log("[GetPhone] 🔁 Thực hiện syncBuyerPhonesFromFiles...");
         sendLogToServer("[GetPhone] 🔁 Manual sync requested.");
 
-        // 🧩 Gửi trạng thái RUNNING
-        await reportStatusToServer(featureName, "RUNNING", "Đang thực hiện Sync Phone-number");
+        const { batchId } = req.data || {}; // Nhận batchId từ popup hoặc upload trước đó
+        const query = batchId 
+            ? `?case=syncBuyerPhones&batch_id=${encodeURIComponent(batchId)}`
+            : `?case=syncBuyerPhones`;
+
+        
+
+        await reportStatusToServer(
+            featureName,
+            "RUNNING",
+            `Đang Sync Phone-number (batch_id=${batchId || 'none'})`
+        );
 
         try {
+            console.log("💥 batchId: ", encodeURIComponent(batchId));
             const syncRes = await fetch(
-                "https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php?case=syncBuyerPhones",
+                "https://bkteam.top/dungvuong-admin/api/Order_Sync_Amazon_to_System_Api_v2.php" + query,
                 { method: "GET" }
             );
             const result = await syncRes.json();
             console.log("[GetPhone] ✅ Sync Done:", result);
 
-            sendLogToServer("[GetPhone] ✅ Manual sync completed.");
-
-            // 🧩 Gửi trạng thái SUCCESS
-            await reportStatusToServer(featureName, "SUCCESS", "Sync Phone-number thành công.");
+            sendLogToServer(`[GetPhone] ✅ Manual sync completed (batch_id=${batchId || 'none'})`);
+            await reportStatusToServer(
+                featureName,
+                "SUCCESS",
+                `Sync Phone thành công (batch_id=${batchId || 'none'})`
+            );
 
             sendResponse({ ok: true, result });
         } catch (err) {
             console.error("[GetPhone] 💥 Sync lỗi:", err);
             sendLogToServer(`[GetPhone] 💥 Manual sync error: ${err.message || err}`);
-
-            // 🧩 Gửi trạng thái FAILED
-            await reportStatusToServer(featureName, "FAILED", `Sync Phone-number thất bại: ${err.message || err}`);
-
+            await reportStatusToServer(
+                featureName,
+                "FAILED",
+                `Sync Phone thất bại (batch_id=${batchId || 'none'})`
+            );
             sendResponse({ ok: false, error: err.message || String(err) });
         }
 
         return true;
     }
+
 
 
 

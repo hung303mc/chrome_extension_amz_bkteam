@@ -1280,7 +1280,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
       // Báo cáo thành công (ở mức trigger, vì không chờ kết quả lấy file)
       const finalMessage = `Đã kích hoạt quy trình lấy SĐT từ alarm: ${alarm.name}.`;
-      await reportStatusToServer(featureName, 'RUNNING', finalMessage);
+      // await reportStatusToServer(featureName, 'RUNNING', finalMessage);
       sendLogToServer(`${logPrefix} ${finalMessage}`);
 
     } catch (error) {
