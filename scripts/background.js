@@ -552,10 +552,48 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
       await reportStatusToServer(featureName, 'LOGIN_REQUIRED', 'User is not logged in to Amazon Seller Central.');
 
-      // Dọn dẹp tab Amazon đang mở nếu cần
+      console.log("[Alarm] Cleaning up login tabs, leaving one tab open...");
       const amazonTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/*" });
-      for (const tab of amazonTabs) {
-        if (tab.url.includes('/ap/signin')) {
+
+      // ✅ Lọc ra các tab bị lỗi login
+      const loginTabs = amazonTabs.filter(tab => tab.url.includes('/ap/signin'));
+
+      // ✅ Nếu có nhiều hơn 1 tab lỗi, mới bắt đầu dọn dẹp
+      if (loginTabs.length > 1) {
+        // Lấy danh sách các tab cần đóng (tất cả trừ tab đầu tiên)
+        const tabsToRemove = loginTabs.slice(1);
+        for (const tab of tabsToRemove) {
+          await chrome.tabs.remove(tab.id).catch(() => {});
+        }
+      }
+      return; // Dừng xử lý alarm này
+    }
+
+    console.log(`[Alarm] Checking for invalid charge method for ${alarm.name}...`);
+    const isChargeMethodInvalid = await checkInvalidChargeMethod();
+
+    if (isChargeMethodInvalid) {
+      const statusMessage = `[${alarm.name}] Stopped: INVALID CHARGE METHOD.`;
+      console.log(statusMessage);
+      sendLogToServer(statusMessage);
+
+      // Lấy tên feature để báo cáo, tương tự như lỗi login
+      const match = alarm.name.match(/^(?:test_)?([a-zA-Z]+)/);
+      const featureName = match ? match[1] : alarm.name.split('_')[0];
+
+      await reportStatusToServer(featureName, 'CHARGE_INVALID', 'An invalid charge method is restricting account access.');
+
+      console.log("[Alarm] Cleaning up invalid charge method tabs, leaving one tab open...");
+      const amazonTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/*" });
+
+      // ✅ Lọc ra các tab bị lỗi charge method
+      const chargeMethodTabs = amazonTabs.filter(tab => tab.url.includes('/authorization/failed/invalid-credit-card'));
+
+      // ✅ Nếu có nhiều hơn 1 tab lỗi, mới bắt đầu dọn dẹp
+      if (chargeMethodTabs.length > 1) {
+        // Lấy danh sách các tab cần đóng (tất cả trừ tab đầu tiên)
+        const tabsToRemove = chargeMethodTabs.slice(1);
+        for (const tab of tabsToRemove) {
           await chrome.tabs.remove(tab.id).catch(() => {});
         }
       }
@@ -5760,5 +5798,60 @@ async function checkAmazonLoginStatus() {
   }
 }
 
+/**
+ * Hàm kiểm tra xem tài khoản có bị lỗi Invalid Charge Method hay không.
+ * @returns {Promise<boolean>} - Trả về true nếu BỊ LỖI charge method.
+ */
+async function checkInvalidChargeMethod() {
+  const logPrefix = '[ChargeMethodCheck]';
+  let checkTab = null;
+  let isNewTab = false;
 
+  try {
+    // Ưu tiên dùng lại tab đang mở để đỡ phải tạo tab mới
+    const existingTabs = await chrome.tabs.query({ url: "*://sellercentral.amazon.com/*" });
+    if (existingTabs.length > 0) {
+      checkTab = existingTabs[0];
+      await chrome.tabs.update(checkTab.id, { url: "https://sellercentral.amazon.com/home", active: false });
+    } else {
+      isNewTab = true;
+      checkTab = await chrome.tabs.create({ url: "https://sellercentral.amazon.com/home", active: false });
+    }
 
+    // Chờ tab tải xong
+    await waitForTabComplete(checkTab.id);
+
+    // Inject một script nhỏ vào trang để kiểm tra sự tồn tại của div báo lỗi
+    const injectionResults = await chrome.scripting.executeScript({
+      target: { tabId: checkTab.id },
+      func: () => {
+        // Dấu hiệu nhận biết là cái div có class "invalid-charge-method-container"
+        const errorDiv = document.querySelector('.invalid-charge-method-container');
+        return errorDiv !== null; // Trả về true nếu tìm thấy div, ngược lại là false
+      },
+    });
+
+    // Lấy kết quả từ script đã inject
+    const isInvalid = injectionResults[0].result;
+
+    if (isInvalid) {
+      sendLogToServer(`${logPrefix} Status: INVALID CHARGE METHOD DETECTED!`);
+      // Nếu là tab mới tạo, đóng nó đi
+      if (isNewTab) await chrome.tabs.remove(checkTab.id).catch(() => {});
+      return true; // Bị lỗi -> trả về true
+    }
+
+    // Nếu không bị lỗi
+    sendLogToServer(`${logPrefix} Status: Charge method is OK.`);
+    if (isNewTab) await chrome.tabs.remove(checkTab.id).catch(() => {});
+    return false; // Không bị lỗi -> trả về false
+
+  } catch (error) {
+    console.error(`${logPrefix} Error:`, error);
+    sendLogToServer(`${logPrefix} Error checking charge method: ${error.message}`);
+    if (checkTab?.id && isNewTab) {
+      await chrome.tabs.remove(checkTab.id).catch(() => {});
+    }
+    return false; // Mặc định là không lỗi nếu có sự cố
+  }
+}
