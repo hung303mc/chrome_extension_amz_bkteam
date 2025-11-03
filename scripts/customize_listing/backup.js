@@ -2,24 +2,29 @@
 
 const CS_DBG = true;
 const CS_TAG = "[CS][Customizer]";
-const ENABLE_ADDING_OPTIONS = true; // ← BẬT: tạo option theo JSON
+const ENABLE_ADDING_OPTIONS = false; // ← Đặt false để CHỈ set Label, không tạo option
 
-// ===== Selectors =====
+// B1: nút mở modal
 const SELS_ADD_BTN = [
   'kat-button[data-test-id="container-picker-add-button"]',
   'kat-button[label*="Add customization" i].gestalt_add-new-pane-button__J0ie5'
 ];
 
+// B3: nút Add trong modal (primary)
 const SELS_MODAL_CONFIRM_BTN = [
   'kat-button[data-test-id="container-picker-modal-add-button"]',
   'kat-button[label="Add customization"][variant="primary"]'
 ];
 
+// Ô Label trong pane mới
+const SEL_LABEL_INPUTS = [
+  'input[placeholder="Label"]',
+  'input[aria-label="Label"]',
+  'input[id^="katal-id-"]'
+];
+
 // Nút "Add option" trong group (compact)
 const SEL_ADD_OPTION = 'span[data-test-id="compact-option-item-add-option-button"]';
-
-// MỚI: nhắm đúng kat-input có value bắt đầu bằng "Option Dropdown"
-const SEL_KAT_INPUT_OD = 'kat-input[placeholder="Label"][value^="Option Dropdown"]';
 
 function cslog(...args) { if (CS_DBG) console.log(CS_TAG, ...args); }
 function cswarn(...args) { if (CS_DBG) console.warn(CS_TAG, ...args); }
@@ -66,6 +71,7 @@ function deepQueryAll(selector, root = document) {
   }
   return out;
 }
+
 function deepFindByText(text, root = document) {
   const wanted = (text || "").toLowerCase();
   const stack = [root];
@@ -89,7 +95,7 @@ function deepFindByText(text, root = document) {
 }
 
 // --- waitFor / delay ---
-function waitFor(fnCheck, { timeout = 20000, interval = 150 } = {}) {
+function waitFor(fnCheck, { timeout = 15000, interval = 120 } = {}) {
   cslog("waitFor: start", { timeout, interval });
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -131,7 +137,7 @@ function clickKatButtonHost(btnHost) {
 // ===================== B1/B2/B3 =====================
 async function clickAddCustomizationOpenModal() {
   cslog("B1: waiting for add-button…");
-  let btnHost = await waitFor(() => deepQuerySelector(SELS_ADD_BTN));
+  let btnHost = await waitFor(() => deepQuerySelector(SELS_ADD_BTN), { timeout: 20000, interval: 150 });
   if (!btnHost) {
     cswarn("B1: not found by selector, try text…");
     btnHost = deepFindByText("Add customization");
@@ -143,7 +149,8 @@ async function clickAddCustomizationOpenModal() {
 }
 async function waitForContainerPickerModal() {
   return waitFor(
-    () => deepQueryAll('kat-box[data-test-id="container-picker-modal-choice"]').length > 0
+    () => deepQueryAll('kat-box[data-test-id="container-picker-modal-choice"]').length > 0,
+    { timeout: 20000, interval: 150 }
   );
 }
 async function clickOptionDropdown() {
@@ -177,7 +184,7 @@ async function clickOptionDropdown() {
 }
 async function clickModalAddCustomizationConfirm() {
   cslog("B3: waiting for modal confirm button…");
-  const btnHost = await waitFor(() => deepQuerySelector(SELS_MODAL_CONFIRM_BTN));
+  const btnHost = await waitFor(() => deepQuerySelector(SELS_MODAL_CONFIRM_BTN), { timeout: 20000, interval: 150 });
   if (!btnHost) throw new Error("B3: Cannot find modal confirm 'Add customization' button");
   await waitFor(() => {
     const disabled = btnHost.hasAttribute?.('disabled') || btnHost.getAttribute?.('aria-disabled') === 'true';
@@ -188,77 +195,62 @@ async function clickModalAddCustomizationConfirm() {
   return true;
 }
 
-// ===================== Target đúng kat-input "Option Dropdown" =====================
-async function waitForTargetKatInput() {
+// ===================== NEW: Label & active container =====================
+
+// Đợi ô Label xuất hiện (ưu tiên phần tử đang focus là input "Label")
+async function waitForLabelInput() {
   return waitFor(() => {
-    const list = deepQueryAll(SEL_KAT_INPUT_OD);
-    if (list.length) {
-      cslog("Found kat-input OD targets =", list.length);
-      // Ưu tiên cái cuối cùng (thường là pane vừa tạo)
-      return list[list.length - 1];
+    const ae = document.activeElement;
+    if (
+      ae &&
+      ae.tagName === "INPUT" &&
+      (ae.getAttribute("placeholder") === "Label" ||
+        ae.getAttribute("aria-label") === "Label" ||
+        (ae.id || "").startsWith("katal-id-"))
+    ) {
+      return ae;
     }
-    return null;
-  });
+    // fallback: quét sâu
+    return deepQuerySelector(SEL_LABEL_INPUTS);
+  }, { timeout: 20000, interval: 150 });
 }
 
-function getInnerTextInputFromKatInput(host) {
-  if (!host) return null;
-  try {
-    let inp = host.shadowRoot?.querySelector('input[part="input"], input[type="text"], input');
-    if (inp) return inp;
-    const uid = host.getAttribute('unique-id') || host.getAttribute('id') || '';
-    if (uid) {
-      const fallback = document.querySelector(`input#${CSS.escape(uid)}, input[id^="${CSS.escape(uid)}"]`);
-      if (fallback) return fallback;
-    }
-    const local = host.querySelector?.('input[part="input"], input[type="text"], input');
-    if (local) return local;
-  } catch (e) {
-    cswarn("getInnerTextInputFromKatInput error:", e?.message);
-  }
-  return null;
-}
-
-async function setKatInputLabel(host, labelText) {
-  const input = getInnerTextInputFromKatInput(host);
-  if (!input) throw new Error("Cannot find inner input of kat-input");
+// Gõ label và bắn event để UI nhận + verify giá trị đã được giữ lại
+async function setGroupLabel(labelText) {
+  const input = await waitForLabelInput();
+  cslog("Label input found:", input);
 
   const finalText = labelText || "Choose Book";
 
-  // Chắc chắn focus đúng ô
-  host.scrollIntoView?.({ block: "center", inline: "nearest" });
-  try { host.click?.(); } catch {}
-  await delay(60);
-
+  // focus + clear + type
   input.focus();
+  try { input.setSelectionRange(0, (input.value || "").length); } catch {}
   input.value = "";
-  input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-
-  for (const ch of finalText.split("")) {
-    input.value += ch;
-    input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
-    await delay(15);
-  }
-  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  input.value = finalText;
+  input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
   input.blur?.();
 
-  // đồng bộ attribute cho host
-  try { host.setAttribute("value", finalText); } catch {}
-
-  const gotInput = (input.value || "").trim();
-  const gotHost = (host.getAttribute("value") || "").trim();
-  if (gotInput !== finalText.trim() && gotHost !== finalText.trim()) {
-    throw new Error(`Set kat-input label failed: input="${gotInput}" host="${gotHost}" ≠ "${finalText}"`);
+  // Verify lần 1: chính input giữ được giá trị
+  if ((input.value || "").trim() !== finalText.trim()) {
+    throw new Error(`Set label failed: input value="${input.value}" !== "${finalText}"`);
   }
-  cslog(`Set kat-input label to "${finalText}" OK`);
+
+  // Verify lần 2 (nhẹ): chờ UI “ổn định” 1 nhịp rồi kiểm lại
+  await delay(150);
+  if ((input.value || "").trim() !== finalText.trim()) {
+    throw new Error(`Set label failed after settle: input value="${input.value}" !== "${finalText}"`);
+  }
+
+  cslog(`Set label to "${finalText}" OK`);
   return input;
 }
 
 // Lấy container tuỳ chỉnh đang mở (ancestor của ô Label) – nơi chứa nút Add option
-function getActiveCustomizationContainerFromLabelInput(inputOrHost) {
-  let cur = inputOrHost;
-  for (let i = 0; i < 12 && cur; i++) {
+function getActiveCustomizationContainerFromLabelInput(input) {
+  let cur = input;
+  for (let i = 0; i < 10 && cur; i++) {
     if (cur.querySelector?.(SEL_ADD_OPTION)) {
       cslog("Active customization container found:", cur);
       return cur;
@@ -269,66 +261,22 @@ function getActiveCustomizationContainerFromLabelInput(inputOrHost) {
   return document;
 }
 
-// Bấm Add option n lần trong container chỉ định (có batching cho số lớn)
+// Bấm Add option n lần trong container chỉ định
 async function clickAddOptionNTimesInContainer(container, n) {
   if (!n || n <= 0) {
     cslog(`No need to add options, n=${n}`);
     return;
   }
+
   const addBtn = container.querySelector(SEL_ADD_OPTION);
   if (!addBtn) throw new Error("Add option button not found inside active customization container");
 
   cslog(`Adding ${n} option(s)…`);
-  const BATCH = 10; // nhấp theo lô để UI kịp render
-  let left = n;
-  while (left > 0) {
-    const take = Math.min(BATCH, left);
-    for (let i = 0; i < take; i++) {
-      addBtn.click();
-      await delay(120);
-    }
-    left -= take;
-    // đợi một nhịp dài hơn sau mỗi batch
-    await delay(350);
+  for (let i = 0; i < n; i++) {
+    addBtn.click();
+    await delay(300);
   }
   cslog(`Done adding ${n} option(s).`);
-}
-
-// ===================== MAIN PER-GROUP FLOW =====================
-async function createOneDropdownGroup(group) {
-  const targetLabel = (group?.label || "").trim() || "Choose";
-  const num = Number(group?.number_option || 0);
-  const clicks = Math.max(num - 2, 0);
-
-  cslog(`\n=== Create group: "${targetLabel}" (num=${num} → clicks=${clicks}) ===`);
-
-  // B1 → B2 → B3 cho từng group
-  await clickAddCustomizationOpenModal();
-  await clickOptionDropdown();
-  await clickModalAddCustomizationConfirm();
-
-  // Đợi kat-input mới xuất hiện và đổi tên
-  let labelHost, innerInput;
-  try {
-    labelHost = await waitForTargetKatInput();
-    innerInput = await setKatInputLabel(labelHost, targetLabel);
-  } catch (e) {
-    cserr("Set label failed for group:", targetLabel, e?.message);
-    throw e;
-  }
-
-  // Cho UI vẽ lại
-  await delay(300);
-
-  if (ENABLE_ADDING_OPTIONS) {
-    const container = getActiveCustomizationContainerFromLabelInput(labelHost);
-    await clickAddOptionNTimesInContainer(container, clicks);
-  } else {
-    cslog("ENABLE_ADDING_OPTIONS=false → skip adding options");
-  }
-
-  cslog(`=== Done group: "${targetLabel}" ===\n`);
-  return { label: targetLabel, intended_clicks: ENABLE_ADDING_OPTIONS ? clicks : 0 };
 }
 
 // ===================== Listener =====================
@@ -337,8 +285,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "NCNAS_APPLY") {
     (async () => {
       try {
-        // Parse payload/JSON
+        cslog("NCNAS_APPLY received. payload keys:", Object.keys(msg.payload || {}));
+
+        // B1 → B2 → B3
+        await clickAddCustomizationOpenModal();
+        await clickOptionDropdown();
+        await clickModalAddCustomizationConfirm();
+
+        // Resolve payload & JSON
         const payload = msg?.payload;
+        cslog("[CS] Incoming payload =", payload);
+
         let summary = null;
         if (payload?.json) {
           summary = typeof payload.json === "string" ? JSON.parse(payload.json) : payload.json;
@@ -347,23 +304,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } else if (typeof payload === "string") {
           try { const parsed = JSON.parse(payload); if (Array.isArray(parsed?.groups)) summary = parsed; } catch {}
         }
-        cslog("Parsed summary:", summary);
 
-        // Validate groups
-        const groups = Array.isArray(summary?.groups) ? summary.groups : [];
-        if (!groups.length) throw new Error("No groups provided in payload");
+        cslog("=== JSON debug ===");
+        cslog("summary =", summary);
 
-        const results = [];
+        // Mặc định label & clicks
+        let targetLabel = "Choose Book";
+        let clicks = 0;
 
-        // CHẠY TUẦN TỰ THEO TỪNG GROUP
-        for (const g of groups) {
-          const r = await createOneDropdownGroup(g);
-          results.push(r);
-          // Nghỉ một nhịp giữa các group để UI ổn định
-          await delay(400);
+        if (summary?.groups?.length) {
+          cslog("summary.groups.length =", summary.groups.length);
+          const g =
+            summary.groups.find(x => (x.key || "").toLowerCase() === "book") ||
+            summary.groups.find(x => (x.label || "").toLowerCase() === "choose book") ||
+            null;
+
+          cslog("found group g =", g);
+
+          if (g) {
+            targetLabel = g.label || targetLabel;
+            const num = Number(g.number_option || 0);
+            cslog("raw number_option =", g.number_option, "→ parsed =", num);
+            clicks = Math.max(num - 2, 0);
+            cslog("computed clicks =", clicks, "(num - 2)");
+          } else {
+            cswarn("No matching group 'book' or 'Choose Book' found in summary.groups");
+          }
+        } else {
+          cswarn("summary.groups empty or undefined");
         }
 
-        sendResponse({ ok: true, step: "all_groups_done", results });
+        // --- NEW FLOW: CHỈ set Label, nếu thất bại → throw và DỪNG LUÔN ---
+        const labelInput = await setGroupLabel(targetLabel);
+
+        // Cho UI vẽ lại tiêu đề/khung một nhịp
+        await delay(300);
+
+        // Nếu đang debug: KHÔNG tạo option, dừng ngay tại đây
+        if (!ENABLE_ADDING_OPTIONS) {
+          cslog("Skipping option creation because ENABLE_ADDING_OPTIONS = false");
+          sendResponse({
+            ok: true,
+            step: "set_label_only",
+            group_label: targetLabel,
+            intended_clicks: 0
+          });
+          return; // ← KẾT THÚC FLOW tại đây
+        }
+
+        // Nếu bật tạo option: chỉ tiếp tục khi label set OK
+        const activeContainer = getActiveCustomizationContainerFromLabelInput(labelInput);
+        await clickAddOptionNTimesInContainer(activeContainer, clicks);
+
+        sendResponse({
+          ok: true,
+          step: "set_label_and_added_options",
+          group_label: targetLabel,
+          intended_clicks: clicks
+        });
       } catch (e) {
         cserr("apply flow failed:", e);
         try {
