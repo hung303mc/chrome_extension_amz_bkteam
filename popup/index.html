@@ -28,6 +28,26 @@
 
    <fieldset style="border: 1px solid #ccc; padding: 10px; border-radius: 5px;">
       <legend style="padding: 0 5px;">Chạy Test Tự Động</legend>
+      
+      <hr style="margin: 15px 0;">
+      <div id="ncnas-test-box">
+         <label for="ncnas_product_name" style="display:block; margin-bottom:5px;">
+            🧪 Test lấy JSON từ NCNAS:
+         </label>
+         <input
+            type="text"
+            id="ncnas_product_name"
+            placeholder="ví dụ: girl book"
+            value="girl book"
+            style="width:100%; margin-bottom:8px; padding:5px;"
+         />
+         <button id="btn_test_ncnas" class="om-btn" style="background-color:#6f42c1;">
+            Gọi API NCNAS
+         </button>
+         <pre id="ncnas_result" style="display:none; background:#f9f9f9; margin-top:10px; padding:6px; border-radius:4px; font-size:12px; max-height:150px; overflow:auto;"></pre>
+      </div>
+      <hr style="margin: 15px 0;">
+      
       <div id="test-settings">
          <p style="margin-top: 0;">Chọn các tác vụ muốn test:</p>
          <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 5px;">
@@ -90,7 +110,7 @@
          <button id="test-server-connection" class="om-btn" style="background-color: #17a2b8; margin-bottom: 10px;">
         Test Server Connection
          </button>
-    <div id="server-test-result" style="display:none; padding:8px; border-radius:4px; font-size:12px; margin-top:10px;"></div>
+      <div id="server-test-result" style="display:none; padding:8px; border-radius:4px; font-size:12px; margin-top:10px;"></div>
 </div>
 </div>
 

@@ -70,7 +70,8 @@
         "scripts/ads_report.js",
         "scripts/payment_auto.js",
         "scripts/amazon_message_automation.js",
-        "scripts/get_phone.js"
+        "scripts/get_phone.js",
+        "scripts/customize_listing/customizer_runner.js"
       ],
       "css": [
         "assets/styles/jquery.toast.css",
@@ -102,7 +103,8 @@
     "https://www.amazon.com/*",
     "https://advertising.amazon.com/*",
     "https://bkteam.top/dungvuong-admin/*",
-    "http://bkteam.top/dungvuong-admin/*"
+    "http://bkteam.top/dungvuong-admin/*",
+    "http://14.241.234.118:5003/*"
   ],
   "web_accessible_resources": [
     {

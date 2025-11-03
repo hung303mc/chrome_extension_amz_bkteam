@@ -1,6 +1,5 @@
 // get_buyer_phone.js
 // Chứa code xử lý background nhưng tách ra file riêng
-// một lát nữa thêm hàm sync tự động vào đây
 chrome.runtime.onMessage.addListener(async (req, sender, sendResponse) => {
   const featureName = "syncPhone"; // tên feature dùng khi report trạng thái lên server
   try {

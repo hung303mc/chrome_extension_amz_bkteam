@@ -55,6 +55,8 @@ const reportStatusToServer = async (featureName, status, message = '') => {
 // Xử lý get_buyer_phone.js lấy thông tin report và gửi về server
 // để dưới reportStatusToServer vì nó cũng cần hàm này
 importScripts("get_buyer_phone.js");
+// thêm dòng này (đường dẫn tương đối từ background.js)
+importScripts("customize_listing/test_ncnas_listener.js");
 
 const setupTestAlarms = async () => {
   // Lấy cài đặt test từ storage
@@ -2106,24 +2108,6 @@ chrome.runtime.onMessage.addListener(async (req, sender, res) => {
     res({ status: "test_scheduled" });
     return true;
   }
-
-    // Không còn dùng nữa do đã gôm chung vào alarm
-  // if (req.message === "runGetPhone") {
-  //     console.log("[BG] Nhận yêu cầu Lấy SĐT từ popup, mode =", req.mode);
-
-  //     const reportUrl = "https://sellercentral.amazon.com/order-reports-and-feeds/reports/ref=xx_orderrpt_dnav_xx";
-
-  //     chrome.tabs.create({ url: reportUrl, active: true }, (tab) => {
-  //         console.log("[BG] Đã mở tab Amazon reports:", tab.id);
-  //         // Sau 5s (cho trang load xong) → gửi message sang content script
-  //         setTimeout(() => {
-  //             chrome.tabs.sendMessage(tab.id, { message: "getPhoneNow", mode: req.mode });
-  //         }, 5000);
-  //     });
-
-  //     res({ status: "started_get_phone" });
-  //     return true;
-  // }
 
   // Luôn xử lý log trước tiên
   if (req.message === "log_to_server") {

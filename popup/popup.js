@@ -258,6 +258,49 @@ $(document).on("click", "#run_test", async function () {
 });
 
 
+// Gọi thử API NCNAS để lấy JSON product
+$(document).on("click", "#btn_test_ncnas", function () {
+    const productName = $("#ncnas_product_name").val().trim();
+    if (!productName) {
+        alert("Nhập product name trước đã (vd: girl book)");
+        return;
+    }
+
+    console.log("[POPUP][NCNAS] Bắt đầu gửi yêu cầu test cho product:", productName);
+    alert(`[POPUP] Gửi yêu cầu test API cho: ${productName}`);
+
+    // gửi lên background
+    chrome.runtime.sendMessage(
+        {
+            message: "testNCNAS",
+            productName: productName
+        },
+        (resp) => {
+            console.log("[POPUP][NCNAS] Nhận phản hồi từ background:", resp);
+
+            if (!resp) {
+                alert("[POPUP][NCNAS] Không nhận được phản hồi từ background!");
+                return;
+            }
+
+            const $pre = $("#ncnas_result");
+            $pre.show();
+
+            if (resp.error) {
+                console.warn("[POPUP][NCNAS] Lỗi:", resp.error);
+                alert(`[POPUP][NCNAS] Lỗi: ${resp.error}`);
+                $pre.text("Error: " + resp.error);
+            } else {
+                const pretty = JSON.stringify(resp.data, null, 2);
+                console.log("[POPUP][NCNAS] Dữ liệu JSON nhận được:", pretty);
+                alert("[POPUP][NCNAS] Nhận JSON thành công! Kiểm tra console để xem chi tiết.");
+                $pre.text(pretty);
+            }
+        }
+    );
+});
+
+
 $(document).on("click", "#btn_check_order", async function() {
     const orderId = $("#check_order_id").val().trim();
     if (!orderId) {
