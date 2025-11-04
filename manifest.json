@@ -104,7 +104,10 @@
     "https://advertising.amazon.com/*",
     "https://bkteam.top/dungvuong-admin/*",
     "http://bkteam.top/dungvuong-admin/*",
-    "http://14.241.234.118:5003/*"
+    "http://14.241.234.118:5003/*",
+    "https://files.bkteam.top/*",
+    "http://files.bkteam.top/*",
+    "https://*.bkteam.top/*"
   ],
   "web_accessible_resources": [
     {

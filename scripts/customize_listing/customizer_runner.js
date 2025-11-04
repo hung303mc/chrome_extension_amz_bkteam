@@ -2,7 +2,23 @@
 
 const CS_DBG = true;
 const CS_TAG = "[CS][Customizer]";
-const ENABLE_ADDING_OPTIONS = true; // ← BẬT: tạo option theo JSON
+const ENABLE_ADDING_OPTIONS = true; // tạo option theo JSON
+const PUBLIC_BASE_URL = "https://files.bkteam.top/"; // domain publish từ \\NCNAS\web\...
+
+
+// === NEW: base proxy tới Flask ===
+const PROXY_BASE = "http://14.241.234.118:5003/proxy?u=";
+function viaProxy(url) {
+  if (!url) return url;
+  if (url.startsWith(PROXY_BASE)) return url; // tránh bọc 2 lần
+  return PROXY_BASE + encodeURIComponent(url);
+}
+
+// Nếu trang là HTTPS và proxy là HTTP → không dùng proxy (tránh mixed content)
+function proxyUsableInThisPage() {
+  return !(location.protocol === "https:" && PROXY_BASE.startsWith("http:"));
+}
+
 
 // ===== Selectors =====
 const SELS_ADD_BTN = [
@@ -18,8 +34,15 @@ const SELS_MODAL_CONFIRM_BTN = [
 // Nút "Add option" trong group (compact)
 const SEL_ADD_OPTION = 'span[data-test-id="compact-option-item-add-option-button"]';
 
-// MỚI: nhắm đúng kat-input có value bắt đầu bằng "Option Dropdown"
+// Input Label của pane Option Dropdown mới tạo
 const SEL_KAT_INPUT_OD = 'kat-input[placeholder="Label"][value^="Option Dropdown"]';
+
+// Cells hình ảnh theo hàng (mỗi hàng có 2 ô: thumbnail & overlay)
+const SEL_CELL_THUMB = '[data-test-id="compact-option-item-thumbnail-image"]';
+const SEL_CELL_OVER  = '[data-test-id="compact-option-item-overlay-image"]';
+
+// Input file bên trong cell
+const SEL_INPUT_FILE = 'input[type="file"]';
 
 function cslog(...args) { if (CS_DBG) console.log(CS_TAG, ...args); }
 function cswarn(...args) { if (CS_DBG) console.warn(CS_TAG, ...args); }
@@ -89,29 +112,16 @@ function deepFindByText(text, root = document) {
 }
 
 // --- waitFor / delay ---
-function waitFor(fnCheck, { timeout = 20000, interval = 150 } = {}) {
-  cslog("waitFor: start", { timeout, interval });
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const timer = setInterval(() => {
-      try {
-        const elOrTrue = fnCheck();
-        if (elOrTrue) {
-          clearInterval(timer);
-          cslog("waitFor: done in", Date.now() - start, "ms");
-          resolve(elOrTrue);
-        } else if (Date.now() - start > timeout) {
-          clearInterval(timer);
-          cserr("waitFor: timeout after", timeout, "ms");
-          reject(new Error("Timeout waiting"));
-        }
-      } catch (e) {
-        clearInterval(timer);
-        cserr("waitFor: fnCheck threw:", e?.message);
-        reject(e);
-      }
-    }, interval);
-  });
+async function waitFor(predicate, { timeout = 60000, interval = 150 } = {}) {
+  const t0 = performance.now();
+  while ((performance.now() - t0) < timeout) {
+    try {
+      const v = await predicate();
+      if (v) return v;
+    } catch {}
+    await new Promise(r => setTimeout(r, interval));
+  }
+  throw new Error("Timeout waiting");
 }
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -127,6 +137,27 @@ function clickKatButtonHost(btnHost) {
     cswarn("clickKatButtonHost: inner click skipped:", e?.message);
   }
 }
+
+// ==== FILE INPUT HELPERS ====
+function getFileInputInCell(cell) {
+  if (!cell) return null;
+  // trong cell trước
+  let inp = cell.querySelector(SEL_INPUT_FILE);
+  if (inp) return inp;
+
+  // nếu tương lai chuyển vào host có shadow
+  const host = cell.querySelector('kat-file-input, kat-image-uploader');
+  if (host?.shadowRoot) {
+    inp = host.shadowRoot.querySelector('input[type="file"]');
+    if (!inp) console.warn("[CS][upload] ❌ No file input found in cell", cell);
+      else console.log("[CS][upload] ✅ Found file input", inp);
+    if (inp) return inp;
+  }
+
+  // fallback: deep
+  return deepQuerySelector('input[type="file"]', cell);
+}
+
 
 // ===================== B1/B2/B3 =====================
 async function clickAddCustomizationOpenModal() {
@@ -175,6 +206,7 @@ async function clickOptionDropdown() {
   }
   throw new Error('B2: Could not find "Option Dropdown" choice');
 }
+
 async function clickModalAddCustomizationConfirm() {
   cslog("B3: waiting for modal confirm button…");
   const btnHost = await waitFor(() => deepQuerySelector(SELS_MODAL_CONFIRM_BTN));
@@ -294,13 +326,289 @@ async function clickAddOptionNTimesInContainer(container, n) {
   cslog(`Done adding ${n} option(s).`);
 }
 
+// ===================== URL helpers =====================
+// Cắt prefix \\NCNAS\web\ hoặc /ncnas/web/ và encode từng segment
+function absPathToPublic(relOrAbs) {
+  if (!relOrAbs) return "";
+  let p = String(relOrAbs).replace(/\\/g, "/");
+  p = p
+    .replace(/^\/\/?NCNAS\/web\//i, "")
+    .replace(/^\/ncnas\/web\//i, "");
+  const enc = p.split("/").map(encodeURIComponent).join("/");
+  return PUBLIC_BASE_URL + enc;
+}
+function joinPublicUrlFromDirAndRel(absDir, rel) {
+  let dir = String(absDir || "").replace(/\\/g, "/");
+  dir = dir
+    .replace(/^\/\/?NCNAS\/web\//i, "")
+    .replace(/^\/ncnas\/web\//i, "");
+  const full = [dir.replace(/\/+$/,""), String(rel||"").replace(/^\/+/,"")].join("/");
+  const enc = full.split("/").map(encodeURIComponent).join("/");
+  return PUBLIC_BASE_URL + enc;
+}
+
+function fireAll(el) {
+  if (!el) {
+    console.warn("[CS][fireAll] ⚠️ element null hoặc undefined");
+    return;
+  }
+
+  const tag = el.tagName?.toLowerCase() || "(unknown)";
+  const info = `${tag}${el.type ? `[type=${el.type}]` : ""}${el.id ? `#${el.id}` : ""}`;
+  console.log(`[CS][fireAll] 🔸 Triggering events on ${info}`, el);
+
+  for (const ev of ["input", "change", "blur"]) {
+    try {
+      el.dispatchEvent(new Event(ev, { bubbles: true, composed: true }));
+      console.log(`[CS][fireAll] ✅ Fired '${ev}' on`, el);
+    } catch (e) {
+      console.warn(`[CS][fireAll] ❌ Event '${ev}' failed:`, e);
+    }
+  }
+}
+
+// ================== Upload helpers ==================
+// Helper: chuyển ans từ BG thành Blob đúng
+function answerToBlob(ans) {
+  // Ưu tiên base64 từ BG
+  if (ans?.bufferBase64) {
+    const binary = atob(ans.bufferBase64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    const type = ans?.contentType || "application/octet-stream";
+    return new Blob([bytes], { type });
+  }
+
+  // Phòng khi tương lai bạn gửi kèm ArrayBuffer chuẩn
+  if (ans?.buffer && typeof ans.buffer.byteLength === "number") {
+    const type = ans?.contentType || "application/octet-stream";
+    return new Blob([ans.buffer], { type });
+  }
+
+  throw new Error("answerToBlob: unsupported payload (no bufferBase64/ArrayBuffer)");
+}
+
+
+// Helper: giả lập drag&drop lên cell nếu change không kích hoạt pipeline
+async function dropFileOnCell(cell, file) {
+  const dropZone =
+    cell.querySelector('.gestalt_drag-and-drop-area, [role="button"][class*="drag-and-drop"], .file-drag-and-drop-area') || cell;
+
+  const dt = new DataTransfer();
+  dt.items.add(file);
+
+  const fire = (type) =>
+    dropZone.dispatchEvent(new DragEvent(type, { bubbles: true, composed: true, dataTransfer: dt }));
+
+  fire("dragenter");
+  fire("dragover");
+  fire("drop");
+  await delay(60);
+  console.log("[CS][drop] Simulated drop on zone:", dropZone);
+  return true;
+}
+
+async function uploadUrlToFileInput(url, inputEl, options = {}) {
+  const { debugOpenTab = false, fetchTimeoutMs = 45000 } = options; // mặc định tắt debugOpenTab
+  if (!inputEl) throw new Error("uploadUrlToFileInput: input missing");
+
+  inputEl.scrollIntoView?.({ block: "center", inline: "nearest" });
+
+  if (inputEl.files && inputEl.files.length > 0) {
+    console.log("[CS] skip upload because input already has file(s)");
+    return true;
+  }
+
+  console.time(`[CS] fetch ${url}`);
+  const blob = await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: "FETCH_IMAGE_CROSS_ORIGIN", url, debugOpenTab, timeoutMs: fetchTimeoutMs },
+      async (ans) => {
+        if (chrome.runtime.lastError) {
+          console.timeEnd(`[CS] fetch ${url}`);
+          return reject(new Error(chrome.runtime.lastError.message));
+        }
+        console.log("[CS][FETCH] ans keys =", Object.keys(ans || {}));
+        console.log("[CS][FETCH] has bufferBase64 =", typeof ans?.bufferBase64 === "string");
+        console.log("[CS][FETCH] bufferBase64 length =", ans?.bufferBase64?.length || 0);
+        console.log("[CS][FETCH] contentType =", ans?.contentType);
+
+
+        if (!ans?.ok) {
+          console.timeEnd(`[CS] fetch ${url}`);
+          return reject(new Error(ans?.error || "unknown"));
+        }
+        try {
+          const b = answerToBlob(ans);
+          console.timeEnd(`[CS] fetch ${url}`);
+          console.log("[CS] blob", { type: b.type, size: b.size });
+
+          if (b.size < 2000) {
+            // Preview nội dung text nếu payload quá nhỏ
+            const previewText = await new Response(b).text().catch(() => "(binary)");
+            console.warn("[CS] ⚠️ Very small blob; preview:", previewText.slice(0, 200));
+          }
+          resolve(b);
+        } catch (e) {
+          reject(e);
+        }
+      }
+    );
+  });
+
+  // Tạo File và gán vào input
+  const nameFromUrl = decodeURIComponent((url.split("/").pop() || "image").split("?")[0]) || "image";
+  const extFromType = blob.type === "image/jpeg" ? ".jpg"
+                     : blob.type === "image/png"  ? ".png"
+                     : "";
+  const safeName = nameFromUrl.includes(".") ? nameFromUrl : (nameFromUrl + extFromType || ".bin");
+
+  const file = new File([blob], safeName, { type: blob.type || "image/png", lastModified: Date.now() });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+
+  inputEl.files = dt.files;
+  console.log("[CS][upload] After assign, input.files length =", inputEl.files?.length, "file:", file);
+
+  // Phát event lên input và host/wrapper
+  const hostCell = inputEl.closest('kat-file-input, kat-image-uploader, [data-test-id*="image"], .gestalt_compact-cell__tdNbj') || inputEl.parentElement;
+  fireAll(inputEl);
+  fireAll(hostCell);
+
+  // Nếu UI không phản hồi, fallback drag&drop vào cell
+  await delay(400);
+  const uiTile = hostCell?.querySelector?.('[class*="image-tile"], [class*="image-area"], img');
+  const hasImg = !!uiTile || !!hostCell?.querySelector?.('img');
+  if (!hasImg) {
+    console.warn("[CS][upload] UI not reacting → try drag&drop fallback");
+    try { await dropFileOnCell(hostCell || inputEl.closest('body'), file); } catch (e) {
+      console.warn("[CS][upload] drop fallback failed:", e?.message);
+    }
+  }
+
+  console.log("[CS] file assigned", { name: file.name, size: file.size, type: file.type });
+  return true;
+}
+
+
+
+
+
+
+// Chờ tới khi cell xem như "uploaded"
+async function waitUntilCellUploaded(cell, inputEl, { timeout = 20000 } = {}) {
+  // nếu chính input đã có files → pass nhanh
+  if (inputEl?.files?.length) return true;
+
+  return new Promise((resolve, reject) => {
+    const done = () => { clearTimeout(t); obs.disconnect(); resolve(true); };
+    const t = setTimeout(() => { obs.disconnect(); reject(new Error("Timeout waiting")); }, timeout);
+
+    const check = () => {
+      // 1) có <img> render
+      if (cell.querySelector('img')) return done();
+
+      // 2) background-image ở tile
+      const tile = cell.querySelector('[class*="image-tile"], [class*="image-area"]');
+      if (tile) {
+        const bg = getComputedStyle(tile).backgroundImage;
+        if (bg && bg !== 'none') return done();
+      }
+
+      // 3) có nút remove/replace
+      if (cell.querySelector('[data-test-id*="remove"], [aria-label*="Remove" i], [aria-label*="Replace" i]')) return done();
+
+      // 4) input mới sinh ra có files
+      const in2 = getFileInputInCell(cell);
+      if (in2?.files?.length) return done();
+    };
+
+    const obs = new MutationObserver(check);
+    obs.observe(cell, { subtree: true, childList: true, attributes: true });
+    check();
+  });
+}
+
+
+// Lấy danh sách cells theo thứ tự hàng trong container
+function getRowCells(container) {
+  const thumbCells = Array.from(container.querySelectorAll(SEL_CELL_THUMB));
+  const overCells  = Array.from(container.querySelectorAll(SEL_CELL_OVER));
+  const rows = Math.max(thumbCells.length, overCells.length);
+  return { thumbCells, overCells, rows };
+}
+
+// Upload vào 1 cell an toàn, trả về true/false (không throw)
+async function uploadIntoCell(cell, url, label) {
+  if (!cell || !url) return false;
+
+  try {
+    const inp = getFileInputInCell(cell);
+    if (!inp) {
+      cswarn(`[CS][upload ${label}] ❌ input not found`);
+      return false;
+    }
+
+    await uploadUrlToFileInput(url, inp, { debugOpenTab: false, fetchTimeoutMs: 45000 });
+    cslog(`[CS][upload ${label}] injected, waiting UI...`);
+    await waitUntilCellUploaded(cell, inp);
+    cslog(`[CS][upload ${label}] ✅ done`);
+    return true;
+  } catch (e) {
+    cserr(`[CS][upload ${label}] ❌ failed:`, e?.message || e);
+    return false;
+  }
+}
+
+
+// Upload 1 hàng: PREVIEW (overlay) trước, rồi THUMBNAIL
+// Upload 1 hàng: THUMBNAIL trước; nếu thumbnail KHÔNG được thì vẫn thử PREVIEW.
+// Dù cái nào fail cũng KHÔNG throw để không làm nhảy sang row tiếp theo.
+async function fillOneRowImages(i, container, thumbUrl, overUrl) {
+  const { thumbCells, overCells } = getRowCells(container);
+  const thumbCell = thumbCells[i];
+  const overCell  = overCells[i];
+
+  const rowNo = i + 1;
+  cslog(`[CS][row ${rowNo}] start`, { thumbUrl, overUrl });
+
+  // 1) THUMBNAIL trước
+  let thumbOK = false;
+  if (thumbCell && thumbUrl) {
+    thumbOK = await uploadIntoCell(thumbCell, thumbUrl, `THUMB row ${rowNo}`);
+  } else {
+    cswarn(`[CS][row ${rowNo}] thumbnail cell/url missing`);
+  }
+
+  // 2) PREVIEW: luôn thử nếu có dữ liệu (kể cả khi thumbnail fail)
+  let overOK = false;
+  if (overCell && overUrl) {
+    overOK = await uploadIntoCell(overCell, overUrl, `PREVIEW row ${rowNo}`);
+  } else {
+    cswarn(`[CS][row ${rowNo}] preview cell/url missing`);
+  }
+
+  cslog(`[CS][row ${rowNo}] done → thumbOK=${thumbOK}, overOK=${overOK}`);
+}
+
+
+
+
 // ===================== MAIN PER-GROUP FLOW =====================
 async function createOneDropdownGroup(group) {
   const targetLabel = (group?.label || "").trim() || "Choose";
-  const num = Number(group?.number_option || 0);
-  const clicks = Math.max(num - 2, 0);
+  const thumbnails = Array.isArray(group?.thumbnail) ? group.thumbnail : [];
+  const overlays   = Array.isArray(group?.overlay) ? group.overlay : [];
+  const thumbDir   = group?.thumbnail_dir || "";
+  const overDir    = group?.preview_dir || "";
 
-  cslog(`\n=== Create group: "${targetLabel}" (num=${num} → clicks=${clicks}) ===`);
+  // Số option mong muốn: theo number_option, nhưng đảm bảo >= số ảnh
+  const baseNum = Number(group?.number_option || 0);
+  const need = Math.max(baseNum, thumbnails.length, overlays.length);
+  const clicks = Math.max(need - 2, 0);
+
+  cslog(`\n=== Create group: "${targetLabel}" (need=${need} → clicks=${clicks}) ===`);
 
   // B1 → B2 → B3 cho từng group
   await clickAddCustomizationOpenModal();
@@ -308,10 +616,10 @@ async function createOneDropdownGroup(group) {
   await clickModalAddCustomizationConfirm();
 
   // Đợi kat-input mới xuất hiện và đổi tên
-  let labelHost, innerInput;
+  let labelHost;
   try {
     labelHost = await waitForTargetKatInput();
-    innerInput = await setKatInputLabel(labelHost, targetLabel);
+    await setKatInputLabel(labelHost, targetLabel);
   } catch (e) {
     cserr("Set label failed for group:", targetLabel, e?.message);
     throw e;
@@ -320,15 +628,38 @@ async function createOneDropdownGroup(group) {
   // Cho UI vẽ lại
   await delay(300);
 
+  // Thêm đủ option
+  const container = getActiveCustomizationContainerFromLabelInput(labelHost);
   if (ENABLE_ADDING_OPTIONS) {
-    const container = getActiveCustomizationContainerFromLabelInput(labelHost);
     await clickAddOptionNTimesInContainer(container, clicks);
-  } else {
-    cslog("ENABLE_ADDING_OPTIONS=false → skip adding options");
+  }
+
+  // Re-scan rows sau khi thêm options
+  await delay(300);
+
+  // Lặp từng hàng: upload thumbnail rồi overlay
+  for (let i = 0; i < need; i++) {
+    const relT = thumbnails[i] || null;
+    const relO = overlays[i] || null;
+
+    const urlT = relT ? joinPublicUrlFromDirAndRel(thumbDir, relT) : null;
+    const urlO = relO ? joinPublicUrlFromDirAndRel(overDir, relO) : null;
+
+    cslog(`Row ${i + 1}/${need}:`, { urlT, urlO });
+
+    try {
+      await fillOneRowImages(i, container, urlT, urlO);
+    } catch (e) {
+      cserr(`Row ${i}: upload failed`, e?.message);
+      // tiếp tục hàng tiếp theo, không throw để không dừng nhóm
+    }
+
+    // Nhịp nhỏ giữa các hàng
+    await delay(200);
   }
 
   cslog(`=== Done group: "${targetLabel}" ===\n`);
-  return { label: targetLabel, intended_clicks: ENABLE_ADDING_OPTIONS ? clicks : 0 };
+  return { label: targetLabel, need, rows_done: need };
 }
 
 // ===================== Listener =====================
@@ -360,7 +691,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const r = await createOneDropdownGroup(g);
           results.push(r);
           // Nghỉ một nhịp giữa các group để UI ổn định
-          await delay(400);
+          await delay(450);
         }
 
         sendResponse({ ok: true, step: "all_groups_done", results });
