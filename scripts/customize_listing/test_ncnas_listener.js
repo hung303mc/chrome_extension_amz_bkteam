@@ -38,12 +38,24 @@ async function handleTestNCNAS(req, res) {
   try {
     const fetchRes = await fetch(apiUrl, { method: "GET" });
     if (!fetchRes.ok) {
-      const errMsg = `[BG][NCNAS] ❌ HTTP ${fetchRes.status} ${fetchRes.statusText}`;
+      let detail = "";
+      try {
+        const txt = await fetchRes.text();
+        detail = txt || "";
+        // nếu server trả JSON, parse thử
+        try {
+          const j = JSON.parse(txt);
+          if (j?.error) detail = `${j.error}${j.detail ? " (" + j.detail + ")" : ""}`;
+        } catch {}
+      } catch {}
+
+      const errMsg = `${detail ? " → " + detail : ""}`;
       console.warn(errMsg);
       safeAlert(errMsg);
-      res({ error: `HTTP ${fetchRes.status} ${fetchRes.statusText}` });
+      res({ error: errMsg });
       return;
     }
+
 
     // (3) Parse JSON thành công
     const data = await fetchRes.json();

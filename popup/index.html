@@ -32,18 +32,22 @@
       <hr style="margin: 15px 0;">
       <div id="ncnas-test-box">
          <label for="ncnas_product_name" style="display:block; margin-bottom:5px;">
-            🧪 Test lấy JSON từ NCNAS:
+            Nhập SKU ở máy NCNAS:
          </label>
          <input
             type="text"
             id="ncnas_product_name"
-            placeholder="ví dụ: girl book"
+            placeholder="ví dụ: SKU_ABC"
             value="SKU_ABC"
             style="width:100%; margin-bottom:8px; padding:5px;"
          />
          <button id="btn_test_ncnas" class="om-btn" style="background-color:#6f42c1;">
-            Gọi API NCNAS
+            Chạy Tool Auto Fill Listing
          </button>
+         <!-- ⚠️ Dòng cảnh báo đỏ -->
+         <p style="color:red; font-weight:bold; margin-top:12px;">
+         ⚠️ Lưu ý: Không tự ý chạy các chức năng bên dưới!
+         </p>
          <pre id="ncnas_result" style="display:none; background:#f9f9f9; margin-top:10px; padding:6px; border-radius:4px; font-size:12px; max-height:150px; overflow:auto;"></pre>
       </div>
       <hr style="margin: 15px 0;">

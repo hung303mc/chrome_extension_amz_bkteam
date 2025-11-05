@@ -31,11 +31,28 @@ const SELS_MODAL_CONFIRM_BTN = [
   'kat-button[label="Add customization"][variant="primary"]'
 ];
 
+
+// === Preview Image (ô upload lớn ở đầu Surface) ===
+const SEL_PREVIEW_ZONE = [
+  'div.image-input.preview-container-base-image-upload',
+  'div.image-upload', // wrapper chính quanh drop-zone
+];
+const SEL_PREVIEW_FILE_INPUT = [
+  'div.image-upload input[type="file"][accept*="image"]',
+  'input[type="file"][accept*="image/jpeg"]',
+  'input[type="file"][accept*="image/png"]',
+  // fallback cho host component tương lai:
+  'kat-image-uploader input[type="file"]'
+];
 // Nút "Add option" trong group (compact)
 const SEL_ADD_OPTION = 'span[data-test-id="compact-option-item-add-option-button"]';
 
 // Input Label của pane Option Dropdown mới tạo
-const SEL_KAT_INPUT_OD = 'kat-input[placeholder="Label"][value^="Option Dropdown"]';
+// (1) Bắt rộng theo value để chạm được vào header ngay sau khi tạo
+const SEL_KAT_INPUT_OD_BROAD = 'kat-input[value^="Option Dropdown"]';
+// (2) Bắt hẹp theo placeholder để chạm đúng ô Label bên trong container
+const SEL_KAT_INPUT_OD_LABEL = 'kat-input[placeholder="Label"][value^="Option Dropdown"]';
+
 
 // Cells hình ảnh theo hàng (mỗi hàng có 2 ô: thumbnail & overlay)
 const SEL_CELL_THUMB = '[data-test-id="compact-option-item-thumbnail-image"]';
@@ -158,6 +175,181 @@ function getFileInputInCell(cell) {
   return deepQuerySelector('input[type="file"]', cell);
 }
 
+// ==== Name helpers ====
+function filenameStem(relOrUrl) {
+  if (!relOrUrl) return "";
+  // nếu là URL -> lấy phần cuối
+  const last = String(relOrUrl).split("?")[0].split("#")[0].split("/").pop() || relOrUrl;
+  return last.replace(/\.[^.]+$/,""); // bỏ đuôi .png/.jpg/...
+}
+
+// Tìm "row root" từ 1 cell bất kỳ
+function findRowRootFromCell(cell) {
+  if (!cell) return null;
+  return (
+    cell.closest('[data-test-id="compact-option-item"]') ||
+    cell.closest('.gestalt_compact-row') ||
+    cell.closest('.gestalt_compact-option-row') ||
+    cell.closest('.gestalt_compact-row__tdNbj') ||
+    cell.closest('[data-test-id*="compact-option"]') ||
+    cell.closest('[data-test-id*="option-item"]') ||
+    cell.closest('[role="row"]') ||
+    cell.parentElement
+  );
+}
+
+// Tìm input để nhập tên option trong 1 hàng
+function findNameInputInRow(rowEl) {
+  if (!rowEl) return null;
+
+  // Ưu tiên kat-input có placeholder gợi ý
+  const katCandidates = rowEl.querySelectorAll('kat-input, kat-text-field, kat-text-input');
+  for (const host of katCandidates) {
+    const ph = (host.getAttribute("placeholder") || host.getAttribute("aria-label") || "").toLowerCase();
+    if (ph.includes("name") || ph.includes("option") || ph.includes("label")) {
+      const inp = getInnerTextInputFromKatInput(host);
+      if (inp) return inp;
+    }
+  }
+
+  // Fallback: bất kỳ input text có thể gõ
+  const txts = rowEl.querySelectorAll('input[type="text"], input:not([type]), textarea');
+  for (const t of txts) {
+    const ro = !!t.readOnly || t.getAttribute("readonly") != null;
+    const dis = !!t.disabled || t.getAttribute("aria-disabled") === "true";
+    const ph = (t.getAttribute("placeholder") || "").toLowerCase();
+    // tránh các input tìm kiếm/ẩn
+    if (!ro && !dis && !ph.includes("search")) {
+      return t;
+    }
+  }
+
+  // Fallback: thử inner của bất kỳ kat-input còn lại
+  for (const host of katCandidates) {
+    const inp = getInnerTextInputFromKatInput(host);
+    if (inp) return inp;
+  }
+
+  return null;
+}
+
+async function setOptionNameInRow(rowEl, nameText) {
+  if (!rowEl || !nameText) return false;
+  const inp = findNameInputInRow(rowEl);
+  if (!inp) {
+    cswarn("[CS][name] ❌ No option-name input found in row");
+    return false;
+  }
+
+  // gõ vào input
+  rowEl.scrollIntoView?.({ block: "center", inline: "nearest" });
+  try { inp.focus(); } catch {}
+  inp.value = "";
+  inp.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+  for (const ch of String(nameText)) {
+    inp.value += ch;
+    inp.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+    await delay(10);
+  }
+  inp.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  inp.blur?.();
+
+  fireAll(inp);
+  const ok = (inp.value || "").trim() === String(nameText).trim();
+  cslog(`[CS][name] set "${nameText}" → ${ok ? "OK" : "verify"}`);
+  return ok;
+}
+
+// ==== FILE PREVIEW IMAGE HELPERS ====
+function deepQueryAny(selectors, root = document) {
+  if (!Array.isArray(selectors)) selectors = [selectors];
+  for (const sel of selectors) {
+    const el = deepQuerySelector(sel, root);
+    if (el) return el;
+  }
+  return null;
+}
+
+async function waitForPreviewFileInput() {
+  // Tìm vùng Preview trước, rồi lấy input trong vùng đó
+  const zone = await waitFor(() => deepQueryAny(SEL_PREVIEW_ZONE), { timeout: 15000, interval: 120 });
+  const input = await waitFor(() => deepQueryAny(SEL_PREVIEW_FILE_INPUT, zone), { timeout: 10000, interval: 120 });
+  return { zone, input };
+}
+
+async function uploadPreviewImage(absPathOrUrl) {
+  if (!absPathOrUrl) return false;
+
+  // Nếu server trả đường dẫn UNC -> convert sang public URL
+  const pub = absPathToPublic(absPathOrUrl);
+  const url = proxyUsableInThisPage() ? viaProxy(pub) : pub;
+
+  const { zone, input } = await waitForPreviewFileInput();
+
+  // Dùng pipeline upload chung
+  await uploadUrlToFileInput(url, input, { debugOpenTab: false, fetchTimeoutMs: 45000 });
+
+  // Chờ UI render thumbnail/ảnh
+  try {
+    await waitUntilCellUploaded(zone, input, { timeout: 20000 });
+  } catch (e) {
+    // fallback drag&drop nếu change không kick pipeline
+    const name = decodeURIComponent((url.split("/").pop() || "preview").split("?")[0]) || "preview.jpg";
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const file = new File([blob], name, { type: blob.type || "image/jpeg" });
+    await dropFileOnCell(zone, file);
+  }
+
+  cslog("[CS][preview] ✅ Uploaded Preview Image");
+  return true;
+}
+
+// ==== Virtualized list helpers ====
+const SEL_VLIST = '.compact-virtualized-option-list';
+
+function getOptionListScroller(container) {
+  // ưu tiên container hiện tại
+  let s = container.querySelector(SEL_VLIST);
+  if (s) return s;
+  // fallback toàn document (trường hợp DOM wrap hơi khác)
+  s = document.querySelector(SEL_VLIST);
+  if (s) return s;
+  // fallback: bất kỳ div có overflow và height lớn
+  const cand = Array.from(container.querySelectorAll('div'))
+    .filter(d => {
+      const cs = getComputedStyle(d);
+      return (cs.overflowY === 'auto' || cs.overflow === 'auto') && d.clientHeight > 300;
+    });
+  return cand[0] || container;
+}
+
+function measureRowHeight(scroller) {
+  // tìm 1 item đang render để ước lượng chiều cao
+  const item = scroller.querySelector('[data-rbd-draggable-id], .gestalt_draggable__rHcRM, [data-test-id*="compact-option-item"]');
+  if (item) {
+    const h = item.getBoundingClientRect().height || 80;
+    return Math.max(40, Math.min(200, h));
+  }
+  // mặc định
+  return 80;
+}
+
+async function scrollToRow(container, i /* 0-based */) {
+  const scroller = getOptionListScroller(container);
+  const rowH = measureRowHeight(scroller);
+  // cuộn sao cho hàng i nằm gần đầu viewport
+  scroller.scrollTop = Math.max(0, i * rowH - rowH);
+  await delay(120);
+}
+
+async function scrollToTop(container) {
+  const scroller = getOptionListScroller(container);
+  scroller.scrollTop = 0;
+  // đảm bảo thật sự về đầu
+  await delay(150);
+}
+
 
 // ===================== B1/B2/B3 =====================
 async function clickAddCustomizationOpenModal() {
@@ -221,11 +413,11 @@ async function clickModalAddCustomizationConfirm() {
 }
 
 // ===================== Target đúng kat-input "Option Dropdown" =====================
-async function waitForTargetKatInput() {
+async function waitForTargetKatInput(selector = SEL_KAT_INPUT_OD_BROAD, root = document) {
   return waitFor(() => {
-    const list = deepQueryAll(SEL_KAT_INPUT_OD);
+    const list = deepQueryAll(selector, root);
     if (list.length) {
-      cslog("Found kat-input OD targets =", list.length);
+      cslog("waitForTargetKatInput: found by", selector, "count=", list.length);
       // Ưu tiên cái cuối cùng (thường là pane vừa tạo)
       return list[list.length - 1];
     }
@@ -544,6 +736,7 @@ async function uploadIntoCell(cell, url, label) {
   if (!cell || !url) return false;
 
   try {
+    cell.scrollIntoView?.({ block: "center", inline: "nearest" });
     const inp = getFileInputInCell(cell);
     if (!inp) {
       cswarn(`[CS][upload ${label}] ❌ input not found`);
@@ -565,13 +758,30 @@ async function uploadIntoCell(cell, url, label) {
 // Upload 1 hàng: PREVIEW (overlay) trước, rồi THUMBNAIL
 // Upload 1 hàng: THUMBNAIL trước; nếu thumbnail KHÔNG được thì vẫn thử PREVIEW.
 // Dù cái nào fail cũng KHÔNG throw để không làm nhảy sang row tiếp theo.
-async function fillOneRowImages(i, container, thumbUrl, overUrl) {
+// Upload 1 hàng + điền tên option theo filename stem
+async function fillOneRowImages(i, container, thumbUrl, overUrl, nameStem) {
   const { thumbCells, overCells } = getRowCells(container);
   const thumbCell = thumbCells[i];
   const overCell  = overCells[i];
 
   const rowNo = i + 1;
-  cslog(`[CS][row ${rowNo}] start`, { thumbUrl, overUrl });
+  cslog(`[CS][row ${rowNo}] start`, { thumbUrl, overUrl, nameStem });
+
+  // 3) ĐIỀN TÊN OPTION (lấy stem từ overlay hoặc thumbnail)
+  try {
+    const baseCell = thumbCell || overCell;
+    const rowEl = findRowRootFromCell(baseCell);
+    const finalStem = nameStem ||
+                      filenameStem(thumbUrl || "") ||
+                      filenameStem(overUrl || "");
+    if (rowEl && finalStem) {
+      await setOptionNameInRow(rowEl, finalStem);
+    } else {
+      cswarn(`[CS][row ${rowNo}] skip set name (rowEl/finalStem missing)`);
+    }
+  } catch (e) {
+    cserr(`[CS][row ${rowNo}] set name failed:`, e?.message || e);
+  }
 
   // 1) THUMBNAIL trước
   let thumbOK = false;
@@ -581,7 +791,7 @@ async function fillOneRowImages(i, container, thumbUrl, overUrl) {
     cswarn(`[CS][row ${rowNo}] thumbnail cell/url missing`);
   }
 
-  // 2) PREVIEW: luôn thử nếu có dữ liệu (kể cả khi thumbnail fail)
+  // 2) PREVIEW
   let overOK = false;
   if (overCell && overUrl) {
     overOK = await uploadIntoCell(overCell, overUrl, `PREVIEW row ${rowNo}`);
@@ -589,8 +799,11 @@ async function fillOneRowImages(i, container, thumbUrl, overUrl) {
     cswarn(`[CS][row ${rowNo}] preview cell/url missing`);
   }
 
+  
+
   cslog(`[CS][row ${rowNo}] done → thumbOK=${thumbOK}, overOK=${overOK}`);
 }
+
 
 
 
@@ -616,10 +829,30 @@ async function createOneDropdownGroup(group) {
   await clickModalAddCustomizationConfirm();
 
   // Đợi kat-input mới xuất hiện và đổi tên
-  let labelHost;
+  // Đợi kat-input mới xuất hiện và đổi tên (2 bước: header → label trong container)
+  let labelHost;        // giữ lại tên biến cũ để các đoạn dưới không phải đổi
+  let container;        // container scope cho các bước tiếp theo
+
   try {
-    labelHost = await waitForTargetKatInput();
-    await setKatInputLabel(labelHost, targetLabel);
+    // Bước 1: Bắt rộng theo value^="Option Dropdown" để chạm header của pane vừa tạo
+    const labelHostBroad = await waitForTargetKatInput(SEL_KAT_INPUT_OD_BROAD, document);
+    await setKatInputLabel(labelHostBroad, targetLabel);
+
+    // Xác định container từ host vừa gõ (container này sẽ được dùng XUYÊN SUỐT)
+    container = getActiveCustomizationContainerFromLabelInput(labelHostBroad) || document;
+
+    // Bước 2: Thử bắt đúng ô Label trong CHÍNH container đó (nếu tồn tại) và điền lại
+    try {
+      const labelHostNarrow = await waitForTargetKatInput(SEL_KAT_INPUT_OD_LABEL, container);
+      if (labelHostNarrow) {
+        await setKatInputLabel(labelHostNarrow, targetLabel);
+        labelHost = labelHostNarrow;  // ưu tiên giữ host hẹp
+      } else {
+        labelHost = labelHostBroad;   // fallback dùng host rộng
+      }
+    } catch {
+      labelHost = labelHostBroad;     // nếu không thấy host hẹp thì dùng host rộng
+    }
   } catch (e) {
     cserr("Set label failed for group:", targetLabel, e?.message);
     throw e;
@@ -629,7 +862,7 @@ async function createOneDropdownGroup(group) {
   await delay(300);
 
   // Thêm đủ option
-  const container = getActiveCustomizationContainerFromLabelInput(labelHost);
+  container = getActiveCustomizationContainerFromLabelInput(labelHost);
   if (ENABLE_ADDING_OPTIONS) {
     await clickAddOptionNTimesInContainer(container, clicks);
   }
@@ -637,8 +870,17 @@ async function createOneDropdownGroup(group) {
   // Re-scan rows sau khi thêm options
   await delay(300);
 
+
+  // VIRTUALIZED: về đầu để i=0 tương ứng Option 1
+  await scrollToTop(container);
+  await delay(120);
+
   // Lặp từng hàng: upload thumbnail rồi overlay
   for (let i = 0; i < need; i++) {
+
+    // VIRTUALIZED: cuộn để render hàng i
+    await scrollToRow(container, i);
+
     const relT = thumbnails[i] || null;
     const relO = overlays[i] || null;
 
@@ -648,7 +890,12 @@ async function createOneDropdownGroup(group) {
     cslog(`Row ${i + 1}/${need}:`, { urlT, urlO });
 
     try {
-      await fillOneRowImages(i, container, urlT, urlO);
+      // Lấy stem theo thứ tự ưu tiên: overlay[i] -> thumbnail[i]
+      const stemFromOverlay = relO ? filenameStem(relO) : "";
+      const stemFromThumb   = relT ? filenameStem(relT) : "";
+      const optionNameStem  = stemFromOverlay || stemFromThumb;
+
+      await fillOneRowImages(i, container, urlT, urlO, optionNameStem);
     } catch (e) {
       cserr(`Row ${i}: upload failed`, e?.message);
       // tiếp tục hàng tiếp theo, không throw để không dừng nhóm
@@ -683,6 +930,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Validate groups
         const groups = Array.isArray(summary?.groups) ? summary.groups : [];
         if (!groups.length) throw new Error("No groups provided in payload");
+        
+        // (NEW) Nếu có previewImage ở cấp product → upload TRƯỚC khi tạo các group
+        try {
+          const previewAbs = summary?.previewImage || summary?.preview_image || "";
+          if (previewAbs) {
+            cslog("[CS][preview] Found previewImage in payload:", previewAbs);
+            await uploadPreviewImage(previewAbs);
+            // nghỉ nhẹ để UI ổn định
+            await delay(300);
+          } else {
+            cslog("[CS][preview] No previewImage provided in payload");
+          }
+        } catch (e) {
+          cserr("[CS][preview] upload failed:", e?.message || e);
+        }
 
         const results = [];
 

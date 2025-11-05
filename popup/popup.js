@@ -267,7 +267,7 @@ $(document).on("click", "#btn_test_ncnas", function () {
     }
 
     console.log("[POPUP][NCNAS] Bắt đầu gửi yêu cầu test cho product:", productName);
-    alert(`[POPUP] Gửi yêu cầu test API cho: ${productName}`);
+    alert(`Gửi yêu cầu chạy Tool Auto Add Listing: ${productName}`);
 
     // gửi lên background
     chrome.runtime.sendMessage(
@@ -287,8 +287,8 @@ $(document).on("click", "#btn_test_ncnas", function () {
             $pre.show();
 
             if (resp.error) {
-                console.warn("[POPUP][NCNAS] Lỗi:", resp.error);
-                alert(`[POPUP][NCNAS] Lỗi: ${resp.error}`);
+                console.warn("Lỗi:", resp.error);
+                alert(`Lỗi: ${resp.error}`);
                 $pre.text("Error: " + resp.error);
             } else {
                 const pretty = JSON.stringify(resp.data, null, 2);
