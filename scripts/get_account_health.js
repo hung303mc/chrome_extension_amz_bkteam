@@ -254,6 +254,40 @@
             accountAmazon["note"] = resultArray.join(",");
             accountAmazon["listing_active"] = 0;
             accountAmazon["listing_closed"] = 0;
+
+            // 8. Lấy thông tin delivery
+            html = await loadPage("https://sellercentral.amazon.com/seller-fulfilled-product/analytics");
+            await sleep(3000);
+            doc = new DOMParser().parseFromString(html, "text/html");
+            // Khởi tạo giá trị mặc định
+            accountAmazon["promised_delivery_time"] = null;
+            accountAmazon["actual_delivery_time"] = null;
+            accountAmazon["actual_transit_time"] = null;
+            accountAmazon["promise_extension"] = null;
+
+            // Các phần tử có class giống "kat-col-sm-6" (có thể có khoảng trắng)
+            const deliveryDivs = doc.querySelectorAll('div.kat-col-sm-6, div[class*="kat-col-sm-6"]');
+            deliveryDivs.forEach(div => {
+                const p = div.querySelector('p');
+                if (!p) return;
+                const labelText = p.textContent.trim().toLowerCase();
+                const b = p.querySelector('b');
+                const valueText = b ? b.textContent.trim() : p.textContent.replace(/^[^:]+:\s*/i, '').trim();
+                // Lấy số (float or int) nếu có
+                const numMatch = valueText.match(/-?\d+(\.\d+)?/);
+                const parsedNum = numMatch ? parseFloat(numMatch[0]) : null;
+
+                if (labelText.includes('promised delivery time')) {
+                    accountAmazon["promised_delivery_time"] = parsedNum;
+                } else if (labelText.includes('actual delivery time')) {
+                    accountAmazon["actual_delivery_time"] = parsedNum;
+                } else if (labelText.includes('actual transit time')) {
+                    accountAmazon["actual_transit_time"] = parsedNum;
+                } else if (labelText.includes('promise extension') || labelText.includes('promise extensions')) {
+                    accountAmazon["promise_extension"] = parsedNum;
+                }
+            });
+            // Nếu không tìm thấy, vẫn giữ null hoặc chuỗi trống tuỳ nhu cầu
     
             // Chuyển đổi dữ liệu sang JSON và gửi về server
             const jsonData = JSON.stringify(accountAmazon);
