@@ -71,6 +71,7 @@
         "scripts/payment_auto.js",
         "scripts/amazon_message_automation.js",
         "scripts/get_phone.js",
+        "scripts/customize_listing/customizer_helpers.js",
         "scripts/customize_listing/customizer_runner.js"
       ],
       "css": [
