@@ -437,3 +437,197 @@
   // Expose
   window.CS = CS;
 })();
+
+
+// ===== Scroll parent helper =====
+CS.getScrollParent = function(el) {
+  let cur = el;
+  while (cur) {
+    try {
+      const st = getComputedStyle(cur);
+      const oy = st.overflowY;
+      if ((oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight) return cur;
+    } catch {}
+    cur = cur.parentElement || cur.getRootNode()?.host || null;
+  }
+  return document.scrollingElement || document.documentElement || document.body;
+};
+
+// ===== Rendered row helpers =====
+// Row selector: cố gắng bao phủ các biến thể hiện tại
+const ROW_SEL = [
+  '[data-test-id="compact-option-item"]',
+  '.gestalt_compact-row',
+  '.gestalt_compact-option-row',
+  '[data-test-id*="compact-option"]',
+  '[role="row"]'
+].join(',');
+
+CS.listRenderedRows = function(container) {
+  // trả về theo thứ tự DOM top→bottom
+  const rows = Array.from(container.querySelectorAll(ROW_SEL));
+  // lọc những row có ít nhất 1 cell ảnh để chắc chắn đó là row option
+  return rows.filter(r =>
+    r.querySelector?.('[data-test-id="compact-option-item-thumbnail-image"], [data-test-id="compact-option-item-overlay-image"]')
+  );
+};
+
+// Kiểm tra cell ảnh đã có gì chưa (img hoặc tile có background + có nút Remove/Replace)
+CS.cellHasImage = function(cell) {
+  if (!cell) return false;
+  if (cell.querySelector('img')) return true;
+  const tile = cell.querySelector('[class*="image-tile"], [class*="image-area"]');
+  if (tile) {
+    const bg = getComputedStyle(tile).backgroundImage;
+    if (bg && bg !== 'none') return true;
+  }
+  if (cell.querySelector('[data-test-id*="remove"], [aria-label*="Remove" i], [aria-label*="Replace" i]')) return true;
+  return false;
+};
+
+// Lấy input name trong 1 row (nếu có)
+CS.getRowNameInput = function(rowEl) {
+  return CS.findNameInputInRow(rowEl);
+};
+
+// Row trống: chưa có thumb, chưa có overlay, và (tùy) name còn trống
+CS.rowIsEmpty = function(rowEl, { requireEmptyName = false } = {}) {
+  if (!rowEl) return false;
+  const thumb = rowEl.querySelector('[data-test-id="compact-option-item-thumbnail-image"]');
+  const over  = rowEl.querySelector('[data-test-id="compact-option-item-overlay-image"]');
+  const hasThumb = CS.cellHasImage(thumb);
+  const hasOver  = CS.cellHasImage(over);
+  if (hasThumb || hasOver) return false;
+
+  if (requireEmptyName) {
+    const nameInp = CS.getRowNameInput(rowEl);
+    const nameVal = (nameInp?.value || "").trim();
+    if (nameVal) return false;
+  }
+  return true;
+};
+
+// Tìm "row trống đầu tiên" đang được render
+CS.findFirstEmptyRow = function(container, opts = {}) {
+  const rows = CS.listRenderedRows(container);
+  return rows.find(r => CS.rowIsEmpty(r, opts)) || null;
+};
+
+// Scroll một đoạn nhỏ để lộ thêm row mới
+CS.revealMoreRows = async function(container, { step = 300, dir = 1 } = {}) {
+  const sc = CS.getScrollParent(container);
+  const beforeTop = sc.scrollTop;
+  sc.scrollTop = sc.scrollTop + dir * step;
+  await CS.delay(120);
+  return sc.scrollTop !== beforeTop;
+};
+
+// Điền 1 row cụ thể (thay cho fillOneRowImages theo index)
+CS.fillExactRowImages = async function(rowEl, {
+  thumbUrl, overUrl, nameStem
+}) {
+  const thumbCell = rowEl.querySelector('[data-test-id="compact-option-item-thumbnail-image"]');
+  const overCell  = rowEl.querySelector('[data-test-id="compact-option-item-overlay-image"]');
+
+  // set name trước
+  if (nameStem) {
+    try {
+      await CS.setOptionNameInRow(rowEl, nameStem);
+    } catch (e) { CS.cswarn("[CS][row] set name failed:", e?.message); }
+  }
+
+  let thumbOK = false, overOK = false;
+  if (thumbCell && thumbUrl) thumbOK = await CS.uploadIntoCell(thumbCell, thumbUrl, "THUMB");
+  if (overCell  && overUrl)  overOK  = await CS.uploadIntoCell(overCell , overUrl , "PREVIEW");
+
+  return { thumbOK, overOK };
+};
+
+
+// Kéo scroll-parent về top, thử vài lần để chắc ăn (tránh inertia)
+CS.scrollToTop = async function(container, { tries = 6, wait = 60 } = {}) {
+  const sc = CS.getScrollParent(container);
+  for (let i = 0; i < tries; i++) {
+    try {
+      // cố gắng kéo cả document lẫn scroll container
+      window.scrollTo?.(0, 0);
+      sc.scrollTop = 0;
+      await CS.delay(wait);
+      if (sc.scrollTop === 0) break;
+    } catch {}
+  }
+  // fallback: nếu vẫn chưa về top, thử dùng một node ở đầu để anchor
+  try {
+    const firstRow =
+      container.querySelector('[data-test-id="compact-option-item"], .gestalt_compact-row, .gestalt_compact-option-row, [role="row"]');
+    firstRow?.scrollIntoView?.({ block: 'start' });
+    await CS.delay(wait);
+  } catch {}
+};
+
+// ⭐ Tìm scroller của "Options list" (viewport nhỏ)
+CS.findOptionListScroller = function(container) {
+  const candSelectors = [
+    'div.compact-virtualized-option-list',
+    '[data-test-id="compact-option-list"] .compact-virtualized-option-list',
+    'div[id^="compact-option-list"] .compact-virtualized-option-list',
+    // fallback: chính node container nếu nó là viewport
+    '[data-test-id="compact-option-list"]',
+    'div[id^="compact-option-list"]'
+  ];
+  const inScope = (sel) => {
+    try { return Array.from((container || document).querySelectorAll(sel)); } catch { return []; }
+  };
+
+  // gom ứng viên
+  let cands = [];
+  candSelectors.forEach(sel => cands.push(...inScope(sel)));
+
+  // ưu tiên node có overflow và có thể scroll
+  cands = cands.filter(el => {
+    try {
+      const cs = getComputedStyle(el);
+      const oy = cs.overflowY;
+      const scrollable = (oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight;
+      // đúng lớp "compact-virtualized-option-list" thì ưu tiên
+      const strong = el.classList?.contains('compact-virtualized-option-list');
+      return strong || scrollable;
+    } catch { return false; }
+  });
+
+  // nếu nhiều, lấy cái gần container nhất (walk up)
+  const score = (el) => {
+    let s = 0, cur = el;
+    while (cur && cur !== container && s < 50) { cur = cur.parentElement; s++; }
+    return s;
+  };
+  cands.sort((a,b)=>score(a)-score(b));
+  const found = cands[0] || null;
+
+  if (!found) {
+    // fallback: dùng getScrollParent như cũ
+    return CS.getScrollParent(container);
+  }
+  return found;
+};
+
+// ⭐ Cuộn đến top của scroller options
+CS.scrollOptionsToTop = async function(container, { tries = 4, wait = 60 } = {}) {
+  const sc = CS.findOptionListScroller(container);
+  if (!sc) return;
+  for (let i=0;i<tries;i++){
+    sc.scrollTop = 0;
+    await CS.delay(wait);
+    if (sc.scrollTop === 0) break;
+  }
+};
+
+// ⭐ Cuộn theo delta riêng scroller options
+CS.scrollOptionsBy = async function(container, dy = 300, wait = 60) {
+  const sc = CS.findOptionListScroller(container);
+  if (!sc) return false;
+  const before = sc.scrollTop;
+  sc.scrollTop = before + dy;
+  await CS.delay(wait);
+  return sc.scrollTop !== before;
+};

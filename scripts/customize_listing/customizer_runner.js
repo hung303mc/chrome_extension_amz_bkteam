@@ -249,29 +249,57 @@ async function createOneDropdownGroup(group) {
   if (ENABLE_ADDING_OPTIONS) await clickAddOptionNTimesInContainer(container, clicks);
   await delay(300);
 
-  // 🟥 bỏ scrollToTop và scrollToRow
-  for (let i = 0; i < need; i++) {
-    const relT = thumbnails[i] || null;
-    const relO = overlays[i] || null;
+  // 🟩 MỚI: về top trước khi bắt đầu điền để đảm bảo thứ tự & ổn định DOM
+  await CS.scrollOptionsToTop(container, { tries: 6, wait: 60 });
+
+   // === New: điền theo "row trống tiếp theo" ===
+  const scrollParent = CS.getScrollParent(container);
+  let filled = 0, guard = 0;
+
+  while (filled < need && guard < need * 10) {
+    guard++;
+
+    // Tìm row trống đang render
+    let row = CS.findFirstEmptyRow(container, { requireEmptyName: false });
+
+    // Nếu chưa thấy row trống, thử scroll nhẹ để lộ thêm
+    if (!row) {
+      const progressed = await CS.scrollOptionsBy(container, +420, 100);
+      if (!progressed) break; // hết list
+      row = CS.findFirstEmptyRow(container, { requireEmptyName: false });
+    }
+    if (!row) continue;
+
+    // Tính dữ liệu cho hàng thứ `filled` trong mảng đầu vào
+    const relT = thumbnails[filled] || null;
+    const relO = overlays[filled]   || null;
     const urlT = relT ? joinPublicUrlFromDirAndRel(thumbDir, relT, PUBLIC_BASE_URL) : null;
-    const urlO = relO ? joinPublicUrlFromDirAndRel(overDir,  relO,  PUBLIC_BASE_URL) : null;
+    const urlO = relO ? joinPublicUrlFromDirAndRel(overDir , relO , PUBLIC_BASE_URL) : null;
+    const optionNameStem = (relO ? filenameStem(relO) : "") || (relT ? filenameStem(relT) : "");
+
+    // Đảm bảo row vào giữa viewport để giảm recycle ngay lập tức
+    try { row.scrollIntoView({ block: 'center' }); await delay(80); } catch {}
+
     try {
-      const optionNameStem = (relO ? filenameStem(relO) : "") || (relT ? filenameStem(relT) : "");
-      await fillOneRowImages(i, container, {
+      const r = await CS.fillExactRowImages(row, {
         thumbUrl: urlT,
         overUrl : urlO,
-        nameStem: optionNameStem,
-        thumbSel: SEL_CELL_THUMB,
-        overSel : SEL_CELL_OVER
+        nameStem: optionNameStem
       });
+      cslog(`[CS][row #${filled+1}] done →`, r);
+      filled++;
     } catch (e) {
-      cserr(`Row ${i}: upload failed`, e?.message);
+      cserr(`[CS] fill row failed:`, e?.message || e);
     }
-    await delay(200);
+
+    // Nhích 1 chút để hiện row kế tiếp nhưng không kéo quá xa
+    await CS.scrollOptionsToTop(container, { tries: 3, wait: 50 });
   }
 
-  cslog(`=== Done group: "${targetLabel}" ===\n`);
-  return { label: targetLabel, need, rows_done: need };
+  // Sau khi xong: scroll lên đầu cho đẹp
+  try { scrollParent.scrollTo({ top: 0, behavior: 'instant' }); } catch {}
+  cslog(`=== Done group: "${targetLabel}" (filled=${filled}/${need}) ===\n`);
+  return { label: targetLabel, need, rows_done: filled };
 }
 
 // ===== Listener =====
