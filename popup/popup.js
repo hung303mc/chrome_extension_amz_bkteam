@@ -262,7 +262,7 @@ $(document).on("click", "#run_test", async function () {
 $(document).on("click", "#btn_test_ncnas", function () {
     const productName = $("#ncnas_product_name").val().trim();
     if (!productName) {
-        alert("Nhập product name trước đã (vd: girl book)");
+        alert("Nhập SKU trước đã (vd: SKU_ABC)");
         return;
     }
 
