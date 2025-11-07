@@ -137,6 +137,34 @@ $(document).on('change', '#enable_ip_tracking', async function() {
     await saveIpTrackingSetting(isEnabled);
 });
 
+$(document).on("click", "#start_variation_sync", function () {
+    setButtonLoading("start_variation_sync", true);
+    showStatus("variation_sync_status", "Đang mở trang Variation Wizard...", "info");
+
+    chrome.runtime.sendMessage({ message: "startVariationSync" }, (response) => {
+        setButtonLoading("start_variation_sync", false);
+
+        if (chrome.runtime.lastError) {
+            showStatus("variation_sync_status", chrome.runtime.lastError.message || "Không thể kích hoạt đồng bộ.", "error");
+            return;
+        }
+
+        if (!response || response.status !== "scheduled") {
+            const errorMessage = response && response.message
+                ? response.message
+                : "Không thể bắt đầu đồng bộ variation.";
+            showStatus("variation_sync_status", errorMessage, "error");
+            return;
+        }
+
+        showStatus(
+            "variation_sync_status",
+            "Đã mở Variation Wizard. Vui lòng theo dõi tab mới để monitor.",
+            "success"
+        );
+    });
+});
+
 // $(document).on("click", "#run_test", async function () {
 
 //     // Đọc trạng thái của tất cả 5 checkbox
