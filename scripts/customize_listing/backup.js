@@ -1,143 +1,143 @@
 // scripts/customize_listing/customizer_runner.js
 
+// 🟩 Cờ debug + tag log (đồng bộ với helpers)
 const CS_DBG = true;
 const CS_TAG = "[CS][Customizer]";
-const ENABLE_ADDING_OPTIONS = false; // ← Đặt false để CHỈ set Label, không tạo option
+window.CS && (CS.CS_DBG = CS_DBG); // đồng bộ flag từ helpers nếu đã load
+const ENABLE_ADDING_OPTIONS = true; // cho phép tự bấm Add option
+const PUBLIC_BASE_URL = "https://files.bkteam.top/";
 
-// B1: nút mở modal
+// 🟩 Proxy cross-origin cho ảnh (dùng khi trang https/ http gây CORS)
+const PROXY_BASE = "http://14.241.234.118:5003/proxy?u=";
+function viaProxy(url) {
+  if (!url) return url;
+  if (url.startsWith(PROXY_BASE)) return url;
+  return PROXY_BASE + encodeURIComponent(url);
+}
+function proxyUsableInThisPage() {
+  return !(location.protocol === "https:" && PROXY_BASE.startsWith("http:"));
+}
+
+// ===== Selectors (đặc thù UI hiện tại) =====
 const SELS_ADD_BTN = [
   'kat-button[data-test-id="container-picker-add-button"]',
   'kat-button[label*="Add customization" i].gestalt_add-new-pane-button__J0ie5'
 ];
-
-// B3: nút Add trong modal (primary)
 const SELS_MODAL_CONFIRM_BTN = [
   'kat-button[data-test-id="container-picker-modal-add-button"]',
   'kat-button[label="Add customization"][variant="primary"]'
 ];
-
-// Ô Label trong pane mới
-const SEL_LABEL_INPUTS = [
-  'input[placeholder="Label"]',
-  'input[aria-label="Label"]',
-  'input[id^="katal-id-"]'
+const SEL_PREVIEW_ZONE = [
+  'div.image-input.preview-container-base-image-upload',
+  'div.image-upload',
+];
+const SEL_PREVIEW_FILE_INPUT = [
+  'div.image-upload input[type="file"][accept*="image"]',
+  'input[type="file"][accept*="image/jpeg"]',
+  'input[type="file"][accept*="image/png"]',
+  'kat-image-uploader input[type="file"]'
 ];
 
-// Nút "Add option" trong group (compact)
+// Nút "Add surface" trong khu Manage your surfaces…
+const SELS_ADD_SURFACE_BTN = [
+  'kat-button[label="Add surface"]',
+  'kat-button[base][type="button"][class*="add-new-pane-button"]',       // fallback class kiểu Gestalt
+  'kat-button[label*="Add surface" i]',                                  // fallback theo text
+  'button.button:has(.content:contains("Add surface"))'                  // fallback thô
+];
+
+const SEL_CELL_THUMB = '[data-test-id="compact-option-item-thumbnail-image"]';
+const SEL_CELL_OVER  = '[data-test-id="compact-option-item-overlay-image"]';
 const SEL_ADD_OPTION = 'span[data-test-id="compact-option-item-add-option-button"]';
+const SEL_KAT_INPUT_OD_BROAD = 'kat-input[value^="Option Dropdown"]';
+const SEL_KAT_INPUT_OD_LABEL = 'kat-input[placeholder="Label"][value^="Option Dropdown"]';
 
-function cslog(...args) { if (CS_DBG) console.log(CS_TAG, ...args); }
-function cswarn(...args) { if (CS_DBG) console.warn(CS_TAG, ...args); }
-function cserr(...args) { if (CS_DBG) console.error(CS_TAG, ...args); }
+// ===== Aliases từ helpers =====
+const {
+  cslog, cswarn, cserr,
+  deepQuerySelector, deepQueryAll, deepFindByText, deepQueryAny,
+  waitFor, delay,
+  clickKatButtonHost,
+  getInnerTextInputFromKatInput,
+  fireAll,
+  getFileInputInCell,
+  uploadUrlToFileInput,
+  waitUntilCellUploaded,
+  absPathToPublic, joinPublicUrlFromDirAndRel,
+  filenameStem,
+  // scrollToRow, scrollToTop,  // 🟥 bỏ scroll helper
+  fillOneRowImages
+} = window.CS;
 
-// --- Duyệt sâu ---
-function deepQuerySelector(selectors, root = document) {
-  if (!Array.isArray(selectors)) selectors = [selectors];
-  const stack = [root];
-  let visited = 0;
-  while (stack.length) {
-    const node = stack.pop();
-    visited++;
-    if (node && (node.querySelector instanceof Function)) {
-      for (const sel of selectors) {
-        try {
-          const found = node.querySelector(sel);
-          if (found) {
-            cslog("deepQuerySelector: found by", sel);
-            return found;
-          }
-        } catch {}
-      }
-    }
-    if (node && node.children) for (const c of node.children) stack.push(c);
-    if (node && node.shadowRoot) stack.push(node.shadowRoot);
-  }
-  cswarn("deepQuerySelector: not found. visited ≈", visited);
-  return null;
-}
-function deepQueryAll(selector, root = document) {
-  const out = [];
-  const stack = [root];
-  while (stack.length) {
-    const node = stack.pop();
-    if (node && node.querySelectorAll instanceof Function) {
-      try {
-        const found = node.querySelectorAll(selector);
-        if (found && found.length) out.push(...found);
-      } catch {}
-    }
-    if (node && node.children) for (const c of node.children) stack.push(c);
-    if (node && node.shadowRoot) stack.push(node.shadowRoot);
-  }
-  return out;
+// 🟩 Chờ input Preview
+async function waitForPreviewFileInput() {
+  const zone = await waitFor(() => deepQueryAny(SEL_PREVIEW_ZONE), { timeout: 15000, interval: 120 });
+  const input = await waitFor(() => deepQueryAny(SEL_PREVIEW_FILE_INPUT, zone), { timeout: 10000, interval: 120 });
+  return { zone, input };
 }
 
-function deepFindByText(text, root = document) {
-  const wanted = (text || "").toLowerCase();
-  const stack = [root];
-  let scanned = 0;
-  while (stack.length) {
-    const node = stack.pop();
-    if (node?.nodeType === 1) {
-      const el = node;
-      scanned++;
-      const txt = (el.textContent || "").toLowerCase().trim();
-      if (txt.includes(wanted)) {
-        cslog("deepFindByText: found. snippet:", (el.outerHTML || "").slice(0, 200));
-        return el;
-      }
-      for (const c of el.children) stack.push(c);
-      if (el.shadowRoot) stack.push(el.shadowRoot);
-    }
-  }
-  cswarn("deepFindByText: not found. scanned ≈", scanned);
-  return null;
-}
+async function dropFileOnCell(cell, file) { return window.CS.dropFileOnCell(cell, file); }
 
-// --- waitFor / delay ---
-function waitFor(fnCheck, { timeout = 15000, interval = 120 } = {}) {
-  cslog("waitFor: start", { timeout, interval });
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const timer = setInterval(() => {
-      try {
-        const elOrTrue = fnCheck();
-        if (elOrTrue) {
-          clearInterval(timer);
-          cslog("waitFor: done in", Date.now() - start, "ms");
-          resolve(elOrTrue);
-        } else if (Date.now() - start > timeout) {
-          clearInterval(timer);
-          cserr("waitFor: timeout after", timeout, "ms");
-          reject(new Error("Timeout waiting"));
-        }
-      } catch (e) {
-        clearInterval(timer);
-        cserr("waitFor: fnCheck threw:", e?.message);
-        reject(e);
-      }
-    }, interval);
-  });
-}
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function uploadPreviewImage(absPathOrUrl) {
+  if (!absPathOrUrl) return false;
+  const pub = absPathToPublic(absPathOrUrl, PUBLIC_BASE_URL);
+  const url = proxyUsableInThisPage() ? viaProxy(pub) : pub;
 
-// --- tiện ích click kat-button + inner shadow ---
-function clickKatButtonHost(btnHost) {
-  btnHost?.click?.();
+  const { zone, input } = await waitForPreviewFileInput();
+  await uploadUrlToFileInput(url, input, { debugOpenTab: false, fetchTimeoutMs: 45000 });
+
   try {
-    if (btnHost?.shadowRoot) {
-      const innerBtn = btnHost.shadowRoot.querySelector('button, [role="button"]');
-      innerBtn?.click?.();
-    }
+    await waitUntilCellUploaded(zone, input, { timeout: 20000 });
   } catch (e) {
-    cswarn("clickKatButtonHost: inner click skipped:", e?.message);
+    const name = decodeURIComponent((url.split("/").pop() || "preview").split("?")[0]) || "preview.jpg";
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const file = new File([blob], name, { type: blob.type || "image/jpeg" });
+    await dropFileOnCell(zone, file);
   }
+  cslog("[CS][preview] ✅ Uploaded Preview Image");
+  return true;
 }
 
-// ===================== B1/B2/B3 =====================
+async function clickAddSurfaceIfNeeded() {
+  cslog("S0: check & click 'Add surface' if needed…");
+
+  // Nếu đã có zone preview (tức là đã có surface), bỏ qua.
+  const previewZone = deepQueryAny(SEL_PREVIEW_ZONE);
+  if (previewZone) {
+    cslog("S0: surface already exists → skip.");
+    return false;
+  }
+
+  // Tìm nút Add surface
+  let btnHost = await waitFor(() => deepQuerySelector(SELS_ADD_SURFACE_BTN), { timeout: 8000, interval: 120 });
+  if (!btnHost) {
+    cswarn("S0: 'Add surface' button not found, assume surface exists.");
+    return false;
+  }
+
+  // Đợi nút enabled rồi click
+  await waitFor(() => {
+    const disabled = btnHost.hasAttribute?.('disabled') || btnHost.getAttribute?.('aria-disabled') === 'true';
+    return !disabled ? btnHost : null;
+  }, { timeout: 10000, interval: 100 });
+
+  cslog("S0: clicking 'Add surface'…");
+  clickKatButtonHost(btnHost);
+
+  // Chờ cho đến khi input preview hiện ra (nghĩa là surface đã tạo xong)
+  await waitForPreviewFileInput();
+  cslog("S0: surface created.");
+  return true;
+}
+
+
+// async function scrollToTopInContainer(...) {}
+
+// ===== B1/B2/B3 =====
 async function clickAddCustomizationOpenModal() {
   cslog("B1: waiting for add-button…");
-  let btnHost = await waitFor(() => deepQuerySelector(SELS_ADD_BTN), { timeout: 20000, interval: 150 });
+  let btnHost = await waitFor(() => deepQuerySelector(SELS_ADD_BTN));
   if (!btnHost) {
     cswarn("B1: not found by selector, try text…");
     btnHost = deepFindByText("Add customization");
@@ -147,22 +147,21 @@ async function clickAddCustomizationOpenModal() {
   clickKatButtonHost(btnHost);
   return true;
 }
+
 async function waitForContainerPickerModal() {
   return waitFor(
-    () => deepQueryAll('kat-box[data-test-id="container-picker-modal-choice"]').length > 0,
-    { timeout: 20000, interval: 150 }
+    () => deepQueryAll('kat-box[data-test-id="container-picker-modal-choice"]').length > 0
   );
 }
+
 async function clickOptionDropdown() {
   cslog("B2: waiting for modal choices…");
   await waitForContainerPickerModal();
   const labels = deepQueryAll('.gestalt_choice-label__O7P2T, kat-box[data-test-id="container-picker-modal-choice"]');
-  cslog("B2: label-like nodes =", labels.length);
   for (const node of labels) {
     const text = (node.textContent || "").trim().toLowerCase();
     if (text.includes("option dropdown")) {
       const target = node.closest?.('kat-box[data-test-id="container-picker-modal-choice"]') || node;
-      cslog("B2: clicking choice");
       target.click();
       try {
         const inner = target.querySelector('.gestalt_choice-content__cr_0c, .gestalt_inner-box__RxHou');
@@ -175,127 +174,181 @@ async function clickOptionDropdown() {
   for (const box of boxes) {
     const t = (box.textContent || "").toLowerCase();
     if (t.includes("option dropdown")) {
-      cslog("B2: fallback clicking box");
       box.click();
       return true;
     }
   }
   throw new Error('B2: Could not find "Option Dropdown" choice');
 }
+
 async function clickModalAddCustomizationConfirm() {
   cslog("B3: waiting for modal confirm button…");
-  const btnHost = await waitFor(() => deepQuerySelector(SELS_MODAL_CONFIRM_BTN), { timeout: 20000, interval: 150 });
+  const btnHost = await waitFor(() => deepQuerySelector(SELS_MODAL_CONFIRM_BTN));
   if (!btnHost) throw new Error("B3: Cannot find modal confirm 'Add customization' button");
   await waitFor(() => {
     const disabled = btnHost.hasAttribute?.('disabled') || btnHost.getAttribute?.('aria-disabled') === 'true';
     return !disabled ? btnHost : null;
   }, { timeout: 15000, interval: 120 });
-  cslog("B3: clicking modal confirm button");
   clickKatButtonHost(btnHost);
   return true;
 }
 
-// ===================== NEW: Label & active container =====================
-
-// Đợi ô Label xuất hiện (ưu tiên phần tử đang focus là input "Label")
-async function waitForLabelInput() {
+// ===== Kat-input =====
+async function waitForTargetKatInput(selector, root = document) {
   return waitFor(() => {
-    const ae = document.activeElement;
-    if (
-      ae &&
-      ae.tagName === "INPUT" &&
-      (ae.getAttribute("placeholder") === "Label" ||
-        ae.getAttribute("aria-label") === "Label" ||
-        (ae.id || "").startsWith("katal-id-"))
-    ) {
-      return ae;
-    }
-    // fallback: quét sâu
-    return deepQuerySelector(SEL_LABEL_INPUTS);
-  }, { timeout: 20000, interval: 150 });
+    const list = deepQueryAll(selector, root);
+    if (list.length) return list[list.length - 1];
+    return null;
+  });
 }
 
-// Gõ label và bắn event để UI nhận + verify giá trị đã được giữ lại
-async function setGroupLabel(labelText) {
-  const input = await waitForLabelInput();
-  cslog("Label input found:", input);
-
-  const finalText = labelText || "Choose Book";
-
-  // focus + clear + type
-  input.focus();
-  try { input.setSelectionRange(0, (input.value || "").length); } catch {}
-  input.value = "";
-  input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-  input.value = finalText;
-  input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-  input.blur?.();
-
-  // Verify lần 1: chính input giữ được giá trị
-  if ((input.value || "").trim() !== finalText.trim()) {
-    throw new Error(`Set label failed: input value="${input.value}" !== "${finalText}"`);
-  }
-
-  // Verify lần 2 (nhẹ): chờ UI “ổn định” 1 nhịp rồi kiểm lại
-  await delay(150);
-  if ((input.value || "").trim() !== finalText.trim()) {
-    throw new Error(`Set label failed after settle: input value="${input.value}" !== "${finalText}"`);
-  }
-
-  cslog(`Set label to "${finalText}" OK`);
-  return input;
-}
-
-// Lấy container tuỳ chỉnh đang mở (ancestor của ô Label) – nơi chứa nút Add option
-function getActiveCustomizationContainerFromLabelInput(input) {
-  let cur = input;
-  for (let i = 0; i < 10 && cur; i++) {
-    if (cur.querySelector?.(SEL_ADD_OPTION)) {
-      cslog("Active customization container found:", cur);
-      return cur;
-    }
+function getActiveCustomizationContainerFromLabelInput(inputOrHost) {
+  let cur = inputOrHost;
+  for (let i = 0; i < 12 && cur; i++) {
+    if (cur.querySelector?.(SEL_ADD_OPTION)) return cur;
     cur = cur.parentElement || cur.getRootNode()?.host || null;
   }
-  cswarn("Active container not found by walking up from label input; fallback to document");
   return document;
 }
 
-// Bấm Add option n lần trong container chỉ định
-async function clickAddOptionNTimesInContainer(container, n) {
-  if (!n || n <= 0) {
-    cslog(`No need to add options, n=${n}`);
-    return;
+async function setKatInputLabel(host, labelText) {
+  const input = getInnerTextInputFromKatInput(host);
+  if (!input) throw new Error("Cannot find inner input of kat-input");
+  const finalText = labelText || "Choose Book";
+  // 🟥 bỏ scrollIntoView tự động
+  try { host.click?.(); } catch {}
+  await delay(60);
+  input.focus();
+  input.value = "";
+  input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  for (const ch of finalText.split("")) {
+    input.value += ch;
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+    await delay(15);
   }
-
-  const addBtn = container.querySelector(SEL_ADD_OPTION);
-  if (!addBtn) throw new Error("Add option button not found inside active customization container");
-
-  cslog(`Adding ${n} option(s)…`);
-  for (let i = 0; i < n; i++) {
-    addBtn.click();
-    await delay(300);
-  }
-  cslog(`Done adding ${n} option(s).`);
+  input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  input.blur?.();
+  try { host.setAttribute("value", finalText); } catch {}
+  cslog(`Set kat-input label to "${finalText}" OK`);
+  return input;
 }
 
-// ===================== Listener =====================
+async function clickAddOptionNTimesInContainer(container, n) {
+  if (!n || n <= 0) return;
+  const addBtn = container.querySelector(SEL_ADD_OPTION);
+  if (!addBtn) throw new Error("Add option button not found inside active customization container");
+  const BATCH = 10;
+  let left = n;
+  while (left > 0) {
+    const take = Math.min(BATCH, left);
+    for (let i = 0; i < take; i++) { addBtn.click(); await delay(120); }
+    left -= take;
+    await delay(350);
+  }
+}
+
+// ===== Per-group flow =====
+async function createOneDropdownGroup(group) {
+  const targetLabel = (group?.label || "").trim() || "Choose";
+  const thumbnails = Array.isArray(group?.thumbnail) ? group.thumbnail : [];
+  const overlays   = Array.isArray(group?.overlay) ? group.overlay : [];
+  const thumbDir   = group?.thumbnail_dir || "";
+  const overDir    = group?.preview_dir || "";
+
+  const baseNum = Number(group?.number_option || 0);
+  const need = Math.max(baseNum, thumbnails.length, overlays.length);
+  const clicks = Math.max(need - 2, 0);
+
+  cslog(`\n=== Create group: "${targetLabel}" (need=${need} → clicks=${clicks}) ===`);
+
+  await clickAddCustomizationOpenModal();
+  await clickOptionDropdown();
+  await clickModalAddCustomizationConfirm();
+
+  let labelHost;
+  let container;
+  try {
+    const labelHostBroad = await waitForTargetKatInput(SEL_KAT_INPUT_OD_BROAD, document);
+    await setKatInputLabel(labelHostBroad, targetLabel);
+    container = getActiveCustomizationContainerFromLabelInput(labelHostBroad) || document;
+    try {
+      const labelHostNarrow = await waitForTargetKatInput(SEL_KAT_INPUT_OD_LABEL, container);
+      if (labelHostNarrow) {
+        await setKatInputLabel(labelHostNarrow, targetLabel);
+        labelHost = labelHostNarrow;
+      } else labelHost = labelHostBroad;
+    } catch { labelHost = labelHostBroad; }
+  } catch (e) {
+    cserr("Set label failed for group:", targetLabel, e?.message);
+    throw e;
+  }
+
+  await delay(300);
+  container = getActiveCustomizationContainerFromLabelInput(labelHost);
+  if (ENABLE_ADDING_OPTIONS) await clickAddOptionNTimesInContainer(container, clicks);
+  await delay(300);
+
+  // 🟩 MỚI: về top trước khi bắt đầu điền để đảm bảo thứ tự & ổn định DOM
+  await CS.scrollOptionsToTop(container, { tries: 6, wait: 60 });
+
+   // === New: điền theo "row trống tiếp theo" ===
+  const scrollParent = CS.getScrollParent(container);
+  let filled = 0, guard = 0;
+
+  while (filled < need && guard < need * 10) {
+    guard++;
+
+    // Tìm row trống đang render
+    let row = CS.findFirstEmptyRow(container, { requireEmptyName: false });
+
+    // Nếu chưa thấy row trống, thử scroll nhẹ để lộ thêm
+    if (!row) {
+      const progressed = await CS.scrollOptionsBy(container, +420, 100);
+      if (!progressed) break; // hết list
+      row = CS.findFirstEmptyRow(container, { requireEmptyName: false });
+    }
+    if (!row) continue;
+
+    // Tính dữ liệu cho hàng thứ `filled` trong mảng đầu vào
+    const relT = thumbnails[filled] || null;
+    const relO = overlays[filled]   || null;
+    const urlT = relT ? joinPublicUrlFromDirAndRel(thumbDir, relT, PUBLIC_BASE_URL) : null;
+    const urlO = relO ? joinPublicUrlFromDirAndRel(overDir , relO , PUBLIC_BASE_URL) : null;
+    const optionNameStem = (relO ? filenameStem(relO) : "") || (relT ? filenameStem(relT) : "");
+
+    // Đảm bảo row vào giữa viewport để giảm recycle ngay lập tức
+    try { row.scrollIntoView({ block: 'center' }); await delay(80); } catch {}
+
+    try {
+      const r = await CS.fillExactRowImages(row, {
+        thumbUrl: urlT,
+        overUrl : urlO,
+        nameStem: optionNameStem
+      });
+      cslog(`[CS][row #${filled+1}] done →`, r);
+      filled++;
+    } catch (e) {
+      cserr(`[CS] fill row failed:`, e?.message || e);
+    }
+
+    // Nhích 1 chút để hiện row kế tiếp nhưng không kéo quá xa
+    await CS.scrollOptionsToTop(container, { tries: 3, wait: 50 });
+  }
+
+  // Sau khi xong: scroll lên đầu cho đẹp
+  try { scrollParent.scrollTo({ top: 0, behavior: 'instant' }); } catch {}
+  cslog(`=== Done group: "${targetLabel}" (filled=${filled}/${need}) ===\n`);
+  return { label: targetLabel, need, rows_done: filled };
+}
+
+// ===== Listener =====
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   cslog("onMessage:", msg?.type, "from", sender?.tab?.id || "bg", "URL:", location.href);
   if (msg?.type === "NCNAS_APPLY") {
     (async () => {
       try {
-        cslog("NCNAS_APPLY received. payload keys:", Object.keys(msg.payload || {}));
-
-        // B1 → B2 → B3
-        await clickAddCustomizationOpenModal();
-        await clickOptionDropdown();
-        await clickModalAddCustomizationConfirm();
-
-        // Resolve payload & JSON
         const payload = msg?.payload;
-        cslog("[CS] Incoming payload =", payload);
-
         let summary = null;
         if (payload?.json) {
           summary = typeof payload.json === "string" ? JSON.parse(payload.json) : payload.json;
@@ -305,71 +358,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           try { const parsed = JSON.parse(payload); if (Array.isArray(parsed?.groups)) summary = parsed; } catch {}
         }
 
-        cslog("=== JSON debug ===");
-        cslog("summary =", summary);
+        const groups = Array.isArray(summary?.groups) ? summary.groups : [];
+        if (!groups.length) throw new Error("No groups provided in payload");
 
-        // Mặc định label & clicks
-        let targetLabel = "Choose Book";
-        let clicks = 0;
+        // 🟩 BƯỚC S0: đảm bảo có ít nhất 1 surface
+        try { await clickAddSurfaceIfNeeded(); } catch (e) { cserr("S0 add-surface failed:", e?.message || e); }
 
-        if (summary?.groups?.length) {
-          cslog("summary.groups.length =", summary.groups.length);
-          const g =
-            summary.groups.find(x => (x.key || "").toLowerCase() === "book") ||
-            summary.groups.find(x => (x.label || "").toLowerCase() === "choose book") ||
-            null;
-
-          cslog("found group g =", g);
-
-          if (g) {
-            targetLabel = g.label || targetLabel;
-            const num = Number(g.number_option || 0);
-            cslog("raw number_option =", g.number_option, "→ parsed =", num);
-            clicks = Math.max(num - 2, 0);
-            cslog("computed clicks =", clicks, "(num - 2)");
-          } else {
-            cswarn("No matching group 'book' or 'Choose Book' found in summary.groups");
-          }
-        } else {
-          cswarn("summary.groups empty or undefined");
+        try {
+          const previewAbs = summary?.previewImage || summary?.preview_image || "";
+          if (previewAbs) await uploadPreviewImage(previewAbs);
+        } catch (e) {
+          cserr("[CS][preview] upload failed:", e?.message || e);
         }
 
-        // --- NEW FLOW: CHỈ set Label, nếu thất bại → throw và DỪNG LUÔN ---
-        const labelInput = await setGroupLabel(targetLabel);
-
-        // Cho UI vẽ lại tiêu đề/khung một nhịp
-        await delay(300);
-
-        // Nếu đang debug: KHÔNG tạo option, dừng ngay tại đây
-        if (!ENABLE_ADDING_OPTIONS) {
-          cslog("Skipping option creation because ENABLE_ADDING_OPTIONS = false");
-          sendResponse({
-            ok: true,
-            step: "set_label_only",
-            group_label: targetLabel,
-            intended_clicks: 0
-          });
-          return; // ← KẾT THÚC FLOW tại đây
+        const results = [];
+        for (const g of groups) {
+          const r = await createOneDropdownGroup(g);
+          results.push(r);
+          await delay(450);
         }
-
-        // Nếu bật tạo option: chỉ tiếp tục khi label set OK
-        const activeContainer = getActiveCustomizationContainerFromLabelInput(labelInput);
-        await clickAddOptionNTimesInContainer(activeContainer, clicks);
-
-        sendResponse({
-          ok: true,
-          step: "set_label_and_added_options",
-          group_label: targetLabel,
-          intended_clicks: clicks
-        });
+        sendResponse({ ok: true, step: "all_groups_done", results });
       } catch (e) {
         cserr("apply flow failed:", e);
-        try {
-          sendResponse({ ok: false, error: e.message, step: "cs_exception" });
-        } catch {}
+        try { sendResponse({ ok: false, error: e.message, step: "cs_exception" }); } catch {}
       }
     })();
-    return true; // async
+    return true;
   }
 });
 

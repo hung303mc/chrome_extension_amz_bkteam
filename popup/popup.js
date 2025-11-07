@@ -266,8 +266,8 @@ $(document).on("click", "#btn_test_ncnas", function () {
         return;
     }
 
-    console.log("[POPUP][NCNAS] Bắt đầu gửi yêu cầu test cho product:", productName);
-    alert(`Gửi yêu cầu chạy Tool Auto Add Listing: ${productName}`);
+    console.log("Bắt đầu gửi yêu cầu test cho product:", productName);
+    alert(`Gửi yêu cầu chạy Tool Auto Add Listing với SKU: ${productName}`);
 
     // gửi lên background
     chrome.runtime.sendMessage(
@@ -276,10 +276,10 @@ $(document).on("click", "#btn_test_ncnas", function () {
             productName: productName
         },
         (resp) => {
-            console.log("[POPUP][NCNAS] Nhận phản hồi từ background:", resp);
+            console.log("Nhận phản hồi từ background:", resp);
 
             if (!resp) {
-                alert("[POPUP][NCNAS] Không nhận được phản hồi từ background!");
+                alert("Không nhận được phản hồi từ server!");
                 return;
             }
 
@@ -293,7 +293,7 @@ $(document).on("click", "#btn_test_ncnas", function () {
             } else {
                 const pretty = JSON.stringify(resp.data, null, 2);
                 console.log("[POPUP][NCNAS] Dữ liệu JSON nhận được:", pretty);
-                alert("[POPUP][NCNAS] Nhận JSON thành công! Kiểm tra console để xem chi tiết.");
+                alert("Tool Đã chạy xong!!!");
                 $pre.text(pretty);
             }
         }
