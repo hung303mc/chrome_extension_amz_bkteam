@@ -4,6 +4,7 @@ const ipTrackingKey = "ipTrackingEnabled";
 
 //  "http://127.0.0.1:8080/query";
 const AMZDomain = "https://sellercentral.amazon.com";
+const VARWIZ_URL = `${AMZDomain}/listing/varwiz`;
 const AMZDomains = [
   "https://sellercentral.amazon.com",
   "https://sellercentral-europe.amazon.com",
@@ -20,6 +21,96 @@ let isSyncing = false;
 
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const waitForTabToLoad = (tabId, timeoutMs = 60000) =>
+  new Promise((resolve, reject) => {
+    let completed = false;
+    let timeoutId;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      chrome.tabs.onUpdated.removeListener(listener);
+    };
+
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") {
+        completed = true;
+        cleanup();
+        resolve();
+      }
+    };
+
+    timeoutId = setTimeout(() => {
+      if (!completed) {
+        cleanup();
+        reject(new Error("Timed out waiting for Variation Wizard tab to finish loading."));
+      }
+    }, timeoutMs);
+
+    chrome.tabs.onUpdated.addListener(listener);
+
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (!tab) {
+          cleanup();
+          reject(new Error("Variation Wizard tab could not be found."));
+          return;
+        }
+
+        if (tab.status === "complete") {
+          completed = true;
+          cleanup();
+          resolve();
+        }
+      })
+      .catch((error) => {
+        cleanup();
+        reject(error);
+      });
+  });
+
+const openVarwizAndRunVariationSync = async (options = {}) => {
+  const targetPattern = `${VARWIZ_URL}*`;
+  let existingTabs = [];
+
+  try {
+    existingTabs = await chrome.tabs.query({ url: [targetPattern] });
+  } catch (error) {
+    console.warn("[VariationSync] Unable to query existing tabs:", error);
+  }
+
+  let tab;
+  if (existingTabs && existingTabs.length > 0) {
+    tab = await chrome.tabs.update(existingTabs[0].id, { active: true, url: VARWIZ_URL });
+  } else {
+    tab = await chrome.tabs.create({ url: VARWIZ_URL, active: true });
+  }
+
+  if (!tab || typeof tab.id !== "number") {
+    throw new Error("Không thể mở tab Variation Wizard.");
+  }
+
+  await waitForTabToLoad(tab.id);
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (optionsArg) => {
+      const triggerSync = () => {
+        if (window.BkteamVariationSync && typeof window.BkteamVariationSync.runVariationSync === "function") {
+          window.BkteamVariationSync.runVariationSync(optionsArg || {});
+        } else {
+          setTimeout(triggerSync, 1000);
+        }
+      };
+
+      triggerSync();
+    },
+    args: [options],
+  });
+};
 
 /**
  * Gửi trạng thái của một feature về server để monitor.
@@ -2103,6 +2194,17 @@ async function processTrackingUpdates(ordersToProcess, retryCount = 0, initialSe
 
 // capture event from content script
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
+  if (req.message === "startVariationSync") {
+    try {
+      await openVarwizAndRunVariationSync(req.options || {});
+      res({ status: "scheduled" });
+    } catch (error) {
+      console.error("[VariationSync] Failed to start automation:", error);
+      res({ status: "error", message: error?.message || "Không thể kích hoạt đồng bộ variation." });
+    }
+    return true;
+  }
+
   if (req.message === "runTestNow") {
     setupTestAlarms(); // Gọi hàm mới để đặt lịch test
     res({ status: "test_scheduled" });
