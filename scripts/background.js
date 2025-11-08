@@ -17,10 +17,730 @@ let doingAuto = false;
 let globalDomain = AMZDomain;
 let globalMBApiKey = null;
 let isSyncing = false;
+const BKTEAM_DOMAIN = "https://bkteam.top";
+const ASIN_MONITORING_API = `${BKTEAM_DOMAIN}/dungvuong-admin/api/Api_ASIN_Manager.php`;
+let isAsinMonitoringRunning = false;
 
 
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const notifyAsinMonitoringStatus = (payload) => {
+  try {
+    chrome.runtime.sendMessage({ message: "asinMonitoringStatus", ...payload }, () => {
+      if (chrome.runtime.lastError) {
+        console.debug("[ASIN Monitoring] Popup not reachable:", chrome.runtime.lastError.message);
+      }
+    });
+  } catch (error) {
+    console.warn("[ASIN Monitoring] Unable to broadcast status:", error);
+  }
+};
+
+const fetchMonitoringList = async (caseId) => {
+  const url = `${ASIN_MONITORING_API}?case=${caseId}`;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-cache",
+      credentials: "include",
+    });
+    const text = await response.text();
+    if (!text) {
+      return [];
+    }
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error(`[ASIN Monitoring] Failed to fetch data from ${url}:`, error);
+    return [];
+  }
+};
+
+const postMonitoringInfo = async (caseId, payload) => {
+  const url = `${ASIN_MONITORING_API}?case=${caseId}`;
+  const body = `info=${encodeURIComponent(JSON.stringify(payload))}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Request to ${url} failed with status ${response.status}: ${text}`);
+  }
+
+  return response.text();
+};
+
+const collectAsinDataFromTab = async (tabId, baseAsin) => {
+  const [execution] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: async (options) => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const cleanText = (value) => {
+        if (!value) return "";
+        return value
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "and")
+          .replace(/&/g, "and")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
+
+      const getCellByLabel = (label) => {
+        const xpath = `//th[normalize-space(.)='${label}']/following-sibling::td`;
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        return result.singleNodeValue || null;
+      };
+
+      const parseRankInfo = (text) => {
+        if (!text) {
+          return [];
+        }
+        const matches = [...text.matchAll(/#([\d,]+)\s+in\s+([^\n(]+)/g)];
+        return matches.map((match) => ({
+          rank: parseInt((match[1] || "0").replace(/,/g, ""), 10) || 0,
+          niche: cleanText(match[2] || ""),
+        }));
+      };
+
+      const updateZipcode = async () => {
+        const ingress = document.getElementById("glow-ingress-line2");
+        if (!ingress) {
+          return;
+        }
+
+        const current = cleanText(ingress.textContent || "");
+        if (current && current.toLowerCase().includes("vietnam")) {
+          ingress.click();
+          await wait(1000);
+          const input = document.getElementById("GLUXZipUpdateInput");
+          if (input) {
+            input.focus();
+            input.value = "10001";
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            const updateButton = document.getElementById("GLUXZipUpdate");
+            if (updateButton) {
+              updateButton.click();
+            } else {
+              const enterEvent = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+              input.dispatchEvent(enterEvent);
+              const enterUp = new KeyboardEvent("keyup", { key: "Enter", bubbles: true });
+              input.dispatchEvent(enterUp);
+            }
+            await wait(1500);
+            const closeButton = document.getElementById("GLUXConfirmClose");
+            if (closeButton) {
+              closeButton.click();
+            }
+          }
+        }
+      };
+
+      await wait(1500);
+      await updateZipcode();
+      await wait(1200);
+
+      const asinData = {};
+      const currentUrl = window.location.href || "";
+      const asinMatch = currentUrl.match(/\/dp\/([A-Z0-9]{10})/i);
+      const asinFromUrl = asinMatch ? asinMatch[1] : "";
+      asinData.asin = asinFromUrl || options?.baseAsin || "";
+
+      const parseFirstNumber = (value) => {
+        if (!value) return 0;
+        const cleaned = value.trim();
+        const decimalComma = cleaned.includes(",") && !cleaned.includes(".");
+        const normalized = cleaned
+          .replace(/[^0-9,\.]/g, "")
+          .replace(/,/g, decimalComma ? "." : "");
+        const match = normalized.match(/\d+(?:\.\d+)?/);
+        return match ? parseFloat(match[0]) : 0;
+      };
+
+      const parseCountText = (value) => {
+        if (!value) return null;
+        const normalized = value.trim().toLowerCase();
+        let multiplier = 1;
+        if (normalized.includes("m")) {
+          multiplier = 1000000;
+        } else if (normalized.includes("k")) {
+          multiplier = 1000;
+        }
+
+        const numericPart = normalized.replace(/[^0-9,\.]/g, "");
+        if (!numericPart) {
+          return null;
+        }
+
+        const decimalComma = numericPart.includes(",") && !numericPart.includes(".");
+        let numberString = numericPart.replace(/,/g, decimalComma ? "." : "");
+
+        if (multiplier === 1) {
+          const parts = numberString.split(".");
+          if (parts.length > 1) {
+            const fractional = parts.slice(1).join("");
+            if (fractional.length >= 3) {
+              numberString = parts.join("");
+            }
+          }
+        }
+
+        const parsed = parseFloat(numberString);
+        if (Number.isNaN(parsed)) {
+          return null;
+        }
+
+        return Math.round(parsed * multiplier);
+      };
+
+      let ratingScoreNumber = 0;
+      const ratingScoreEl = document.querySelector(".reviewCountTextLinkedHistogram");
+      if (ratingScoreEl) {
+        ratingScoreNumber = parseFirstNumber(ratingScoreEl.getAttribute("title") || "");
+      }
+      const ratingSummaryEl = document.querySelector('[data-hook="rating-out-of-text"]');
+      if (!ratingScoreNumber && ratingSummaryEl) {
+        ratingScoreNumber = parseFirstNumber(cleanText(ratingSummaryEl.textContent || ""));
+      }
+      const ratingScore = ratingScoreNumber ? ratingScoreNumber.toFixed(1) : "0.0";
+      asinData.rating_score = ratingScore;
+
+      const ratingCountCandidates = [];
+      const ratingCountEl = document.getElementById("acrCustomerReviewText");
+      if (ratingCountEl) {
+        ratingCountCandidates.push(cleanText(ratingCountEl.textContent || ""));
+      }
+      const ratingLinkSpan = document.querySelector("#acrCustomerReviewLink span");
+      if (ratingLinkSpan) {
+        ratingCountCandidates.push(cleanText(ratingLinkSpan.textContent || ""));
+      }
+      const totalReviewCount = document.querySelector('[data-hook="total-review-count"]');
+      if (totalReviewCount) {
+        ratingCountCandidates.push(cleanText(totalReviewCount.textContent || ""));
+      }
+
+      let ratingCountNumber = 0;
+      for (const candidate of ratingCountCandidates) {
+        const candidateNumber = parseCountText(candidate);
+        if (typeof candidateNumber === "number" && candidateNumber > ratingCountNumber) {
+          ratingCountNumber = candidateNumber;
+        }
+      }
+
+      const hasReviewIndicators =
+        ratingCountNumber > 0 || ratingScoreNumber > 0 || Boolean(ratingScoreEl || ratingSummaryEl);
+
+      asinData.rating_count = ratingCountNumber.toString();
+
+      const altImages = document.getElementById("altImages");
+      let imageLinks = [];
+      let videoExist = 0;
+      if (altImages) {
+        const imageThumbs = altImages.querySelectorAll(".imageThumbnail img");
+        imageLinks = Array.from(imageThumbs)
+          .map((img) => (img.getAttribute("src") || "").trim().replace(/\s/g, "%20"))
+          .filter(Boolean);
+        videoExist = altImages.querySelector(".videoThumbnail") ? 1 : 0;
+      }
+      asinData.image_count = imageLinks.length;
+      asinData.image_links = imageLinks.join(",");
+      asinData.video_exist = videoExist;
+
+      asinData.aplus_content = document.getElementById("aplus") ? 1 : 0;
+
+      const merchantInput = document.getElementById("merchantID");
+      asinData.merchant_id = merchantInput ? cleanText(merchantInput.value || "") : "";
+
+      const priceContainer = document.getElementById("corePrice_feature_div");
+      if (priceContainer) {
+        const priceEl = priceContainer.querySelector(".a-offscreen");
+        asinData.price = priceEl ? cleanText((priceEl.textContent || "").replace("$", "")) : "";
+      } else {
+        asinData.price = "";
+      }
+
+      const shippingOptions = [];
+      const delivery = document.getElementById("deliveryBlockMessage");
+      if (delivery) {
+        const spans = delivery.querySelectorAll("span[data-csa-c-delivery-price]");
+        spans.forEach((span) => {
+          const price = cleanText((span.getAttribute("data-csa-c-delivery-price") || "").replace("$", ""));
+          const time = cleanText((span.getAttribute("data-csa-c-delivery-time") || "").replace("$", ""));
+          if (price && time) {
+            shippingOptions.push(`${price}|${time}`);
+          }
+        });
+      }
+      asinData.shipping_options = shippingOptions.join(",");
+
+      let handlingTime = "";
+      const availability = document.getElementById("availability");
+      if (availability) {
+        const html = cleanText(availability.textContent || "");
+        if (html.toLowerCase().includes("ships within")) {
+          handlingTime = cleanText(html.split("ships within")[1] || "").replace(/\.$/, "");
+        } else {
+          handlingTime = "No show";
+        }
+      }
+      asinData.handling_time = handlingTime;
+
+      let brand = cleanText(getCellByLabel("Brand")?.textContent || "");
+      if (!brand) {
+        const byline = document.getElementById("bylineInfo");
+        if (byline) {
+          const inner = cleanText(byline.innerHTML || byline.textContent || "");
+          if (inner.includes("Visit the")) {
+            brand = cleanText(inner.split("Visit the")[1].split("Store")[0]);
+          } else if (inner.includes("Brand:")) {
+            brand = cleanText(inner.split("Brand:")[1]);
+          }
+        }
+      }
+      asinData.brand = brand;
+
+      asinData.color = cleanText(getCellByLabel("Color")?.textContent || "");
+      asinData.size = cleanText(getCellByLabel("Size")?.textContent || "");
+      asinData.components = cleanText(getCellByLabel("Included Components")?.textContent || "");
+      asinData.theme = cleanText(getCellByLabel("Theme")?.textContent || "");
+
+      let rankBiggest = 0;
+      let biggestNiche = "";
+      let rankSmallest = 0;
+      let smallestNiche = "";
+
+      const rankCell = getCellByLabel("Best Sellers Rank");
+      let rankText = cleanText(rankCell ? rankCell.textContent || "" : "");
+      if (!rankText) {
+        const altRank = document.evaluate(
+          "//span[normalize-space(.)='Best Sellers Rank:']/parent::*",
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null
+        ).singleNodeValue;
+        if (altRank) {
+          rankText = cleanText(altRank.textContent || "");
+        }
+      }
+
+      const ranks = parseRankInfo(rankText);
+      if (ranks[0]) {
+        rankBiggest = ranks[0].rank;
+        biggestNiche = ranks[0].niche;
+      }
+      if (ranks[1]) {
+        rankSmallest = ranks[1].rank;
+        smallestNiche = ranks[1].niche;
+      }
+      asinData.rank_biggest = rankBiggest;
+      asinData.biggest_niche = biggestNiche;
+      asinData.rank_smallest = rankSmallest;
+      asinData.smallest_niche = smallestNiche;
+
+      let buyboxEligible = 0;
+      let customizeStatus = 0;
+      if (document.getElementById("buy-now-button") || document.getElementById("add-to-cart-button")) {
+        buyboxEligible = 1;
+        const customButton = document.getElementById("gestalt-popover-button");
+        if (document.getElementById("gestalt-popover-button-announce")) {
+          customizeStatus = 1;
+          if (customButton && customButton.classList.contains("a-button-disabled")) {
+            customizeStatus = 2;
+          }
+        }
+      }
+      asinData.buybox_eligible = buyboxEligible;
+      asinData.customize_status = customizeStatus;
+
+      const merchantAnchor = document.querySelector("#merchantInfoFeature_feature_div a");
+      const merchantText = merchantAnchor ? cleanText(merchantAnchor.textContent || "") : "";
+      asinData.ship_from = merchantText;
+      asinData.sold_by = merchantText;
+
+      let offerCount = 9999;
+      if (document.getElementById("outOfStock")) {
+        offerCount = 0;
+      } else {
+        const offerContainer = document.getElementById("olpLinkWidget_feature_div");
+        if (offerContainer) {
+          const offers = offerContainer.getElementsByClassName("olp-link-widget");
+          offerCount = offers.length === 0 ? 1 : 2;
+        }
+      }
+      asinData.offer_count = offerCount;
+
+      let coupon = "No show";
+      const couponTile = document.querySelector(".ct-coupon-tile-container");
+      if (couponTile) {
+        const couponValue = couponTile.querySelector(".a-offscreen");
+        if (couponValue) {
+          coupon = cleanText(couponValue.textContent || "").replace(/\$/g, "");
+        }
+      }
+      asinData.coupon = coupon;
+
+      asinData.bad_review_count = 0;
+      asinData.bad_reviews = "";
+
+      const shouldFetchBadReviews = hasReviewIndicators && ratingScoreNumber < 5;
+
+      return { asinData, shouldFetchBadReviews };
+    },
+    args: [{ baseAsin }],
+  });
+
+  return execution?.result || { asinData: null, shouldFetchBadReviews: false };
+};
+
+const collectBadReviewListFromTab = async (tabId) => {
+  const [execution] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const cleanText = (value) => {
+        if (!value) return "";
+        return value.replace(/\s+/g, " ").trim();
+      };
+
+      await wait(1200);
+
+      const filterInfo = document.querySelector('#filter-info-section [data-hook="cr-filter-info-review-rating-count"]');
+      let badReviewCount = 0;
+      if (filterInfo) {
+        const text = cleanText(filterInfo.textContent || "");
+        const match =
+          text.match(/([\d,]+)\s+with review/i) ||
+          text.match(/of\s+([\d,]+)/i);
+        if (match) {
+          badReviewCount = parseInt((match[1] || "0").replace(/,/g, ""), 10) || 0;
+        }
+      }
+
+      const reviewIds = Array.from(document.querySelectorAll('#cm_cr-review_list .review'))
+        .map((el) => el.id)
+        .filter(Boolean);
+
+      const nextLink = document.querySelector('li.a-last a');
+      let nextUrl = null;
+      if (nextLink) {
+        const href = nextLink.getAttribute('href') || nextLink.href;
+        if (href) {
+          try {
+            nextUrl = new URL(href, window.location.href).toString();
+          } catch (error) {
+            nextUrl = null;
+          }
+        }
+      }
+
+      return {
+        current_url: window.location.href,
+        bad_review_count: badReviewCount,
+        review_ids: reviewIds,
+        next_url: nextUrl,
+      };
+    },
+  });
+
+  return (
+    execution?.result || {
+      current_url: null,
+      bad_review_count: 0,
+      review_ids: [],
+      next_url: null,
+    }
+  );
+};
+
+const collectBadReviewDetailFromTab = async (tabId, reviewId) => {
+  const [execution] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: (options) => {
+      const cleanText = (value) => {
+        if (!value) return "";
+        return value
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "and")
+          .replace(/&/g, "and")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
+
+      const reviewId = options?.reviewId;
+      if (!reviewId) {
+        return {
+          rating_score: "0.00",
+          review_header: "",
+          review_content: "",
+          asin: "",
+          reviewer: "",
+          date: "",
+        };
+      }
+
+      const container = document.getElementById(`customer_review-${reviewId}`);
+      if (!container) {
+        return {
+          rating_score: "0.00",
+          review_header: "",
+          review_content: "",
+          asin: "",
+          reviewer: "",
+          date: "",
+        };
+      }
+
+      const ratingEl = container.querySelector('[data-hook="review-star-rating"] .a-icon-alt');
+      const ratingScore = ratingEl ? cleanText(ratingEl.textContent || "").split("out of")[0] || "0.00" : "0.00";
+
+      const titleEl = container.querySelector('[data-hook="review-title"] span');
+      const reviewHeader = cleanText(titleEl ? titleEl.textContent || "" : "");
+
+      const bodyEl = container.querySelector('[data-hook="review-body"] span');
+      const reviewContent = cleanText(bodyEl ? bodyEl.textContent || "" : "");
+
+      const asinLink = Array.from(container.querySelectorAll('a')).find((a) => (a.getAttribute('href') || '').includes('ASIN='));
+      let asin = "";
+      if (asinLink) {
+        try {
+          const href = asinLink.getAttribute('href') || asinLink.href;
+          const url = new URL(href, window.location.href);
+          asin = cleanText(url.searchParams.get('ASIN') || "");
+        } catch (e) {
+          asin = "";
+        }
+      }
+
+      const reviewerEl = container.querySelector('[data-hook="review-author"] span') || container.querySelector('[data-hook="review-author"]');
+      const reviewer = cleanText(reviewerEl ? reviewerEl.textContent || "" : "");
+
+      const dateEl = container.querySelector('[data-hook="review-date"]');
+      let date = cleanText(dateEl ? dateEl.textContent || "" : "");
+      if (date.toLowerCase().includes("on ")) {
+        date = cleanText(date.split("on ").pop());
+      }
+
+      return {
+        rating_score: ratingScore || "0.00",
+        review_header: reviewHeader,
+        review_content: reviewContent,
+        asin,
+        reviewer,
+        date,
+      };
+    },
+    args: [{ reviewId }],
+  });
+
+  return execution?.result || {
+    rating_score: "0.00",
+    review_header: "",
+    review_content: "",
+    asin: "",
+    reviewer: "",
+    date: "",
+  };
+};
+
+const processAsinMonitoringEntry = async (entry, options = {}) => {
+  const { debugMode = false } = options;
+  if (typeof entry !== "string" || !entry.trim()) {
+    return false;
+  }
+
+  const [asin] = entry.split(",");
+  const trimmedAsin = (asin || "").trim();
+  if (!trimmedAsin) {
+    return false;
+  }
+
+  const productUrl = `https://www.amazon.com/dp/${trimmedAsin}?th=1`;
+  const tab = await chrome.tabs.create({ url: productUrl, active: true });
+
+  try {
+    await waitForTabToLoad(tab.id, 120000);
+  } catch (error) {
+    console.warn(`[ASIN Monitoring] Waiting for product page timed out for ${trimmedAsin}:`, error.message);
+  }
+
+  try {
+    const { asinData, shouldFetchBadReviews } = await collectAsinDataFromTab(tab.id, trimmedAsin);
+    if (!asinData) {
+      throw new Error("Không thể thu thập dữ liệu ASIN");
+    }
+
+    if (shouldFetchBadReviews) {
+      const reviewIds = new Set();
+      let badReviewCount = 0;
+      const visitedReviewUrls = new Set();
+      let nextUrl = `https://www.amazon.com/product-reviews/${asinData.asin || trimmedAsin}/ref=cm_cr_getr_d_paging_btm_prev_1?ie=UTF8&filterByStar=critical&reviewerType=all_reviews&pageNumber=1&sortBy=recent#reviews-filter-bar`;
+      let firstPage = true;
+
+      while (nextUrl) {
+        if (visitedReviewUrls.has(nextUrl)) {
+          console.warn(`[ASIN Monitoring] Detected repeated review page URL for ${trimmedAsin}, stopping pagination at ${nextUrl}`);
+          break;
+        }
+        visitedReviewUrls.add(nextUrl);
+
+        await chrome.tabs.update(tab.id, { url: nextUrl, active: true });
+        try {
+          await waitForTabToLoad(tab.id, 120000);
+        } catch (error) {
+          console.warn(`[ASIN Monitoring] Waiting for review page timed out for ${trimmedAsin}:`, error.message);
+          break;
+        }
+
+        await sleep(debugMode ? 3000 : 1800);
+
+        const { current_url, bad_review_count, review_ids, next_url } = await collectBadReviewListFromTab(tab.id);
+        if (current_url) {
+          visitedReviewUrls.add(current_url);
+        }
+
+        if (firstPage && typeof bad_review_count === "number") {
+          badReviewCount = bad_review_count;
+          firstPage = false;
+        }
+
+        (review_ids || []).forEach((id) => reviewIds.add(id));
+
+        if (next_url && !visitedReviewUrls.has(next_url)) {
+          nextUrl = next_url;
+          await sleep(debugMode ? 2500 : 1500);
+        } else {
+          nextUrl = null;
+        }
+      }
+
+      asinData.bad_review_count = badReviewCount;
+      asinData.bad_reviews = Array.from(reviewIds).join(",");
+
+      await chrome.tabs.update(tab.id, { url: productUrl, active: true }).catch(() => {});
+    } else {
+      asinData.bad_review_count = 0;
+      asinData.bad_reviews = "";
+    }
+
+    const payload = {
+      asin: trimmedAsin,
+      asin_info: { 0: asinData },
+    };
+
+    await postMonitoringInfo(31, payload);
+    return true;
+  } catch (error) {
+    console.error(`[ASIN Monitoring] Failed to process ASIN ${trimmedAsin}:`, error);
+    return false;
+  } finally {
+    if (!debugMode) {
+      await sleep(800);
+    }
+    if (tab?.id) {
+      if (debugMode) {
+        await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      } else {
+        chrome.tabs.remove(tab.id).catch(() => {});
+      }
+    }
+  }
+};
+
+const processBadReviewEntry = async (entry, options = {}) => {
+  const { debugMode = false } = options;
+  if (typeof entry !== "string" || !entry.trim()) {
+    return false;
+  }
+
+  const [reviewId] = entry.split(",");
+  const trimmedReviewId = (reviewId || "").trim();
+  if (!trimmedReviewId) {
+    return false;
+  }
+
+  const reviewUrl = `https://www.amazon.com/review/${trimmedReviewId}?th=1`;
+  const tab = await chrome.tabs.create({ url: reviewUrl, active: true });
+
+  try {
+    await waitForTabToLoad(tab.id, 120000);
+  } catch (error) {
+    console.warn(`[ASIN Monitoring] Waiting for review detail timed out for ${trimmedReviewId}:`, error.message);
+  }
+
+  try {
+    const reviewInfo = await collectBadReviewDetailFromTab(tab.id, trimmedReviewId);
+    const payload = {
+      review_id: trimmedReviewId,
+      review_info: {
+        0: {
+          review_id: trimmedReviewId,
+          ...reviewInfo,
+        },
+      },
+    };
+
+    await postMonitoringInfo(41, payload);
+    return true;
+  } catch (error) {
+    console.error(`[ASIN Monitoring] Failed to process review ${trimmedReviewId}:`, error);
+    return false;
+  } finally {
+    if (!debugMode) {
+      await sleep(600);
+    }
+    if (tab?.id) {
+      if (debugMode) {
+        await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      } else {
+        chrome.tabs.remove(tab.id).catch(() => {});
+      }
+    }
+  }
+};
+
+const runAsinMonitoringFlow = async (options = {}) => {
+  const { debugMode = false } = options;
+  const asinList = await fetchMonitoringList(30);
+  let asinProcessed = 0;
+
+  for (const entry of asinList) {
+    try {
+      const success = await processAsinMonitoringEntry(entry, options);
+      if (success) {
+        asinProcessed += 1;
+      }
+    } catch (error) {
+      console.error("[ASIN Monitoring] Unexpected error when processing ASIN entry:", error);
+    }
+    await sleep(debugMode ? 3000 : 1500);
+  }
+
+  const reviewList = await fetchMonitoringList(40);
+  let reviewProcessed = 0;
+
+  for (const entry of reviewList) {
+    try {
+      const success = await processBadReviewEntry(entry, options);
+      if (success) {
+        reviewProcessed += 1;
+      }
+    } catch (error) {
+      console.error("[ASIN Monitoring] Unexpected error when processing review entry:", error);
+    }
+    await sleep(debugMode ? 2000 : 1000);
+  }
+
+  return { asinProcessed, reviewProcessed };
+};
 
 const waitForTabToLoad = (tabId, timeoutMs = 60000) =>
   new Promise((resolve, reject) => {
@@ -45,7 +765,7 @@ const waitForTabToLoad = (tabId, timeoutMs = 60000) =>
     timeoutId = setTimeout(() => {
       if (!completed) {
         cleanup();
-        reject(new Error("Timed out waiting for Variation Wizard tab to finish loading."));
+        reject(new Error("Timed out waiting for tab to finish loading."));
       }
     }, timeoutMs);
 
@@ -56,7 +776,7 @@ const waitForTabToLoad = (tabId, timeoutMs = 60000) =>
       .then((tab) => {
         if (!tab) {
           cleanup();
-          reject(new Error("Variation Wizard tab could not be found."));
+          reject(new Error("Requested tab could not be found."));
           return;
         }
 
@@ -2194,6 +2914,31 @@ async function processTrackingUpdates(ordersToProcess, retryCount = 0, initialSe
 
 // capture event from content script
 chrome.runtime.onMessage.addListener(async (req, sender, res) => {
+  if (req.message === "startAsinMonitoring") {
+    if (isAsinMonitoringRunning) {
+      res({ status: "busy" });
+      return true;
+    }
+
+    isAsinMonitoringRunning = true;
+    const debugMode = Boolean(req.debugMode);
+    res({ status: "started" });
+
+    runAsinMonitoringFlow({ debugMode })
+      .then((details) => {
+        notifyAsinMonitoringStatus({ status: "completed", details });
+      })
+      .catch((error) => {
+        console.error("[ASIN Monitoring] Flow failed:", error);
+        notifyAsinMonitoringStatus({ status: "error", error: error?.message || "Quy trình ASIN Monitoring gặp lỗi." });
+      })
+      .finally(() => {
+        isAsinMonitoringRunning = false;
+      });
+
+    return true;
+  }
+
   if (req.message === "startVariationSync") {
     try {
       await openVarwizAndRunVariationSync(req.options || {});
