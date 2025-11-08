@@ -1,6 +1,7 @@
 var mbApi = "MBApi";
 const ipTrackingKey = "ipTrackingEnabled";
 const testSettingsKey = "testSettings";
+const asinMonitoringDebugKey = "asinMonitoringDebugEnabled";
 
 // ====================================================================
 // CÁC HÀM LƯU TRỮ TỪ CODE 2 (GIỮ NGUYÊN)
@@ -74,6 +75,16 @@ const getTestSettings = () =>
         }).then((result) => {
             resolve(result[testSettingsKey]);
         });
+    });
+
+const saveAsinMonitoringDebugSetting = (isEnabled) =>
+    new Promise((resolve) => {
+        chrome.storage.local.set({ [asinMonitoringDebugKey]: isEnabled }).then(() => resolve(isEnabled));
+    });
+
+const getAsinMonitoringDebugSetting = () =>
+    new Promise((resolve) => {
+        chrome.storage.local.get({ [asinMonitoringDebugKey]: false }).then((result) => resolve(Boolean(result[asinMonitoringDebugKey])));
     });
 
 // ====================================================================
@@ -163,6 +174,76 @@ $(document).on("click", "#start_variation_sync", function () {
             "success"
         );
     });
+});
+
+$(document).on("click", "#start_asin_monitoring", function () {
+    setButtonLoading("start_asin_monitoring", true);
+    showStatus("asin_monitoring_status", "Đang bắt đầu quy trình ASIN Monitoring...", "info");
+
+    const debugMode = $('#asin_monitoring_debug').is(':checked');
+    $('#asin_monitoring_debug_hint').toggle(debugMode);
+
+    chrome.runtime.sendMessage({ message: "startAsinMonitoring", debugMode }, (response) => {
+        setButtonLoading("start_asin_monitoring", false);
+
+        if (chrome.runtime.lastError) {
+            showStatus(
+                "asin_monitoring_status",
+                chrome.runtime.lastError.message || "Không thể bắt đầu quy trình ASIN Monitoring.",
+                "error"
+            );
+            return;
+        }
+
+        if (!response) {
+            showStatus("asin_monitoring_status", "Không nhận được phản hồi từ background.", "error");
+            return;
+        }
+
+        if (response.status === "busy") {
+            showStatus("asin_monitoring_status", "Một quy trình ASIN Monitoring khác đang chạy.", "error");
+            return;
+        }
+
+        if (response.status !== "started") {
+            const message = response.message || "Không thể bắt đầu quy trình ASIN Monitoring.";
+            showStatus("asin_monitoring_status", message, "error");
+            return;
+        }
+
+        const statusMessage = debugMode
+            ? "Đã bắt đầu ở chế độ debug. Các tab sẽ được giữ mở cho tới khi bạn tự đóng."
+            : "Đã bắt đầu. Vui lòng theo dõi các tab Amazon đang mở để xem tiến trình.";
+        showStatus("asin_monitoring_status", statusMessage, debugMode ? "info" : "success");
+    });
+});
+
+$(document).on('change', '#asin_monitoring_debug', async function() {
+    const isEnabled = $(this).is(':checked');
+    await saveAsinMonitoringDebugSetting(isEnabled);
+    $('#asin_monitoring_debug_hint').toggle(isEnabled);
+});
+
+chrome.runtime.onMessage.addListener((request) => {
+    if (!request || request.message !== "asinMonitoringStatus") {
+        return;
+    }
+
+    if (request.status === "completed") {
+        const details = request.details || {};
+        const asinCount = details.asinProcessed ?? 0;
+        const reviewCount = details.reviewProcessed ?? 0;
+        const message = `Hoàn tất! Đã xử lý ${asinCount} ASIN và ${reviewCount} review.`;
+        showStatus("asin_monitoring_status", message, "success");
+        setButtonLoading("start_asin_monitoring", false);
+        return;
+    }
+
+    if (request.status === "error") {
+        const message = request.error || "Quy trình ASIN Monitoring gặp lỗi.";
+        showStatus("asin_monitoring_status", message, "error");
+        setButtonLoading("start_asin_monitoring", false);
+    }
 });
 
 // $(document).on("click", "#run_test", async function () {
@@ -451,10 +532,17 @@ async function loadTestSettings() {
     console.log("Đã load cài đặt test đã lưu.", settings);
 }
 
+async function loadAsinMonitoringDebugSetting() {
+    const isEnabled = await getAsinMonitoringDebugSetting();
+    $('#asin_monitoring_debug').prop('checked', isEnabled);
+    $('#asin_monitoring_debug_hint').toggle(isEnabled);
+}
+
 $(document).ready(function () {
     checkApiKey();
     checkIpTrackingSetting();
     loadTestSettings();
+    loadAsinMonitoringDebugSetting();
 
     // Tải thêm trạng thái pending từ code 1
     chrome.runtime.sendMessage({ message: "getPendingStatus" }, (response) => {
