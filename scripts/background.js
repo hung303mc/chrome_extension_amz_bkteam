@@ -508,19 +508,101 @@ const collectBadReviewDetailFromTab = async (tabId, reviewId) => {
       const bodyEl = container.querySelector('[data-hook="review-body"] span');
       const reviewContent = cleanText(bodyEl ? bodyEl.textContent || "" : "");
 
-      const asinLink = Array.from(container.querySelectorAll('a')).find((a) => (a.getAttribute('href') || '').includes('ASIN='));
-      let asin = "";
-      if (asinLink) {
+      const extractAsinFromState = () => {
+        const stateEl = document.getElementById("cr-state-object");
+        if (!stateEl) {
+          return "";
+        }
+
+        const decodeHtml = (value) => {
+          if (!value || typeof value !== "string") {
+            return "";
+          }
+          const textarea = document.createElement("textarea");
+          textarea.innerHTML = value;
+          return textarea.value;
+        };
+
+        const tryParse = (value) => {
+          if (!value || typeof value !== "string") {
+            return null;
+          }
+
+          const trimmed = value.trim();
+          if (!trimmed) {
+            return null;
+          }
+
+          try {
+            return JSON.parse(trimmed);
+          } catch (error) {
+            return null;
+          }
+        };
+
+        const rawState = stateEl.getAttribute("data-state") || stateEl.dataset?.state || "";
+        if (!rawState) {
+          return "";
+        }
+
+        let parsed = tryParse(rawState);
+        if (!parsed && rawState.includes("&quot;")) {
+          parsed = tryParse(decodeHtml(rawState));
+        }
+
+        if (parsed && typeof parsed.asin === "string") {
+          return cleanText(parsed.asin);
+        }
+
+        return "";
+      };
+
+      let asin = extractAsinFromState();
+      const asinLink = Array.from(container.querySelectorAll("a")).find((a) => {
+        const href = a?.getAttribute("href") || "";
+        return href.includes("ASIN=") || href.includes("/product-reviews/") || href.includes("/dp/");
+      });
+
+      if (asinLink && !asin) {
+        const href = asinLink.getAttribute("href") || asinLink.href || "";
+        if (href.includes("ASIN=")) {
+          try {
+            const url = new URL(href, window.location.href);
+            asin = cleanText(url.searchParams.get("ASIN") || "");
+          } catch (e) {
+            asin = "";
+          }
+        }
+
+        if (!asin) {
+          const productReviewMatch = href.match(/product-reviews\/([A-Z0-9]{10})/i);
+          if (productReviewMatch && productReviewMatch[1]) {
+            asin = cleanText(productReviewMatch[1]);
+          }
+        }
+
+        if (!asin) {
+          const dpMatch = href.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+          if (dpMatch && dpMatch[1]) {
+            asin = cleanText(dpMatch[1]);
+          }
+        }
+      }
+
+      if (!asin) {
         try {
-          const href = asinLink.getAttribute('href') || asinLink.href;
-          const url = new URL(href, window.location.href);
-          asin = cleanText(url.searchParams.get('ASIN') || "");
+          const currentUrl = new URL(window.location.href);
+          asin = cleanText(currentUrl.searchParams.get("ASIN") || "");
         } catch (e) {
           asin = "";
         }
       }
 
-      const reviewerEl = container.querySelector('[data-hook="review-author"] span') || container.querySelector('[data-hook="review-author"]');
+      const reviewerEl =
+        container.querySelector('[data-hook="review-author"] span') ||
+        container.querySelector('[data-hook="review-author"]') ||
+        container.querySelector('[data-hook="genome-widget"] .a-profile-name') ||
+        container.querySelector('.a-profile-name');
       const reviewer = cleanText(reviewerEl ? reviewerEl.textContent || "" : "");
 
       const dateEl = container.querySelector('[data-hook="review-date"]');
@@ -877,16 +959,28 @@ const setupTestAlarms = async () => {
     return;
   }
 
-  const { syncOrder, updateTracking, accountHealth, downloadAds, sendMessageAuto, syncPhone, delay = 1 } = testSettings;
+  const {
+    syncOrder,
+    updateTracking,
+    accountHealth,
+    downloadAds,
+    asinMonitoring = false,
+    sendMessageAuto,
+    syncPhone,
+    delay = 1,
+  } = testSettings;
 
   console.log(`--- CHẠY CHẾ ĐỘ TEST THEO YÊU CẦU ---`);
-  console.log(`Cài đặt: Lấy đơn=${syncOrder}, Update Tracking=${updateTracking}, Account Health=${accountHealth}, Gửi Tin Nhắn=${sendMessageAuto}, , Chạy sau=${delay} phút.`);
+  console.log(
+    `Cài đặt: Lấy đơn=${syncOrder}, Update Tracking=${updateTracking}, Account Health=${accountHealth}, ASIN Monitoring=${asinMonitoring}, Gửi Tin Nhắn=${sendMessageAuto}, Chạy sau=${delay} phút.`,
+  );
 
   // Xóa các alarm test cũ đi để tránh bị trùng lặp
   chrome.alarms.clear("test_syncOrder");
   chrome.alarms.clear("test_updateTracking");
   chrome.alarms.clear("test_accountHealth");
   chrome.alarms.clear("test_downloadAdsReports"); // Thêm dòng này
+  chrome.alarms.clear("test_asinMonitoring");
   chrome.alarms.clear("test_sendMessageAuto");
   chrome.alarms.clear("test_syncPhone");
 
@@ -906,6 +1000,10 @@ const setupTestAlarms = async () => {
   if (accountHealth) {
     chrome.alarms.create("test_accountHealth", { delayInMinutes: currentDelay });
     console.log(`- Đã đặt lịch 'test_accountHealth' sau ${currentDelay} phút.`);
+  }
+  if (asinMonitoring) {
+    chrome.alarms.create("test_asinMonitoring", { delayInMinutes: currentDelay });
+    console.log(`- Đã đặt lịch 'test_asinMonitoring' sau ${currentDelay} phút.`);
   }
   if (downloadAds) {
     chrome.alarms.create("test_downloadAdsReports", { delayInMinutes: currentDelay });
@@ -934,6 +1032,7 @@ const setupDailyAlarm = async () => {
     'syncOrder_1', 'syncOrder_2', 'syncOrder_3', 'syncOrder_4', 'syncOrder_5',
     'updateTracking_1', 'updateTracking_2', 'updateTracking_3', 'updateTracking_4', 'updateTracking_5',
     'accountHealth_1', 'accountHealth_2', 'accountHealth_3', 'accountHealth_4', 'accountHealth_5',
+    'asinMonitoring_1', 'asinMonitoring_2', 'asinMonitoring_3', 'asinMonitoring_4', 'asinMonitoring_5',
     'downloadAdsReports_1', 'downloadAdsReports_2', 'downloadAdsReports_3', 'downloadAdsReports_4', 'downloadAdsReports_5',
     'sendMessageAuto_1', 'sendMessageAuto_2', 'sendMessageAuto_3', 'sendMessageAuto_4', 'sendMessageAuto_5',
     'paymentRequest_Sunday', 'paymentRequest_Monday', 'paymentRequest_Tue', 'paymentRequest_Wednesday', 'paymentRequest_Thu', 'paymentRequest_Friday',
@@ -1606,6 +1705,37 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await reportStatusToServer(featureName, 'FAILED', error.message);
       }
     })();
+  }
+
+  else if (alarm.name.startsWith("asinMonitoring_") || alarm.name === "test_asinMonitoring") {
+    const featureName = 'asinMonitoring';
+    const logPrefix = '[ASIN Monitoring]';
+    await reportStatusToServer(featureName, 'RUNNING', `Alarm triggered: ${alarm.name}`);
+
+    if (isAsinMonitoringRunning) {
+      const skipMessage = "Bỏ qua vì tác vụ trước đó vẫn đang chạy.";
+      console.log(`${logPrefix} ${skipMessage}`);
+      await reportStatusToServer(featureName, 'SKIPPED', skipMessage);
+      return;
+    }
+
+    isAsinMonitoringRunning = true;
+    notifyAsinMonitoringStatus({ status: "running", trigger: alarm.name });
+
+    try {
+      const details = await runAsinMonitoringFlow({ debugMode: false });
+      const successMessage = `Hoàn tất: ${details.asinProcessed} ASIN, ${details.reviewProcessed} review.`;
+      console.log(`${logPrefix} ${successMessage}`);
+      await reportStatusToServer(featureName, 'SUCCESS', successMessage);
+      notifyAsinMonitoringStatus({ status: "completed", details, trigger: alarm.name });
+    } catch (error) {
+      const errorMessage = error?.message || "Quy trình ASIN Monitoring gặp lỗi.";
+      console.error(`${logPrefix} Lỗi khi chạy tự động:`, error);
+      await reportStatusToServer(featureName, 'FAILED', errorMessage);
+      notifyAsinMonitoringStatus({ status: "error", error: errorMessage, trigger: alarm.name });
+    } finally {
+      isAsinMonitoringRunning = false;
+    }
   }
 
   else if (alarm.name.startsWith("downloadAdsReports_") || alarm.name === "test_downloadAdsReports") {
