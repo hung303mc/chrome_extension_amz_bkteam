@@ -190,3 +190,5 @@ chrome.runtime.onMessage.addListener((req, sender, res) => {
   }
   // Các message khác để background.js cũ xử lý
 });
+
+// test commit
